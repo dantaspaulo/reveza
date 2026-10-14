@@ -17,6 +17,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
+import { fileURLToPath } from "node:url";
 import type { Sistema } from "./config.js";
 import { compararVersao } from "./doctor.js";
 import { aspasWindows, conhost, usuarioWindows, xmlTexto } from "./servico.js";
@@ -36,6 +37,36 @@ const PACOTE_MAXIMO = 64 * 1024 * 1024;
 export const TAREFA_ATUALIZAR = "Reveza AI atualizar";
 /** O fuso que o banco usa quando a instalação não tem um (config `fuso`). */
 export const FUSO_PADRAO = "America/Sao_Paulo";
+
+/** A pasta do programa instalado (app/): este arquivo fica em app/agente/dist/src. */
+export const PASTA_DO_PROGRAMA = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
+
+/**
+ * O instalacao.json de um computador que não o tem: a instalação parou depois de subir o agente e antes do último passo
+ * (o único que gravava o arquivo), e o instalador novo recusava o `--atualizar` ("não há instalação para atualizar"), com
+ * o agente funcionando e ligado à nuvem (relato de 13/10/2026, WSL). Vai no formato de computador ligado (a nuvem sem
+ * `ref`): o instalador atualiza só o programa deste computador, sem mexer na nuvem nem no painel. Sem identidade da
+ * nuvem, sem nuvem (o agente já roda sem ela). Nada de segredo: só o endereço e a chave pública.
+ */
+export function instalacaoRecuperada(o: {
+  versao: string;
+  app: string;
+  identidade: { url: string; chavePublica: string } | null;
+  agora: Date;
+}): Record<string, unknown> {
+  const em = o.agora.toISOString();
+  return {
+    versao: o.versao,
+    app: o.app,
+    sombra: false,
+    semServico: false,
+    atualizadoEm: em,
+    instaladoEm: em,
+    nuvem: o.identidade ? { url: o.identidade.url, anon: o.identidade.chavePublica } : null,
+    painel: null,
+    recuperadaEm: em,
+  };
+}
 
 /**
  * Como cada computador se atualiza sozinho (config `atualizar_sozinho` da instalação): desligada (o padrão), de

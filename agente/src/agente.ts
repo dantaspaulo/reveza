@@ -33,6 +33,7 @@ import { isoParaEpoch, epochParaIso, type Relogio } from "./util/tempo.js";
 import type { Log } from "./util/log.js";
 import type { Guarda } from "./cofre/guarda.js";
 import { SEGREDO_COFRE } from "./cofre/guarda.js";
+import { lerIdentidade } from "./nuvem/supabase.js";
 import type { Server } from "node:http";
 import {
   acharInstalador,
@@ -43,7 +44,9 @@ import {
   escolherVersao,
   extrairTarGz,
   faltamNaNuvem,
+  instalacaoRecuperada,
   lerPedido,
+  PASTA_DO_PROGRAMA,
   migracoesDoPacote,
   resumosDoPacote,
   modoAtualizar,
@@ -1003,7 +1006,7 @@ export class Agente {
     fs.mkdirSync(this.d.c.logs, { recursive: true, mode: 0o700 });
     const log = path.join(this.d.c.logs, `atualizacao-${para}.log`);
     const resultado = path.join(pasta, "resultado.json");
-    const instalacao = lerJson<{ semServico?: boolean }>(path.join(this.d.c.base, "instalacao.json"));
+    const instalacao = await this.instalacaoParaAtualizar();
     const registro = { de: VERSAO, para, comando: origem.comando, em: this.d.relogio.agora(), pasta, log, resultado, sozinho: origem.sozinho, ...sozinho };
     gravarJson(this.arquivoAtualizacao(), registro);
     try {
@@ -1029,6 +1032,25 @@ export class Agente {
     const como = !origem.sozinho ? "pedido pelo painel" : origem.modo === "assim_que_sair" ? "sozinho, assim que saiu" : "sozinho, de madrugada";
     this.registrarEvento("info", `Atualizando de ${VERSAO} para ${para} (${como}). Log: ${log}`, { ...dados, atualizacao: "pedida" });
     return { ok: true, de: VERSAO, para };
+  }
+
+  /**
+   * O instalacao.json que o instalador da versão nova lê no `--atualizar`. Faltando (instalação que parou antes do último
+   * passo), recria no formato de computador ligado, com a nuvem da identidade deste computador (atualizar.ts).
+   */
+  private async instalacaoParaAtualizar(): Promise<{ semServico?: boolean } | null> {
+    const arq = path.join(this.d.c.base, "instalacao.json");
+    const lida = lerJson<{ semServico?: boolean }>(arq);
+    if (lida || fs.existsSync(arq)) return lida;
+    const id = await lerIdentidade(this.d.guarda).catch(() => null);
+    const recuperada = instalacaoRecuperada({ versao: VERSAO, app: PASTA_DO_PROGRAMA, identidade: id, agora: new Date(this.d.relogio.agoraMs()) });
+    try {
+      gravarJson(arq, recuperada);
+      this.d.log.info(`instalacao.json não existia (a instalação parou antes do fim): recriado ${id ? "com a nuvem deste computador" : "sem nuvem"}`);
+    } catch (e) {
+      this.d.log.erro(`não consegui recriar o instalacao.json: ${(e as Error).message}`);
+    }
+    return recuperada;
   }
 
   private recusaDaTrava(t: TravaNuvem): ResultadoAtualizar {

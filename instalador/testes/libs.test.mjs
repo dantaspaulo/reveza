@@ -11,7 +11,7 @@ import { dnsPronto, dominioPedido, dominioValido, passosCloudflare, passosDns } 
 import { acharChatTelegram, testar } from "../lib/alertas.mjs";
 import { copiarEstado, criarLancador, gravarConfigLocal, gravarInstalacao, lancadorWindows, lerInstalacao, linhaPath, voltarAtualizacao } from "../lib/programa.mjs";
 import { emailValido, senhaForte, t } from "../lib/texto.mjs";
-import { lerArgs, soEsteComputador } from "../instalar.mjs";
+import { dadosDaInstalacao, lerArgs, soEsteComputador } from "../instalar.mjs";
 
 function rede(rotas) {
   const chamadas = [];
@@ -337,6 +337,27 @@ test("atualizar um computador ligado (sem ref da nuvem) não pede token: só o p
   assert.equal(soEsteComputador(ligado, false), false, "sem --atualizar não vale");
   assert.equal(soEsteComputador({ nuvem: null }, true), false);
   assert.equal(soEsteComputador(null, true), false);
+});
+
+test("o instalacao.json sai logo depois do serviço, com o que já se sabe, e de novo no fim (instalação que parou antes do fim)", () => {
+  // depois da nuvem e do serviço, antes do painel: a nuvem inteira, o painel ainda não
+  const ctx = { app: "/x/app", sombra: false, semServico: false, url: "https://abcdefghijklmnopqrst.supabase.co", ref: "abcdefghijklmnopqrst", anon: "a", adminId: "ad", vapidPublica: "v" };
+  const antes = dadosDaInstalacao(ctx, null);
+  assert.deepEqual(antes.nuvem, { ref: "abcdefghijklmnopqrst", url: ctx.url, anon: "a", adminId: "ad", vapidPublica: "v" });
+  assert.equal(antes.painel, null);
+  // computador ligado pelo código do painel: só url e chave pública, sem ref (o --atualizar dele é só do programa)
+  const ligado = dadosDaInstalacao({ app: "/x/app", ligado: { url: ctx.url, anon: "a" } }, null);
+  assert.equal(soEsteComputador(ligado, true), true);
+  // atualização: o que a instalação já tinha fica
+  const inst = { instaladoEm: "2026-10-01T00:00:00.000Z", nuvem: { url: ctx.url, anon: "a" }, painel: { url: "https://p" } };
+  const depois = dadosDaInstalacao({ app: "/x/app" }, inst);
+  assert.equal(depois.instaladoEm, inst.instaladoEm);
+  assert.deepEqual(depois.painel, inst.painel);
+  // a ordem no instalador: gravado logo depois do serviço, antes do painel, das contas e dos alertas
+  const fonte = readFileSync(new URL("../instalar.mjs", import.meta.url), "utf8");
+  const servico = fonte.indexOf("await servico(ctx);");
+  const gravado = fonte.indexOf("gravarInstalacao(ARQ_INST, dadosDaInstalacao(ctx, inst));", servico);
+  assert.ok(servico > 0 && gravado > servico && gravado < fonte.indexOf('etapa("painel")', servico), "gravado logo depois do serviço");
 });
 
 test("antes de atualizar: cópia conferida do estado, sem o programa, e só as 5 cópias mais novas ficam", () => {
