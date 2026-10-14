@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sistemaAtual } from "./config.js";
-import { comandoPadrao, comandoPrivado, enderecoDoLogin, semTela } from "./navegador.js";
+import { comandoPadrao, comandoPrivado, ehWsl, enderecoDoLogin, semTela } from "./navegador.js";
 import type { Sistema } from "./config.js";
 
 /** O que o agente lê da pasta do login: se abriu, em qual navegador e se foi janela privada. */
@@ -28,19 +28,28 @@ function contar(env: NodeJS.ProcessEnv, a: Abertura): void {
   }
 }
 
-export function abrir(argv: string[], env: NodeJS.ProcessEnv = process.env, iniciar = spawn, sistema: Sistema = sistemaAtual(), existe?: (p: string) => boolean): number {
+export function abrir(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  iniciar = spawn,
+  sistema: Sistema = sistemaAtual(),
+  existe?: (p: string) => boolean,
+  wsl = sistema === "linux" && ehWsl(env),
+): number {
   const url = enderecoDoLogin(argv[0]);
   if (!url) return 2; // só o login oficial abre por aqui
-  if (semTela(sistema, env)) {
+  if (semTela(sistema, env, wsl)) {
     contar(env, { aberto: false, navegador: null, privado: false });
     return 3;
   }
-  const privado = env.REVEZA_LOGIN_NAVEGADOR === "normal" ? null : comandoPrivado(sistema, url, existe, env);
-  const cmd = privado?.argv ?? comandoPadrao(sistema, url);
-  contar(env, { aberto: true, navegador: privado?.navegador ?? null, privado: !!privado });
+  const privado = env.REVEZA_LOGIN_NAVEGADOR === "normal" ? null : comandoPrivado(sistema, url, existe, env, undefined, wsl);
+  const cmd = privado?.argv ?? comandoPadrao(sistema, url, wsl);
   try {
     const filho = iniciar(cmd[0]!, cmd.slice(1), { detached: true, stdio: "ignore" });
-    filho.on("error", () => undefined);
+    // "abri" só depois que o programa começou de verdade: sem ele (o xdg-open que não existe no WSL), o erro chega
+    // depois, e o terminal dizia que abriu sem abrir nada
+    filho.on("spawn", () => contar(env, { aberto: true, navegador: privado?.navegador ?? null, privado: !!privado }));
+    filho.on("error", () => contar(env, { aberto: false, navegador: null, privado: false }));
     filho.unref();
   } catch {
     contar(env, { aberto: false, navegador: null, privado: false });
