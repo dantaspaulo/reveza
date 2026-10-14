@@ -48,7 +48,7 @@ interface Candidato {
  * Os navegadores que abrem janela privada pela linha de comando, na ordem de preferência. Os caminhos seguem o sistema
  * pedido, não o de quem roda (os testes rodam os três sistemas em qualquer um).
  */
-export function candidatos(sistema: Sistema, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): Candidato[] {
+export function candidatos(sistema: Sistema, env: NodeJS.ProcessEnv = process.env, home = os.homedir(), wsl = false): Candidato[] {
   if (sistema === "macos") {
     const apps: [string, string, string][] = [
       ["Google Chrome", "Google Chrome.app", "--incognito"],
@@ -84,7 +84,36 @@ export function candidatos(sistema: Sistema, env: NodeJS.ProcessEnv = process.en
     ["Firefox", "firefox", "-private-window"],
   ];
   const dirs = (env.PATH ?? "/usr/local/bin:/usr/bin:/bin").split(":").filter(Boolean);
-  return bins.flatMap(([nome, bin, privado]) => dirs.map((d) => ({ nome, caminho: path.posix.join(d, bin), privado })));
+  const doLinux = bins.flatMap(([nome, bin, privado]) => dirs.map((d) => ({ nome, caminho: path.posix.join(d, bin), privado })));
+  // no WSL, o navegador da pessoa é o do Windows: vem antes de um navegador do Linux que esteja instalado
+  return wsl ? [...DO_WINDOWS_NO_WSL, ...doLinux] : doLinux;
+}
+
+/** O disco C: visto de dentro do WSL. */
+const C_NO_WSL = "/mnt/c";
+
+/** Os navegadores do Windows, vistos de dentro do WSL (o WSL roda os .exe do Windows direto). */
+const DO_WINDOWS_NO_WSL: Candidato[] = (
+  [
+    ["Google Chrome", "Program Files/Google/Chrome/Application/chrome.exe", "--incognito"],
+    ["Google Chrome", "Program Files (x86)/Google/Chrome/Application/chrome.exe", "--incognito"],
+    ["Microsoft Edge", "Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "--inprivate"],
+    ["Microsoft Edge", "Program Files/Microsoft/Edge/Application/msedge.exe", "--inprivate"],
+    ["Firefox", "Program Files/Mozilla Firefox/firefox.exe", "-private-window"],
+  ] as const
+).map(([nome, caminho, privado]) => ({ nome, caminho: path.posix.join(C_NO_WSL, caminho), privado }));
+
+/**
+ * O Linux do WSL (relato de 13/10/2026: "diz que abre o navegador, mas não abre"). Lá não há `xdg-open` nem navegador
+ * do Linux, e o agente, como serviço do systemd, roda sem DISPLAY e sem as variáveis WSL_*: por isso a versão do kernel.
+ */
+export function ehWsl(env: NodeJS.ProcessEnv = process.env, versao = () => fs.readFileSync("/proc/sys/kernel/osrelease", "utf8")): boolean {
+  if (env.WSL_DISTRO_NAME || env.WSL_INTEROP) return true;
+  try {
+    return /microsoft/i.test(versao());
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -97,23 +126,28 @@ export function comandoPrivado(
   existe: (p: string) => boolean = fs.existsSync,
   env: NodeJS.ProcessEnv = process.env,
   home = os.homedir(),
+  wsl = false,
 ): { navegador: string; argv: string[] } | null {
-  const c = candidatos(sistema, env, home).find((x) => existe(x.caminho));
+  const c = candidatos(sistema, env, home, wsl).find((x) => existe(x.caminho));
   if (!c) return null;
   // macOS: `open -na` entrega a janela nova ao navegador que já está aberto (ou abre ele)
   if (sistema === "macos") return { navegador: c.nome, argv: ["/usr/bin/open", "-na", c.caminho, "--args", c.privado, url] };
   return { navegador: c.nome, argv: [c.caminho, c.privado, url] };
 }
 
-/** No Linux sem tela (servidor, serviço sem DISPLAY), não há navegador para abrir: o login segue pelo código. */
-export function semTela(sistema: Sistema, env: NodeJS.ProcessEnv = process.env): boolean {
-  return sistema === "linux" && !env.DISPLAY && !env.WAYLAND_DISPLAY;
+/**
+ * No Linux sem tela (servidor, serviço sem DISPLAY), não há navegador para abrir: o login segue pelo código. No WSL a
+ * tela é a do Windows, que não precisa de DISPLAY.
+ */
+export function semTela(sistema: Sistema, env: NodeJS.ProcessEnv = process.env, wsl = false): boolean {
+  return sistema === "linux" && !wsl && !env.DISPLAY && !env.WAYLAND_DISPLAY;
 }
 
 /** O navegador de sempre (quando não há um com janela privada). */
-export function comandoPadrao(sistema: Sistema, url: string): string[] {
+export function comandoPadrao(sistema: Sistema, url: string, wsl = false): string[] {
   if (sistema === "macos") return ["/usr/bin/open", url];
   if (sistema === "windows") return ["explorer.exe", url];
+  if (wsl) return [path.posix.join(C_NO_WSL, "Windows", "explorer.exe"), url];
   return ["xdg-open", url];
 }
 

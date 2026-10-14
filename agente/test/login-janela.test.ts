@@ -11,7 +11,7 @@ import { abrir } from "../src/abrir-login.js";
 import { ClaudeCli } from "../src/claudecli.js";
 import { textoDoTerminal } from "../src/cli.js";
 import { lerAbertura, textoDoLogin, TEXTO_DO_LOGIN } from "../src/logins.js";
-import { candidatos, comandoPadrao, comandoPrivado, enderecoDoLogin, semTela } from "../src/navegador.js";
+import { candidatos, comandoPadrao, comandoPrivado, ehWsl, enderecoDoLogin, semTela } from "../src/navegador.js";
 import { blob, ExecutorFalso, montar, type Montado } from "./falsos.js";
 
 const URL_LOCAL = "https://claude.com/cai/oauth/authorize?code=true&redirect_uri=http%3A%2F%2Flocalhost%3A50123%2Fcallback&state=s";
@@ -81,15 +81,42 @@ describe("janela anônima", () => {
     assert.equal(semTela("linux", { WAYLAND_DISPLAY: "wayland-0" }), false);
     assert.equal(semTela("macos", {}), false);
   });
+
+  test("WSL: abre a janela anônima do navegador do Windows, mesmo sem DISPLAY (o agente como serviço do systemd)", () => {
+    const chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe";
+    const edge = "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+    const so = (...existem: string[]) => (p: string) => existem.includes(p);
+    assert.deepEqual(comandoPrivado("linux", URL_LOCAL, so(chrome, "/usr/bin/chromium"), { PATH: "/usr/bin" }, "/home/x", true), {
+      navegador: "Google Chrome",
+      argv: [chrome, "--incognito", URL_LOCAL],
+    });
+    assert.deepEqual(comandoPrivado("linux", URL_LOCAL, so(edge), { PATH: "/usr/bin" }, "/home/x", true)?.argv, [edge, "--inprivate", URL_LOCAL]);
+    assert.equal(comandoPrivado("linux", URL_LOCAL, so(chrome), { PATH: "/usr/bin" }, "/home/x", false), null, "fora do WSL, nada de /mnt/c");
+    assert.equal(semTela("linux", {}, true), false);
+    assert.deepEqual(comandoPadrao("linux", URL_LOCAL, true), ["/mnt/c/Windows/explorer.exe", URL_LOCAL]);
+  });
+
+  test("WSL: pelas variáveis do WSL ou, sem elas (serviço do systemd), pela versão do kernel", () => {
+    const falha = () => {
+      throw new Error("sem /proc");
+    };
+    assert.equal(ehWsl({ WSL_DISTRO_NAME: "Ubuntu" }, falha), true);
+    assert.equal(ehWsl({ WSL_INTEROP: "/run/WSL/1_interop" }, falha), true);
+    assert.equal(ehWsl({}, () => "6.6.87.2-microsoft-standard-WSL2\n"), true);
+    assert.equal(ehWsl({}, () => "6.8.0-45-generic\n"), false);
+    assert.equal(ehWsl({}, falha), false);
+  });
 });
 
 describe("abrir-login (o BROWSER do login)", () => {
-  function espiao(falhar = false) {
+  /** O spawn de mentira: o programa começa ("spawn"), não existe ("error", como o xdg-open no WSL) ou nem sai. */
+  function espiao(falhar: false | "lancar" | "nao-existe" = false) {
     const chamadas: { cmd: string; args: string[]; op: unknown }[] = [];
     const iniciar = ((cmd: string, args: string[], op: unknown) => {
-      if (falhar) throw new Error("spawn falhou");
+      if (falhar === "lancar") throw new Error("spawn falhou");
       chamadas.push({ cmd, args, op });
-      return { on: () => undefined, unref: () => undefined };
+      const evento = falhar === "nao-existe" ? "error" : "spawn";
+      return { on: (nome: string, f: (e?: Error) => void) => nome === evento && f(new Error("ENOENT")), unref: () => undefined };
     }) as unknown as typeof import("node:child_process").spawn;
     return { chamadas, iniciar };
   }
@@ -133,12 +160,32 @@ describe("abrir-login (o BROWSER do login)", () => {
     const d = pastaTemp();
     const aviso = path.join(d, "a");
     const e = espiao();
-    assert.equal(abrir([URL_LOCAL], { REVEZA_LOGIN_ABERTO: aviso }, e.iniciar, "linux", () => true), 3);
+    assert.equal(abrir([URL_LOCAL], { REVEZA_LOGIN_ABERTO: aviso }, e.iniciar, "linux", () => true, false), 3);
     assert.equal(e.chamadas.length, 0);
     assert.deepEqual(JSON.parse(fs.readFileSync(aviso, "utf8")), { aberto: false, navegador: null, privado: false });
-    const f = espiao(true);
-    assert.equal(abrir([URL_LOCAL], { REVEZA_LOGIN_ABERTO: aviso, DISPLAY: ":0" }, f.iniciar, "linux", () => false), 1);
+    const f = espiao("lancar");
+    assert.equal(abrir([URL_LOCAL], { REVEZA_LOGIN_ABERTO: aviso, DISPLAY: ":0" }, f.iniciar, "linux", () => false, false), 1);
     assert.equal(JSON.parse(fs.readFileSync(aviso, "utf8")).aberto, false);
+  });
+
+  test("o programa que não existe (o xdg-open no WSL) não vira \"abri o navegador\"", () => {
+    const d = pastaTemp();
+    const aviso = path.join(d, "a");
+    const e = espiao("nao-existe");
+    abrir([URL_LOCAL], { REVEZA_LOGIN_ABERTO: aviso, DISPLAY: ":0" }, e.iniciar, "linux", () => false, false);
+    assert.deepEqual(e.chamadas[0]!.args, [URL_LOCAL]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(aviso, "utf8")), { aberto: false, navegador: null, privado: false });
+  });
+
+  test("WSL sem DISPLAY: abre a janela anônima do Chrome do Windows", () => {
+    const d = pastaTemp();
+    const aviso = path.join(d, "a");
+    const e = espiao();
+    const chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe";
+    assert.equal(abrir([URL_LOCAL], { REVEZA_LOGIN_ABERTO: aviso, PATH: "/usr/bin" }, e.iniciar, "linux", (p) => p === chrome, true), 0);
+    assert.equal(e.chamadas[0]!.cmd, chrome);
+    assert.deepEqual(e.chamadas[0]!.args, ["--incognito", URL_LOCAL]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(aviso, "utf8")), { aberto: true, navegador: "Google Chrome", privado: true });
   });
 
   test("o aviso lido de volta só aceita os três campos, e nome de navegador sem nada estranho", () => {
