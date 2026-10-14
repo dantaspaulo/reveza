@@ -7,6 +7,26 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.6.1 · 14/10/2026
+
+Duas correções de uma contribuição: Kaio Henrique (pilotaimoveis) achou as falhas num computador com WSL e mandou os
+PRs #1 e #2. Atualize os computadores pelo painel; a nuvem não muda nesta versão.
+
+- **Login no WSL:** o login pela tela do Reveza abre a janela anônima do navegador do Windows, e o WSL deixa de contar
+  como Linux sem tela. A mensagem só diz que abriu quando o navegador abriu de fato: um Linux sem `xdg-open` passa a
+  ouvir que não deu para abrir, em vez de um "abri" que não aconteceu.
+- **Computador sem `instalacao.json` volta a se atualizar:** o instalador só gravava esse arquivo no último passo, e
+  uma instalação que parava depois de subir o agente deixava o computador funcionando e o **Atualizar** do painel
+  recusando para sempre ("não há instalação para atualizar"). Agora o instalador grava o arquivo logo depois de subir
+  o serviço, e de novo no fim. E o agente, se o arquivo não existe, recria antes de atualizar, no formato de computador
+  ligado (o endereço da nuvem e a chave pública, nada de segredo): o instalador atualiza só o programa daquele
+  computador, sem mexer na nuvem nem no painel.
+- **O que muda junto:** uma instalação nova que parar depois de subir o serviço e for rodada de novo continua como
+  atualização da mesma nuvem, em vez de criar outra. Os passos de contas e alertas, que só rodam na instalação nova,
+  não se repetem nesse caso.
+- **O que ainda não resolve:** quem recria o arquivo é o agente novo. Um computador que já está sem o arquivo, com o
+  agente de antes da 0.6.1, ainda recebe a recusa nesta atualização; nesse caso, abra uma issue.
+
 ## 0.6.0 · 13/10/2026
 
 Modelo de cada conta e saída enxuta. Um usuário pediu para escolher no painel o modelo que cada conta usa e para ligar
