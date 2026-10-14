@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sistemaAtual } from "./config.js";
-import { comandoPadrao, comandoPrivado, ehWsl, enderecoDoLogin, semTela } from "./navegador.js";
+import { comandoPadrao, comandoPrivado, discosDoWindows, ehWsl, enderecoDoLogin, semTela } from "./navegador.js";
 import type { Sistema } from "./config.js";
 
 /** O que o agente lê da pasta do login: se abriu, em qual navegador e se foi janela privada. */
@@ -35,6 +35,7 @@ export function abrir(
   sistema: Sistema = sistemaAtual(),
   existe?: (p: string) => boolean,
   wsl = sistema === "linux" && ehWsl(env),
+  discos: string[] = wsl ? discosDoWindows() : [],
 ): number {
   const url = enderecoDoLogin(argv[0]);
   if (!url) return 2; // só o login oficial abre por aqui
@@ -42,8 +43,8 @@ export function abrir(
     contar(env, { aberto: false, navegador: null, privado: false });
     return 3;
   }
-  const privado = env.REVEZA_LOGIN_NAVEGADOR === "normal" ? null : comandoPrivado(sistema, url, existe, env, undefined, wsl);
-  const cmd = privado?.argv ?? comandoPadrao(sistema, url, wsl);
+  const privado = env.REVEZA_LOGIN_NAVEGADOR === "normal" ? null : comandoPrivado(sistema, url, existe, env, undefined, wsl, discos);
+  const cmd = privado?.argv ?? comandoPadrao(sistema, url, wsl, discos, existe);
   try {
     const filho = iniciar(cmd[0]!, cmd.slice(1), { detached: true, stdio: "ignore" });
     // "abri" só depois que o programa começou de verdade: sem ele (o xdg-open que não existe no WSL), o erro chega

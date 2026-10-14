@@ -48,7 +48,13 @@ interface Candidato {
  * Os navegadores que abrem janela privada pela linha de comando, na ordem de preferência. Os caminhos seguem o sistema
  * pedido, não o de quem roda (os testes rodam os três sistemas em qualquer um).
  */
-export function candidatos(sistema: Sistema, env: NodeJS.ProcessEnv = process.env, home = os.homedir(), wsl = false): Candidato[] {
+export function candidatos(
+  sistema: Sistema,
+  env: NodeJS.ProcessEnv = process.env,
+  home = os.homedir(),
+  wsl = false,
+  discos: string[] = wsl ? discosDoWindows() : [],
+): Candidato[] {
   if (sistema === "macos") {
     const apps: [string, string, string][] = [
       ["Google Chrome", "Google Chrome.app", "--incognito"],
@@ -86,22 +92,62 @@ export function candidatos(sistema: Sistema, env: NodeJS.ProcessEnv = process.en
   const dirs = (env.PATH ?? "/usr/local/bin:/usr/bin:/bin").split(":").filter(Boolean);
   const doLinux = bins.flatMap(([nome, bin, privado]) => dirs.map((d) => ({ nome, caminho: path.posix.join(d, bin), privado })));
   // no WSL, o navegador da pessoa é o do Windows: vem antes de um navegador do Linux que esteja instalado
-  return wsl ? [...DO_WINDOWS_NO_WSL, ...doLinux] : doLinux;
+  if (!wsl) return doLinux;
+  const doWindows = DO_WINDOWS_NO_WSL.flatMap(([nome, caminho, privado]) => discos.map((d) => ({ nome, caminho: path.posix.join(d, caminho), privado })));
+  return [...doWindows, ...doLinux];
 }
 
-/** O disco C: visto de dentro do WSL. */
-const C_NO_WSL = "/mnt/c";
+/** Os navegadores do Windows, a partir da raiz de um disco (o WSL roda os .exe do Windows direto). */
+const DO_WINDOWS_NO_WSL: readonly (readonly [string, string, string])[] = [
+  ["Google Chrome", "Program Files/Google/Chrome/Application/chrome.exe", "--incognito"],
+  ["Google Chrome", "Program Files (x86)/Google/Chrome/Application/chrome.exe", "--incognito"],
+  ["Microsoft Edge", "Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "--inprivate"],
+  ["Microsoft Edge", "Program Files/Microsoft/Edge/Application/msedge.exe", "--inprivate"],
+  ["Firefox", "Program Files/Mozilla Firefox/firefox.exe", "-private-window"],
+];
 
-/** Os navegadores do Windows, vistos de dentro do WSL (o WSL roda os .exe do Windows direto). */
-const DO_WINDOWS_NO_WSL: Candidato[] = (
-  [
-    ["Google Chrome", "Program Files/Google/Chrome/Application/chrome.exe", "--incognito"],
-    ["Google Chrome", "Program Files (x86)/Google/Chrome/Application/chrome.exe", "--incognito"],
-    ["Microsoft Edge", "Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "--inprivate"],
-    ["Microsoft Edge", "Program Files/Microsoft/Edge/Application/msedge.exe", "--inprivate"],
-    ["Firefox", "Program Files/Mozilla Firefox/firefox.exe", "-private-window"],
-  ] as const
-).map(([nome, caminho, privado]) => ({ nome, caminho: path.posix.join(C_NO_WSL, caminho), privado }));
+/** Desfaz o escape do /proc/mounts (espaço vira \040, barra invertida \134). */
+const semEscape = (s: string) => s.replace(/\\([0-7]{3})/g, (_, o: string) => String.fromCharCode(parseInt(o, 8)));
+
+/**
+ * Onde os discos do Windows aparecem dentro do WSL, o C: primeiro. Não é sempre /mnt/c: o `[automount] root` do
+ * /etc/wsl.conf muda a pasta (há quem use /c ou /win), e o Windows pode estar em outro disco. Vêm primeiro as
+ * montagens do Windows no /proc/mounts (drvfs no WSL 1; aname=drvfs no WSL 2) e, por último, o disco C: na pasta do
+ * wsl.conf (sem ele, /mnt/c). Quem usa a lista confere se o programa existe em cada uma.
+ */
+export function discosDoWindows(
+  montagens = () => fs.readFileSync("/proc/mounts", "utf8"),
+  wslConf = () => fs.readFileSync("/etc/wsl.conf", "utf8"),
+): string[] {
+  const achados: { letra: string; pasta: string }[] = [];
+  try {
+    for (const linha of montagens().split("\n")) {
+      const [origem = "", pasta = "", tipo = "", opcoes = ""] = linha.trim().split(/\s+/).map(semEscape);
+      const doWindows = tipo === "drvfs" || /(^|[,;])aname=drvfs([,;]|$)/.test(opcoes);
+      if (!doWindows || !pasta.startsWith("/")) continue;
+      const letra = /(?:^|[,;])path=([A-Za-z]):/.exec(opcoes)?.[1] ?? /^([A-Za-z]):/.exec(origem)?.[1] ?? path.posix.basename(pasta);
+      achados.push({ letra: letra.toLowerCase(), pasta });
+    }
+  } catch {
+    // sem /proc/mounts: fica a pasta do wsl.conf
+  }
+  // o C: primeiro (é onde o Windows e os programas costumam estar); a ordem do /proc/mounts no resto
+  const ordem = (x: { letra: string }) => (x.letra === "c" ? 0 : 1);
+  achados.sort((x, y) => ordem(x) - ordem(y));
+  let raiz = "/mnt/";
+  try {
+    let secao = "";
+    for (const linha of wslConf().split("\n")) {
+      const nova = /^\s*\[([^\]]+)\]/.exec(linha)?.[1];
+      if (nova !== undefined) secao = nova.trim().toLowerCase();
+      const r = /^\s*root\s*=\s*["']?([^"'#\s]+)/i.exec(linha)?.[1];
+      if (secao === "automount" && r?.startsWith("/")) raiz = r;
+    }
+  } catch {
+    // sem wsl.conf: a pasta de sempre
+  }
+  return [...new Set([...achados.map((x) => x.pasta), path.posix.join(raiz, "c")])];
+}
 
 /**
  * O Linux do WSL (relato de 13/10/2026: "diz que abre o navegador, mas não abre"). Lá não há `xdg-open` nem navegador
@@ -127,8 +173,9 @@ export function comandoPrivado(
   env: NodeJS.ProcessEnv = process.env,
   home = os.homedir(),
   wsl = false,
+  discos: string[] = wsl ? discosDoWindows() : [],
 ): { navegador: string; argv: string[] } | null {
-  const c = candidatos(sistema, env, home, wsl).find((x) => existe(x.caminho));
+  const c = candidatos(sistema, env, home, wsl, discos).find((x) => existe(x.caminho));
   if (!c) return null;
   // macOS: `open -na` entrega a janela nova ao navegador que já está aberto (ou abre ele)
   if (sistema === "macos") return { navegador: c.nome, argv: ["/usr/bin/open", "-na", c.caminho, "--args", c.privado, url] };
@@ -143,11 +190,24 @@ export function semTela(sistema: Sistema, env: NodeJS.ProcessEnv = process.env, 
   return sistema === "linux" && !wsl && !env.DISPLAY && !env.WAYLAND_DISPLAY;
 }
 
-/** O navegador de sempre (quando não há um com janela privada). */
-export function comandoPadrao(sistema: Sistema, url: string, wsl = false): string[] {
+/**
+ * O navegador de sempre (quando não há um com janela privada). No WSL, o explorer.exe do disco em que o Windows está;
+ * sem achar, o do PATH (o WSL põe as pastas do Windows nele, menos com `appendWindowsPath=false`). Com o interop do
+ * WSL desligado, nenhum .exe roda: o abrir-login conta que não abriu, e o login segue pelo código.
+ */
+export function comandoPadrao(
+  sistema: Sistema,
+  url: string,
+  wsl = false,
+  discos: string[] = wsl ? discosDoWindows() : [],
+  existe: (p: string) => boolean = fs.existsSync,
+): string[] {
   if (sistema === "macos") return ["/usr/bin/open", url];
   if (sistema === "windows") return ["explorer.exe", url];
-  if (wsl) return [path.posix.join(C_NO_WSL, "Windows", "explorer.exe"), url];
+  if (wsl) {
+    const explorer = discos.map((d) => path.posix.join(d, "Windows", "explorer.exe")).find((p) => existe(p));
+    return [explorer ?? "explorer.exe", url];
+  }
   return ["xdg-open", url];
 }
 

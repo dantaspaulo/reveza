@@ -11,7 +11,7 @@ import { abrir } from "../src/abrir-login.js";
 import { ClaudeCli } from "../src/claudecli.js";
 import { textoDoTerminal } from "../src/cli.js";
 import { lerAbertura, textoDoLogin, TEXTO_DO_LOGIN } from "../src/logins.js";
-import { candidatos, comandoPadrao, comandoPrivado, ehWsl, enderecoDoLogin, semTela } from "../src/navegador.js";
+import { candidatos, comandoPadrao, comandoPrivado, discosDoWindows, ehWsl, enderecoDoLogin, semTela } from "../src/navegador.js";
 import { blob, ExecutorFalso, montar, type Montado } from "./falsos.js";
 
 const URL_LOCAL = "https://claude.com/cai/oauth/authorize?code=true&redirect_uri=http%3A%2F%2Flocalhost%3A50123%2Fcallback&state=s";
@@ -86,14 +86,51 @@ describe("janela anônima", () => {
     const chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe";
     const edge = "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
     const so = (...existem: string[]) => (p: string) => existem.includes(p);
-    assert.deepEqual(comandoPrivado("linux", URL_LOCAL, so(chrome, "/usr/bin/chromium"), { PATH: "/usr/bin" }, "/home/x", true), {
+    const c = ["/mnt/c"];
+    assert.deepEqual(comandoPrivado("linux", URL_LOCAL, so(chrome, "/usr/bin/chromium"), { PATH: "/usr/bin" }, "/home/x", true, c), {
       navegador: "Google Chrome",
       argv: [chrome, "--incognito", URL_LOCAL],
     });
-    assert.deepEqual(comandoPrivado("linux", URL_LOCAL, so(edge), { PATH: "/usr/bin" }, "/home/x", true)?.argv, [edge, "--inprivate", URL_LOCAL]);
+    assert.deepEqual(comandoPrivado("linux", URL_LOCAL, so(edge), { PATH: "/usr/bin" }, "/home/x", true, c)?.argv, [edge, "--inprivate", URL_LOCAL]);
     assert.equal(comandoPrivado("linux", URL_LOCAL, so(chrome), { PATH: "/usr/bin" }, "/home/x", false), null, "fora do WSL, nada de /mnt/c");
     assert.equal(semTela("linux", {}, true), false);
-    assert.deepEqual(comandoPadrao("linux", URL_LOCAL, true), ["/mnt/c/Windows/explorer.exe", URL_LOCAL]);
+    assert.deepEqual(comandoPadrao("linux", URL_LOCAL, true, c, so("/mnt/c/Windows/explorer.exe")), ["/mnt/c/Windows/explorer.exe", URL_LOCAL]);
+  });
+
+  test("WSL: os discos do Windows vêm das montagens, não de um /mnt/c fixo", () => {
+    const sem = () => {
+      throw new Error("ENOENT");
+    };
+    // WSL 2 com `[automount] root = /win/`: o D: aparece antes no /proc/mounts, o C: vem primeiro; o resto do WSL
+    // (drivers, lib) também é 9p, mas não é disco do Windows
+    const wsl2 = [
+      "none /usr/lib/wsl/drivers 9p ro,nosuid,nodev,noatime,dirsync,aname=drivers;fmask=222;dmask=222,mmap,access=client,msize=65536,trans=fd,rfd=7,wfd=7 0 0",
+      "D:\\134 /win/d 9p rw,noatime,dirsync,aname=drvfs;path=D:\\;uid=1000;gid=1000;symlinkroot=/win/,mmap,access=client,msize=65536,trans=fd,rfd=5,wfd=5 0 0",
+      "C:\\134 /win/c 9p rw,noatime,dirsync,aname=drvfs;path=C:\\;uid=1000;gid=1000;symlinkroot=/win/,mmap,access=client,msize=65536,trans=fd,rfd=5,wfd=5 0 0",
+      "tmpfs /mnt/wsl tmpfs rw,relatime 0 0",
+    ].join("\n");
+    assert.deepEqual(discosDoWindows(() => wsl2, () => "[automount]\nroot = /win/\n"), ["/win/c", "/win/d"]);
+    // sem o wsl.conf, o /mnt/c entra por último (quem usa confere se o programa existe)
+    assert.deepEqual(discosDoWindows(() => wsl2, sem), ["/win/c", "/win/d", "/mnt/c"]);
+    // WSL 1 (drvfs) e pasta com espaço (o /proc/mounts escreve \040)
+    assert.deepEqual(discosDoWindows(() => "C: /mnt/c drvfs rw,noatime,uid=1000 0 0\nE: /mnt/meu\\040disco drvfs rw 0 0", sem), ["/mnt/c", "/mnt/meu disco"]);
+    // sem montagem do Windows à vista: o C: na pasta do wsl.conf; o root de outra seção não conta
+    assert.deepEqual(discosDoWindows(() => "", () => '[network]\nroot = /errado/\n[automount]\nenabled = true\nroot = "/windir/" # comentário\n'), ["/windir/c"]);
+    assert.deepEqual(discosDoWindows(sem, () => "[network]\nroot = /errado/\n"), ["/mnt/c"]);
+    assert.deepEqual(discosDoWindows(sem, sem), ["/mnt/c"]);
+  });
+
+  test("WSL: navegador e explorer.exe no disco em que estiverem; sem nenhum, o explorer.exe do PATH", () => {
+    const so = (...existem: string[]) => (p: string) => existem.includes(p);
+    const discos = ["/win/c", "/win/d"];
+    const firefox = "/win/d/Program Files/Mozilla Firefox/firefox.exe";
+    assert.deepEqual(comandoPrivado("linux", URL_LOCAL, so(firefox), { PATH: "/usr/bin" }, "/home/x", true, discos), {
+      navegador: "Firefox",
+      argv: [firefox, "-private-window", URL_LOCAL],
+    });
+    assert.deepEqual(comandoPadrao("linux", URL_LOCAL, true, discos, so("/win/d/Windows/explorer.exe")), ["/win/d/Windows/explorer.exe", URL_LOCAL]);
+    assert.deepEqual(comandoPadrao("linux", URL_LOCAL, true, discos, so()), ["explorer.exe", URL_LOCAL]);
+    assert.deepEqual(comandoPadrao("linux", URL_LOCAL, false, discos, so("/win/c/Windows/explorer.exe")), ["xdg-open", URL_LOCAL]);
   });
 
   test("WSL: pelas variáveis do WSL ou, sem elas (serviço do systemd), pela versão do kernel", () => {
@@ -182,7 +219,7 @@ describe("abrir-login (o BROWSER do login)", () => {
     const aviso = path.join(d, "a");
     const e = espiao();
     const chrome = "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe";
-    assert.equal(abrir([URL_LOCAL], { REVEZA_LOGIN_ABERTO: aviso, PATH: "/usr/bin" }, e.iniciar, "linux", (p) => p === chrome, true), 0);
+    assert.equal(abrir([URL_LOCAL], { REVEZA_LOGIN_ABERTO: aviso, PATH: "/usr/bin" }, e.iniciar, "linux", (p) => p === chrome, true, ["/mnt/c"]), 0);
     assert.equal(e.chamadas[0]!.cmd, chrome);
     assert.deepEqual(e.chamadas[0]!.args, ["--incognito", URL_LOCAL]);
     assert.deepEqual(JSON.parse(fs.readFileSync(aviso, "utf8")), { aberto: true, navegador: "Google Chrome", privado: true });
