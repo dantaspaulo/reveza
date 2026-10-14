@@ -820,6 +820,16 @@ export function soEsteComputador(inst, atualizar) {
   return !!atualizar && !!inst?.nuvem && !inst.nuvem.ref;
 }
 
+/** O que vai no instalacao.json, com o que a instalação já sabe (gravado depois do serviço e de novo no fim). */
+export function dadosDaInstalacao(ctx, inst) {
+  return {
+    versao: VERSAO, app: ctx.app, sombra: !!ctx.sombra, semServico: !!ctx.semServico, atualizadoEm: new Date().toISOString(),
+    instaladoEm: inst?.instaladoEm || new Date().toISOString(),
+    nuvem: ctx.url ? { ref: ctx.ref, url: ctx.url, anon: ctx.anon, adminId: ctx.adminId, vapidPublica: ctx.vapidPublica } : ctx.ligado || inst?.nuvem || null,
+    painel: ctx.site ? { url: ctx.site, urlVercel: ctx.urlVercel, projeto: ctx.projetoVercel, equipe: ctx.equipe, dominio: ctx.dominio || null } : inst?.painel || null,
+  };
+}
+
 // ── principal ─────────────────────────────────────────────────────────────────
 async function main() {
   const a = lerArgs(process.argv.slice(2));
@@ -912,6 +922,10 @@ async function main() {
     }
     etapa("servico");
     await servico(ctx);
+    // o agente já está de pé: a instalação passa a existir agora, não só no último passo. Antes, uma instalação que
+    // parava daqui em diante (painel, contas, alertas, uma pergunta fechada no meio) deixava o computador funcionando e
+    // sem o instalacao.json, e o --atualizar recusava para sempre ("não há instalação para atualizar", 13/10/2026)
+    gravarInstalacao(ARQ_INST, dadosDaInstalacao(ctx, inst));
     if (ctx.atualizar && !ctx.semServico) await conferirSubiu(ctx);
     if (ctx.gerencia && ctx.vercel) {
       etapa("painel");
@@ -948,12 +962,7 @@ async function main() {
     etapa("prova");
     await prova(ctx);
 
-    gravarInstalacao(ARQ_INST, {
-      versao: VERSAO, app: ctx.app, sombra: !!ctx.sombra, semServico: !!ctx.semServico, atualizadoEm: new Date().toISOString(),
-      instaladoEm: inst?.instaladoEm || new Date().toISOString(),
-      nuvem: ctx.url ? { ref: ctx.ref, url: ctx.url, anon: ctx.anon, adminId: ctx.adminId, vapidPublica: ctx.vapidPublica } : ctx.ligado || inst?.nuvem || null,
-      painel: ctx.site ? { url: ctx.site, urlVercel: ctx.urlVercel, projeto: ctx.projetoVercel, equipe: ctx.equipe, dominio: ctx.dominio || null } : inst?.painel || null,
-    });
+    gravarInstalacao(ARQ_INST, dadosDaInstalacao(ctx, inst));
 
     titulo(t(`Pronto: Reveza AI ${VERSAO}`, `Done: Reveza AI ${VERSAO}`));
     if (ctx.site) console.log(`  ${t("Painel", "Panel")}: ${verde(ctx.site)}  ${fraco(ctx.admin ? `(${ctx.admin.email})` : "")}`);
