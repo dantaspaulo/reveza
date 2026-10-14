@@ -11,7 +11,7 @@ import { dnsPronto, dominioPedido, dominioValido, passosCloudflare, passosDns } 
 import { acharChatTelegram, testar } from "../lib/alertas.mjs";
 import { copiarEstado, criarLancador, gravarConfigLocal, gravarInstalacao, lancadorWindows, lerInstalacao, linhaPath, voltarAtualizacao } from "../lib/programa.mjs";
 import { emailValido, senhaForte, t } from "../lib/texto.mjs";
-import { dadosDaInstalacao, lerArgs, soEsteComputador } from "../instalar.mjs";
+import { completarRecuperada, dadosDaInstalacao, instalacaoNoDisco, lerArgs, semNuvemPrevisto, soEsteComputador } from "../instalar.mjs";
 
 function rede(rotas) {
   const chamadas = [];
@@ -358,6 +358,70 @@ test("o instalacao.json sai logo depois do serviço, com o que já se sabe, e de
   const servico = fonte.indexOf("await servico(ctx);");
   const gravado = fonte.indexOf("gravarInstalacao(ARQ_INST, dadosDaInstalacao(ctx, inst));", servico);
   assert.ok(servico > 0 && gravado > servico && gravado < fonte.indexOf('etapa("painel")', servico), "gravado logo depois do serviço");
+});
+
+test("sem instalacao.json: reconhece a instalação pelo ponte.json e pelo comando reveza, em qualquer sistema", () => {
+  const casa = "/casa/.reveza";
+  const bin = path.join(casa, "bin");
+  // disco de mentira: o que existe e o que se lê, com caminhos do Unix e do Windows
+  const disco = (arquivos, programas) => ({
+    ler: (f) => { if (f in arquivos) return arquivos[f]; throw Object.assign(new Error("não existe"), { code: "ENOENT" }); },
+    haArquivo: (f) => programas.some((a) => f === path.join(a, "agente", "dist", "src", "cli.js")),
+  });
+  const ponte = { [path.join(casa, "ponte.json")]: JSON.stringify({ porta: 7788, pid: 1, sombra: false }) };
+  // o agente nunca rodou aqui: nada a reconhecer, a recusa de antes continua
+  assert.equal(instalacaoNoDisco({ base: casa, bin, ...disco({}, [path.join(casa, "app")]) }), null);
+  assert.equal(instalacaoNoDisco({ base: casa, bin, ...disco({ [path.join(casa, "ponte.json")]: "quebrado" }, [path.join(casa, "app")]) }), null);
+  // pasta padrão
+  const padrao = instalacaoNoDisco({ base: casa, bin, ...disco(ponte, [path.join(casa, "app")]) });
+  assert.deepEqual(padrao, { app: path.join(casa, "app"), sombra: false, semServico: false, nuvem: null, painel: null, recuperada: true });
+  // instalada com --pasta: o comando reveza aponta para ela
+  const lancador = { ...ponte, [path.join(bin, "reveza")]: '#!/bin/sh\nexec "/usr/bin/node" "/opt/meu reveza/agente/dist/src/cli.js" "$@"\n' };
+  assert.equal(instalacaoNoDisco({ base: casa, bin, ...disco(lancador, ["/opt/meu reveza", path.join(casa, "app")]) }).app, "/opt/meu reveza");
+  // lançador do Windows (de qualquer versão: o formato é o mesmo desde a 0.1.0)
+  const cmd = { ...ponte, [path.join(bin, "reveza.cmd")]: '@echo off\r\n"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\ana\\.reveza\\app\\agente\\dist\\src\\cli.js" %*\r\n' };
+  assert.equal(instalacaoNoDisco({ base: casa, bin, ...disco(cmd, ["C:\\Users\\ana\\.reveza\\app"]) }).app, "C:\\Users\\ana\\.reveza\\app");
+  // o lançador aponta para uma pasta que sumiu: fica a pasta padrão
+  assert.equal(instalacaoNoDisco({ base: casa, bin, ...disco(lancador, [path.join(casa, "app")]) }).app, path.join(casa, "app"));
+  // sem o programa no disco não há o que atualizar
+  assert.equal(instalacaoNoDisco({ base: casa, bin, ...disco(lancador, []) }), null);
+  // modo sombra vem do ponte.json
+  const sombra = { [path.join(casa, "ponte.json")]: JSON.stringify({ porta: 7788, pid: 1, sombra: true }) };
+  assert.equal(instalacaoNoDisco({ base: casa, bin, ...disco(sombra, [path.join(casa, "app")]) }).sombra, true);
+});
+
+test("instalação reconhecida no disco: serviço só se o gerenciador responde; sombra e nuvem perguntadas ao programa", () => {
+  const inst = { app: "/a", sombra: false, semServico: false, nuvem: null, painel: null, recuperada: true };
+  const identidade = { url: "https://abcdefghijklmnopqrst.supabase.co", chavePublica: "pub" };
+  // serviço instalado e o gerenciador responde: segue com serviço, sombra do serviço, nuvem sem ref (só este computador)
+  const comServico = completarRecuperada(inst, { servico: { instalado: true, gerenciador: true, sombra: true }, identidade });
+  assert.equal(comServico.semServico, false);
+  assert.equal(comServico.sombra, true);
+  assert.deepEqual(comServico.nuvem, { url: identidade.url, anon: "pub" });
+  assert.equal(soEsteComputador(comServico, true), true);
+  // WSL sem systemd: a unidade está no disco, o gerenciador não responde; instalar o serviço voltaria a atualização atrás
+  assert.equal(completarRecuperada(inst, { servico: { instalado: true, gerenciador: false, sombra: false } }).semServico, true);
+  // sem serviço, ou o programa não respondeu: sem serviço, sem nuvem, sombra de antes
+  assert.equal(completarRecuperada(inst, { servico: { instalado: false } }).semServico, true);
+  const mudo = completarRecuperada(inst, {}, { sombra: true });
+  assert.deepEqual([mudo.semServico, mudo.sombra, mudo.nuvem], [true, true, null]);
+  // --sem-servico pedido vale mesmo com serviço
+  assert.equal(completarRecuperada(inst, { servico: { instalado: true, sombra: false } }, { semServico: true }).semServico, true);
+  // a conferência já decidiu a sombra (--sombra, --sair-da-sombra ou pergunta): o serviço não desfaz
+  assert.equal(completarRecuperada(inst, { servico: { instalado: true, sombra: true } }, { sombra: false, sombraDecidida: true }).sombra, false);
+  // identidade incompleta não vira nuvem
+  assert.equal(completarRecuperada(inst, { identidade: { url: identidade.url } }).nuvem, null);
+});
+
+test("sem nuvem continua sem nuvem numa atualização ou sem perguntas, a não ser com --com-nuvem", () => {
+  const semNuvem = { nuvem: null };
+  assert.equal(semNuvemPrevisto({ inst: semNuvem, atualizar: true }), true);
+  assert.equal(semNuvemPrevisto({ inst: semNuvem, semPerguntas: true }), true);
+  assert.equal(semNuvemPrevisto({ inst: semNuvem }), false, "com perguntas, numa instalação, a nuvem é oferecida");
+  assert.equal(semNuvemPrevisto({ inst: semNuvem, atualizar: true, comNuvem: true }), false);
+  assert.equal(semNuvemPrevisto({ inst: { nuvem: { url: "u" } }, atualizar: true }), false);
+  assert.equal(semNuvemPrevisto({ inst: null, atualizar: true }), false);
+  assert.equal(semNuvemPrevisto({ inst: { nuvem: { url: "u" } }, semNuvem: true }), true);
 });
 
 test("antes de atualizar: cópia conferida do estado, sem o programa, e só as 5 cópias mais novas ficam", () => {

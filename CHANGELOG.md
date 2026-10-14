@@ -13,19 +13,28 @@ Duas correções de uma contribuição: Kaio Henrique (pilotaimoveis) achou as f
 PRs #1 e #2. Atualize os computadores pelo painel; a nuvem não muda nesta versão.
 
 - **Login no WSL:** o login pela tela do Reveza abre a janela anônima do navegador do Windows, e o WSL deixa de contar
-  como Linux sem tela. A mensagem só diz que abriu quando o navegador abriu de fato: um Linux sem `xdg-open` passa a
-  ouvir que não deu para abrir, em vez de um "abri" que não aconteceu.
+  como Linux sem tela. Os discos do Windows saem da tabela de montagens do próprio WSL (WSL 1 e 2, qualquer letra) e do
+  `root` do `[automount]` no `/etc/wsl.conf`, em vez de um `/mnt/c` fixo: quem mudou a pasta dos discos ou instalou o
+  navegador em outro disco também é atendido. Sem navegador achado, vale o `explorer.exe` do Windows. A mensagem só diz
+  que abriu quando o navegador abriu de fato: um Linux sem `xdg-open`, ou um WSL com a ponte para o Windows desligada,
+  passa a ouvir que não deu para abrir, em vez de um "abri" que não aconteceu.
 - **Computador sem `instalacao.json` volta a se atualizar:** o instalador só gravava esse arquivo no último passo, e
   uma instalação que parava depois de subir o agente deixava o computador funcionando e o **Atualizar** do painel
   recusando para sempre ("não há instalação para atualizar"). Agora o instalador grava o arquivo logo depois de subir
-  o serviço, e de novo no fim. E o agente, se o arquivo não existe, recria antes de atualizar, no formato de computador
-  ligado (o endereço da nuvem e a chave pública, nada de segredo): o instalador atualiza só o programa daquele
-  computador, sem mexer na nuvem nem no painel.
+  o serviço, e de novo no fim. E, quando o arquivo falta, o instalador reconhece a instalação pelo que ela deixou no
+  disco (o `ponte.json` que o agente grava ao subir e o comando `reveza`, que aponta para o programa) e pergunta ao
+  programa novo o resto: se há serviço e se o gerenciador de serviços responde, o modo sombra e o endereço da nuvem
+  (só o endereço e a chave pública, nada de segredo). Atualiza só o programa daquele computador, sem mexer na nuvem nem
+  no painel. Como quem reconhece é o instalador, e todo agente chama o instalador novo no Atualizar, o computador que
+  já está com a recusa também se atualiza por esta versão, venha de qual versão vier.
+- **WSL sem systemd:** a unidade do serviço existe no disco, mas nunca roda. O instalador passa a perguntar se o
+  gerenciador responde e, se não responde, segue sem serviço, em vez de instalar um serviço que derrubaria a
+  atualização depois de 30 s.
 - **O que muda junto:** uma instalação nova que parar depois de subir o serviço e for rodada de novo continua como
   atualização da mesma nuvem, em vez de criar outra. Os passos de contas e alertas, que só rodam na instalação nova,
-  não se repetem nesse caso.
-- **O que ainda não resolve:** quem recria o arquivo é o agente novo. Um computador que já está sem o arquivo, com o
-  agente de antes da 0.6.1, ainda recebe a recusa nesta atualização; nesse caso, abra uma issue.
+  não se repetem nesse caso. Sem `ponte.json` nem programa no disco, a recusa de antes continua: não há o que atualizar.
+- **Para quem contribui:** `reveza servico status --json` passa a dizer se o gerenciador de serviços respondeu e o modo
+  sombra, e `reveza nuvem identidade` mostra o endereço da nuvem e a chave pública do computador.
 
 ## 0.6.0 · 13/10/2026
 

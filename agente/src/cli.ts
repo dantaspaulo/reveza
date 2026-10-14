@@ -165,10 +165,11 @@ Uso: reveza <comando> [opções]
   ligar XXXX-XXXX-YYYY            no computador que já usa o Reveza: libera o computador novo que mostra este código
   ligar --mostrar-frase           emergência: 6 palavras para um computador já ligado que perdeu a chave do cofre
   ligar --frase "..."             emergência: recebe a chave do cofre pelas 6 palavras (só computador já ligado)
-  servico instalar|remover|status [--sombra]
+  servico instalar|remover|status [--sombra] [--json]
   importar --de <pasta>           copia contas, credenciais e histórico de outro gestor (nada é apagado)
   cofre iniciar                   cria a chave do cofre no primeiro computador
   nuvem entrar --url U --chave-publica K --email E    guarda a identidade deste computador (senha pelo stdin)
+  nuvem identidade                o endereço da nuvem deste computador, em JSON (sem e-mail nem senha); null sem nuvem
   atualizacao-completa ligar|desligar|status [--stdin]
                                   funções da nuvem e painel novos vão ao ar sozinhos: os tokens do Supabase e da Vercel
                                   ficam na nuvem cifrados com a chave do cofre (desligada de fábrica; pede sem eco)
@@ -715,7 +716,12 @@ async function cmdServico(amb: Ambiente, a: Args): Promise<number> {
   else if (acao === "remover") amb.saida(await servico.remover(o));
   else if (acao === "status") {
     const s = await servico.status(o);
-    amb.saida(s.instalado ? `instalado, ${s.detalhe}` : "não instalado");
+    if (a.flags.json) {
+      // o instalador lê isto para reconhecer uma instalação que não tem instalacao.json: modo sombra e porta saem do serviço
+      const i = servico.instalado(o);
+      const sombra = i ? i.sombra : !!lerJson<InfoPonte>(arquivoPonte(amb.c))?.sombra;
+      amb.saida(JSON.stringify({ instalado: s.instalado, rodando: s.rodando, detalhe: s.detalhe, gerenciador: s.gerenciador !== false, sombra, porta: i?.porta ?? null }));
+    } else amb.saida(s.instalado ? `instalado, ${s.detalhe}` : "não instalado");
     return s.rodando ? 0 : 1;
   } else {
     amb.erro("uso: reveza servico instalar|remover|status");
@@ -749,8 +755,15 @@ async function cmdImportar(amb: Ambiente, a: Args): Promise<number> {
 }
 
 async function cmdNuvem(amb: Ambiente, a: Args): Promise<number> {
+  if (a.pos[1] === "identidade") {
+    // só o que já é público (endereço e chave anon): o e-mail e a senha do computador não saem do chaveiro
+    const guarda = (await amb.fabricas?.guarda?.()) ?? (await guardaDoSistema(amb.sistema, amb.exec, amb.c.segredos));
+    const id = await lerIdentidade(guarda).catch(() => null);
+    amb.saida(JSON.stringify(id ? { url: id.url, chavePublica: id.chavePublica } : null));
+    return 0;
+  }
   if (a.pos[1] !== "entrar") {
-    amb.erro("uso: reveza nuvem entrar --url <https://...supabase.co> --chave-publica <chave anon> --email <e-mail do computador>");
+    amb.erro("uso: reveza nuvem entrar --url <https://...supabase.co> --chave-publica <chave anon> --email <e-mail do computador> | reveza nuvem identidade");
     return 2;
   }
   const { url, email } = a.flags;

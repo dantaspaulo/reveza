@@ -34,6 +34,11 @@ export interface StatusServico {
   instalado: boolean;
   rodando: boolean;
   detalhe: string;
+  /**
+   * O gerenciador de serviços respondeu. Só o Linux diz que não: no WSL sem systemd (e em contêiner) a unidade pode
+   * existir no disco sem nunca rodar, e o `systemctl` não responde nada na saída padrão.
+   */
+  gerenciador?: boolean;
 }
 
 function argumentos(o: OpcoesServico): string[] {
@@ -357,7 +362,7 @@ export async function status(o: OpcoesServico): Promise<StatusServico> {
     const instalado = fs.existsSync(arquivoUnidade(o));
     const r = await o.exec.rodar(["systemctl", "--user", "is-active", UNIDADE]);
     const estado = r.saida.trim() || "desconhecido";
-    return { instalado, rodando: estado === "active", detalhe: estado };
+    return { instalado, rodando: estado === "active", detalhe: estado, gerenciador: r.saida.trim() !== "" };
   }
   const r = await o.exec.rodar(["schtasks", "/Query", "/TN", TAREFA, "/FO", "LIST"]);
   const rodando = /Running|Em execu/i.test(r.saida);

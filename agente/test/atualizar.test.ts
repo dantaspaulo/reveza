@@ -17,7 +17,6 @@ import {
   extrairTarGz,
   faltamNaNuvem,
   GithubOficial,
-  instalacaoRecuperada,
   lerPedido,
   MAIS_NOVA,
   lerComLimite,
@@ -445,50 +444,6 @@ describe("o agente atualiza o próprio programa a pedido do painel", () => {
     const outra = await pedir(2, { versao: MAIS_NOVA });
     assert.equal(outra.estado, "recusado");
     assert.match(String(outra.resposta?.erro), /já há uma atualização em andamento/);
-  });
-
-  test("sem instalacao.json (a instalação parou antes do fim): recria no formato de computador ligado, sem segredo, e segue", async () => {
-    await preparar();
-    const arq = path.join(m!.c.base, "instalacao.json");
-    assert.equal(fs.existsSync(arq), false);
-    const senha = "s".repeat(48);
-    await m!.guarda.gravar("computador", JSON.stringify({ url: "https://abcdefghijklmnopqrst.supabase.co", chavePublica: "chave-anon", email: "pc@exemplo.com", senha }));
-    const cmd = await pedir(1, { versao: MAIS_NOVA });
-    assert.equal(cmd.estado, "feito", JSON.stringify(cmd.resposta));
-    const texto = fs.readFileSync(arq, "utf8");
-    const inst = JSON.parse(texto);
-    assert.deepEqual(inst.nuvem, { url: "https://abcdefghijklmnopqrst.supabase.co", anon: "chave-anon" }, "sem ref: o instalador atualiza só este computador");
-    assert.equal(inst.painel, null);
-    assert.equal(inst.versao, VERSAO);
-    assert.equal(inst.sombra, false);
-    assert.ok(!texto.includes(senha) && !texto.includes("pc@exemplo.com"), "a senha e o e-mail do computador ficam no chaveiro");
-    if (process.platform !== "win32") assert.equal(fs.statSync(arq).mode & 0o777, 0o600);
-    assert.deepEqual(exec.iniciados[0]!.argv.slice(5), ["--atualizar", "--sim"]);
-  });
-
-  test("o instalacao.json que existe não é tocado (nem o ilegível)", async () => {
-    await preparar();
-    const arq = path.join(m!.c.base, "instalacao.json");
-    fs.writeFileSync(arq, "não é json");
-    const cmd = await pedir(1, { versao: MAIS_NOVA });
-    assert.equal(cmd.estado, "feito", JSON.stringify(cmd.resposta));
-    assert.equal(fs.readFileSync(arq, "utf8"), "não é json");
-  });
-
-  test("o instalacao.json recuperado: sem identidade da nuvem, sem nuvem", () => {
-    const agora = new Date("2026-10-13T22:00:00Z");
-    const r = instalacaoRecuperada({ versao: "1.2.3", app: "/x/app", identidade: null, agora });
-    assert.deepEqual(r, {
-      versao: "1.2.3",
-      app: "/x/app",
-      sombra: false,
-      semServico: false,
-      atualizadoEm: agora.toISOString(),
-      instaladoEm: agora.toISOString(),
-      nuvem: null,
-      painel: null,
-      recuperadaEm: agora.toISOString(),
-    });
   });
 
   test("versão menor, igual, não publicada, ou pedido com endereço: recusado sem baixar nada", async () => {

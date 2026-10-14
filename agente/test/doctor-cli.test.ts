@@ -195,6 +195,53 @@ describe("linha de comando", () => {
     assert.equal(await executarCli(["nuvem", "entrar", "--url", "https://x.supabase.co", "--chave-publica", "k", "--email", "e@x.com"], curta), 1);
   });
 
+  test("nuvem identidade mostra só o endereço e a chave pública, nunca o e-mail nem a senha", async () => {
+    tmp = pastaTemporaria();
+    const a = ambiente({ env: { REVEZA_SENHA: "s".repeat(64) } });
+    assert.equal(await executarCli(["nuvem", "identidade"], a), 0);
+    assert.equal(a.saidas.at(-1), "null");
+    assert.equal(await executarCli(["nuvem", "entrar", "--url", "https://exemplo.supabase.co", "--chave-publica", "chave-anon", "--email", "pc@exemplo.com"], a), 0);
+    assert.equal(await executarCli(["nuvem", "identidade"], a), 0);
+    const saida = a.saidas.at(-1)!;
+    assert.deepEqual(JSON.parse(saida), { url: "https://exemplo.supabase.co", chavePublica: "chave-anon" });
+    assert.ok(!saida.includes("pc@exemplo.com") && !saida.includes("s".repeat(64)));
+  });
+
+  test("servico status --json: instalado, rodando, modo sombra e porta do serviço; sem serviço, a sombra da ponte", async () => {
+    tmp = pastaTemporaria();
+    const exec = new ExecutorFalso();
+    exec.responder = (argv) => (argv[0] === "launchctl" ? { codigo: 0, saida: "state = running", erro: "" } : { codigo: 0, saida: "", erro: "" });
+    const a = ambiente({ exec });
+    assert.equal(await executarCli(["servico", "status", "--json"], a), 0);
+    assert.deepEqual(JSON.parse(a.saidas.at(-1)!), { instalado: false, rodando: true, detalhe: "rodando", gerenciador: true, sombra: false, porta: null });
+    fs.mkdirSync(tmp.c.base, { recursive: true });
+    fs.writeFileSync(path.join(tmp.c.base, "ponte.json"), JSON.stringify({ porta: 7789, pid: 1, sombra: true }));
+    await executarCli(["servico", "status", "--json"], a);
+    assert.equal(JSON.parse(a.saidas.at(-1)!).sombra, true, "sem serviço instalado, vale o que o agente gravou ao subir");
+    const plist = path.join(tmp.c.home, "Library", "LaunchAgents", "ai.reveza.agente.plist");
+    fs.mkdirSync(path.dirname(plist), { recursive: true });
+    fs.writeFileSync(plist, "<string>rodar</string>\n<string>--porta</string>\n<string>7799</string>");
+    await executarCli(["servico", "status", "--json"], a);
+    assert.deepEqual(JSON.parse(a.saidas.at(-1)!), { instalado: true, rodando: true, detalhe: "rodando", gerenciador: true, sombra: false, porta: 7799 }, "o serviço instalado vence a ponte");
+    exec.responder = () => ({ codigo: 113, saida: "", erro: "" });
+    assert.equal(await executarCli(["servico", "status", "--json"], a), 1, "parado: o mesmo código de saída do status de texto");
+  });
+
+  test("servico status --json no Linux sem systemd (WSL, contêiner): a unidade existe, mas o gerenciador não respondeu", async () => {
+    tmp = pastaTemporaria();
+    const exec = new ExecutorFalso();
+    exec.responder = () => ({ codigo: 1, saida: "", erro: "System has not been booted with systemd as init system (PID 1). Can't operate." });
+    const a = ambiente({ exec, sistema: "linux" });
+    const unidade = path.join(tmp.c.home, ".config", "systemd", "user", "reveza-agente.service");
+    fs.mkdirSync(path.dirname(unidade), { recursive: true });
+    fs.writeFileSync(unidade, 'ExecStart="/usr/bin/node" "/app/cli.js" "rodar" "--sombra"\n');
+    assert.equal(await executarCli(["servico", "status", "--json"], a), 1);
+    assert.deepEqual(JSON.parse(a.saidas.at(-1)!), { instalado: true, rodando: false, detalhe: "desconhecido", gerenciador: false, sombra: true, porta: null });
+    exec.responder = () => ({ codigo: 3, saida: "inactive\n", erro: "" });
+    await executarCli(["servico", "status", "--json"], a);
+    assert.equal(JSON.parse(a.saidas.at(-1)!).gerenciador, true, "systemd respondeu (parado): o serviço existe de verdade");
+  });
+
   test("ligar: o computador novo mostra o código em letras grandes; reveza ligar XXXX-XXXX-YYYY no que tem a chave entrega", async () => {
     tmp = pastaTemporaria();
     const banco = new BancoFalso();

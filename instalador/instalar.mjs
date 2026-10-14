@@ -830,6 +830,55 @@ export function dadosDaInstalacao(ctx, inst) {
   };
 }
 
+/**
+ * Instalação existente sem nuvem continua sem nuvem numa atualização ou sem perguntas (--com-nuvem liga a nuvem).
+ */
+export function semNuvemPrevisto({ inst, semNuvem, comNuvem, atualizar, semPerguntas }) {
+  return !!semNuvem || (!!inst && !inst.nuvem && !comNuvem && (!!atualizar || !!semPerguntas));
+}
+
+/**
+ * O computador em que o Reveza roda e não há instalacao.json: até a 0.6.0 ele só era gravado no último passo, e uma
+ * instalação que parava depois do serviço deixava o --atualizar recusando para sempre (WSL, 13/10/2026). Quem
+ * reconhece é o instalador novo, que todo agente antigo chama no Atualizar do painel: nenhuma versão fica presa.
+ * O sinal de que o Reveza rodou aqui é o ponte.json (o agente grava ao subir, desde a 0.1.0); a pasta do programa vem
+ * do comando reveza (aponta para o cli.js instalado, também com --pasta) ou da pasta padrão. Serviço e nuvem se
+ * completam depois, perguntando ao programa novo (completarRecuperada).
+ */
+export function instalacaoNoDisco({ base, bin, padrao = path.join(base, "app"), ler = (f) => readFileSync(f, "utf8"), haArquivo = existsSync }) {
+  let ponte;
+  try { ponte = JSON.parse(ler(path.join(base, "ponte.json"))); } catch { return null; }
+  if (!ponte || typeof ponte !== "object") return null;
+  const candidatas = [];
+  for (const nome of ["reveza", "reveza.cmd"]) {
+    try {
+      const cli = /"([^"]+cli\.js)"/.exec(ler(path.join(bin, nome)))?.[1];
+      const app = cli?.replace(/[\\/]agente[\\/]dist[\\/]src[\\/]cli\.js$/, "");
+      if (app && app !== cli) candidatas.push(app);
+    } catch { /* sem esse lançador */ }
+  }
+  candidatas.push(padrao);
+  const app = candidatas.find((a) => haArquivo(path.join(a, "agente", "dist", "src", "cli.js")));
+  if (!app) return null;
+  return { app, sombra: ponte.sombra === true, semServico: false, nuvem: null, painel: null, recuperada: true };
+}
+
+/**
+ * O que a instalação reconhecida no disco não sabia, respondido pelo programa novo (`servico status --json` e
+ * `nuvem identidade`). O serviço só conta se o gerenciador responde: no WSL sem systemd a unidade existe no disco e
+ * nunca roda, e instalar o serviço ali faria a atualização voltar atrás depois de 30 s. O modo sombra sai do serviço,
+ * a não ser que a conferência já tenha decidido. Sem resposta, fica o que já se sabia.
+ */
+export function completarRecuperada(inst, { servico, identidade } = {}, { semServico = false, sombra = false, sombraDecidida = false } = {}) {
+  const temServico = servico?.instalado === true && servico.gerenciador !== false;
+  return {
+    ...inst,
+    semServico: semServico || !temServico,
+    sombra: !sombraDecidida && temServico && typeof servico.sombra === "boolean" ? servico.sombra : sombra,
+    nuvem: identidade?.url && identidade?.chavePublica ? { url: identidade.url, anon: identidade.chavePublica } : inst.nuvem,
+  };
+}
+
 // ── principal ─────────────────────────────────────────────────────────────────
 async function main() {
   const a = lerArgs(process.argv.slice(2));
@@ -843,7 +892,7 @@ async function main() {
   if (tem("--ajuda") || tem("--help") || tem("-h")) return console.log(`Reveza AI ${VERSAO}\n\n${uso()}`);
   console.log(`\n${verde("◆ Reveza AI")} ${fraco(`v${VERSAO}`)}  ${fraco(t("gestor de contas do assistente de código", "account manager for your coding assistant"))}`);
 
-  const inst = lerInstalacao(ARQ_INST);
+  let inst = lerInstalacao(ARQ_INST);
   const semPerguntas = tem("--sim") || !process.stdin.isTTY;
   let pedidoDeDominio;
   try {
@@ -857,7 +906,7 @@ async function main() {
     app: a.valores["--pasta"] ? path.resolve(a.valores["--pasta"]) : inst?.app || path.join(BASE, "app"),
     atualizar: tem("--atualizar"), sombra: tem("--sombra") || !!inst?.sombra, forcarSombra: tem("--sombra"), sairDaSombra: tem("--sair-da-sombra"),
     importar: a.valores["--importar"],
-    semNuvem: tem("--sem-nuvem") || (!!inst && !inst.nuvem && !tem("--com-nuvem") && (tem("--atualizar") || !process.stdin.isTTY || tem("--sim"))),
+    semNuvem: semNuvemPrevisto({ inst, semNuvem: tem("--sem-nuvem"), comNuvem: tem("--com-nuvem"), atualizar: tem("--atualizar"), semPerguntas }),
     nuvemNova: !inst?.nuvem, semServico: tem("--sem-servico"), semReactBits: tem("--sem-react-bits"),
     dominioPedido: pedidoDeDominio,
   };
@@ -866,7 +915,16 @@ async function main() {
     if (tem("--demo")) return await demo(ctx);
     if (tem("--doctor")) return await doctor(ctx);
     if (tem("--desinstalar")) return await desinstalar(ctx);
-    if (ctx.atualizar && !inst) throw new Error(t("não há instalação para atualizar: rode sem --atualizar", "nothing to update: run without --atualizar"));
+    if (ctx.atualizar && !inst && !tem("--ligar")) {
+      inst = instalacaoNoDisco({ base: BASE, bin: BIN });
+      if (!inst) throw new Error(t("não há instalação para atualizar: rode sem --atualizar", "nothing to update: run without --atualizar"));
+      ctx.inst = inst;
+      if (!a.valores["--pasta"]) ctx.app = inst.app;
+      ctx.sombra = tem("--sombra") || inst.sombra;
+      ctx.semNuvem = semNuvemPrevisto({ inst, semNuvem: tem("--sem-nuvem"), comNuvem: tem("--com-nuvem"), atualizar: true, semPerguntas });
+      info(t(`O Reveza roda neste computador, mas falta o instalacao.json (instalação que parou no meio): reconheci o programa em ${inst.app} e sigo com a atualização.`,
+        `Reveza runs on this computer, but instalacao.json is missing (an installation that stopped halfway): found the program in ${inst.app}, updating it.`));
+    } else if (ctx.atualizar && !inst) throw new Error(t("não há instalação para atualizar: rode sem --atualizar", "nothing to update: run without --atualizar"));
     // computador novo: entra numa instalação que já existe (código do painel) ou cria uma nova
     ctx.ligar = tem("--ligar") || (!inst && /^rvz(c|l|pc)_/.test(process.env.REVEZA_CODIGO || ""));
     if (!inst && !ctx.ligar && !ctx.atualizar && !ctx.importar && !tem("--com-nuvem") && !tem("--sem-nuvem") && !ctx.semPerguntas) {
@@ -888,8 +946,10 @@ async function main() {
     const etapa = (id) => numerarProximoTitulo(numeroDaEtapa(ctx.etapas, id));
     planejar();
 
+    const sombraAntes = ctx.sombra;
     etapa("conferir");
     await conferir(ctx);
+    const sombraDecidida = ctx.forcarSombra || ctx.sairDaSombra || ctx.sombra !== sombraAntes;
     if (inst) {
       // antes de mexer em qualquer coisa: cópia conferida do estado (contas, logins, uso, configuração, identidade)
       ctx.copia = copiarEstado(BASE, `antes-${VERSAO}`);
@@ -897,6 +957,27 @@ async function main() {
     }
     etapa("programa");
     await programa(ctx);
+    if (inst?.recuperada) {
+      // o programa novo responde o que o instalacao.json diria: se há serviço (e o gerenciador funciona), sombra e nuvem
+      const json = (args) => { try { return JSON.parse(reveza(ctx, args).saida.trim().split("\n").pop()); } catch { return undefined; } };
+      const servicoAtual = json(["servico", "status", "--json"]);
+      Object.assign(inst, completarRecuperada(inst, { servico: servicoAtual, identidade: json(["nuvem", "identidade"]) },
+        { semServico: ctx.semServico, sombra: ctx.sombra, sombraDecidida }));
+      ctx.semServico = inst.semServico;
+      ctx.sombra = inst.sombra;
+      ctx.semNuvem = semNuvemPrevisto({ inst, semNuvem: tem("--sem-nuvem"), comNuvem: tem("--com-nuvem"), atualizar: true, semPerguntas: ctx.semPerguntas });
+      ctx.nuvemNova = !inst.nuvem;
+      ctx.soEsteComputador = soEsteComputador(inst, ctx.atualizar);
+      ctx.manterNuvem = manterNuvemPrevisto({ atualizar: ctx.atualizar, temNuvem: !!inst.nuvem, semPerguntas: ctx.semPerguntas,
+        tokenNoAmbiente: !!process.env.SUPABASE_ACCESS_TOKEN });
+      planejar();
+      if (servicoAtual?.instalado && servicoAtual.gerenciador === false) {
+        nao(t("o serviço está no disco, mas o gerenciador de serviços não responde (WSL sem systemd?): sigo sem serviço",
+          "the service is on disk, but the service manager does not answer (WSL without systemd?): continuing without a service"));
+      }
+      ok(t(`instalação reconhecida: ${inst.semServico ? "sem serviço" : "com serviço"}${inst.sombra ? ", modo sombra" : ""}, ${inst.nuvem ? "ligada à nuvem" : "sem nuvem"}`,
+        `installation recognized: ${inst.semServico ? "no service" : "with service"}${inst.sombra ? ", shadow mode" : ""}, ${inst.nuvem ? "joined to the cloud" : "no cloud"}`));
+    }
     if (ctx.ligar) {
       etapa("ligar");
       await ligar(ctx);
