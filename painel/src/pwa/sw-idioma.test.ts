@@ -1,12 +1,11 @@
-import { readFileSync } from "node:fs"
 
 import { describe, expect, it } from "vitest"
 
 import { idiomaDoNavegador } from "@/i18n"
+import sw from "../../public/sw.js?raw"
 
 /** O idiomaDoSistema do service worker (public/sw.js), rodado com um navigator de mentira. */
 function idiomaDoSistema(navigator: unknown): string {
-  const sw = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf8")
   const fonte = /function idiomaDoSistema\(\) \{[\s\S]*?\n\}\n/.exec(sw)?.[0]
   if (!fonte) throw new Error("idiomaDoSistema sumiu do sw.js")
   return new Function("self", `${fonte}; return idiomaDoSistema()`)({ navigator }) as string
