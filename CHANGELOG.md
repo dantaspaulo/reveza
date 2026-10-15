@@ -7,6 +7,30 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.7.0 · 15/10/2026
+
+O Reveza AI em inglês, contribuição de [@andrefrd](https://github.com/andrefrd) ([#3](https://github.com/dantaspaulo/reveza/pull/3)).
+O instalador pergunta o idioma logo no começo e a escolha vale para o agente, os comandos do Claude Code e os alertas
+da nuvem; o painel segue o idioma do aparelho. Quem já usa continua em português. Atualize os computadores pelo painel
+(ou com `npx github:dantaspaulo/reveza --atualizar` em cada um); a nuvem se atualiza sozinha (ou pelo **Atualizar a
+nuvem**).
+
+- **Idioma no primeiro passo do instalador:** português ou inglês, com a sugestão pelo idioma do terminal.
+  `--idioma pt|en` pula a pergunta; com `--sim` (ou sem terminal) fica em português, salvo `--idioma en`. A escolha fica
+  gravada na instalação. Quem já usa o Reveza ouve a pergunta uma vez, na primeira atualização pelo terminal; pela
+  atualização do painel, segue em português sem pergunta.
+- **Agente e Claude Code:** a linha de comando, o `doctor`, a linha de status, os avisos, o `/reveza` e a retomada da
+  sessão falam o idioma da instalação.
+- **Alertas pelos canais** (celular, e-mail, Telegram, webhook) no idioma da instalação: vale o do último computador
+  que atualizou a nuvem.
+- **Painel:** sem escolha feita, segue o primeiro idioma do aparelho. O aviso do celular que chega sem texto segue a
+  mesma regra.
+- **Documentação em inglês:** `README.en.md` e `docs/ARQUITETURA.en.md`, com o seletor de idioma no topo.
+- **Só as 2 cópias mais novas:** antes de atualizar, o instalador guarda uma cópia do estado em `~/.reveza/copias`.
+  Ficavam 5, de dezenas de MB cada; agora ficam as 2 mais novas.
+- **Ainda em português:** alguns textos do agente que entraram na 0.6.1 (como a saída do `reveza servico status`).
+  Ficam para a próxima passada de tradução.
+
 ## 0.6.3 · 15/10/2026
 
 Painel sem o aviso **Neste navegador**. Era o único aviso que dependia da aba aberta, e passava a impressão de que a
