@@ -17,8 +17,8 @@ nuvem**).
 
 - **Idioma no primeiro passo do instalador:** português ou inglês, com a sugestão pelo idioma do terminal.
   `--idioma pt|en` pula a pergunta; com `--sim` (ou sem terminal) fica em português, salvo `--idioma en`. A escolha fica
-  gravada na instalação. Quem já usa o Reveza ouve a pergunta uma vez, na primeira atualização pelo terminal; pela
-  atualização do painel, segue em português sem pergunta.
+  gravada na instalação. Quem já usa o Reveza e atualiza pelo terminal ouve a pergunta uma vez; pela atualização do
+  painel, segue em português sem pergunta.
 - **Agente e Claude Code:** a linha de comando, o `doctor`, a linha de status, os avisos, o `/reveza` e a retomada da
   sessão falam o idioma da instalação.
 - **Alertas pelos canais** (celular, e-mail, Telegram, webhook) no idioma da instalação: vale o do último computador
@@ -28,8 +28,8 @@ nuvem**).
 - **Documentação em inglês:** `README.en.md` e `docs/ARQUITETURA.en.md`, com o seletor de idioma no topo.
 - **Só as 2 cópias mais novas:** antes de atualizar, o instalador guarda uma cópia do estado em `~/.reveza/copias`.
   Ficavam 5, de dezenas de MB cada; agora ficam as 2 mais novas.
-- **Ainda em português:** alguns textos do agente que entraram na 0.6.1 (como a saída do `reveza servico status`).
-  Ficam para a próxima passada de tradução.
+- **Ainda em português:** algumas mensagens de erro do agente, como as de quando o download de uma atualização falha
+  ou o chaveiro não responde. Ficam para a próxima passada de tradução.
 
 ## 0.6.3 · 15/10/2026
 
