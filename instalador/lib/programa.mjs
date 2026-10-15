@@ -75,7 +75,7 @@ export function copiarPrograma(raiz, destino) {
 // O que é estado do Reveza neste computador (contas e os logins delas, uso, configuração, identidade, ponte local).
 // O programa (app), os logs e o build do painel não entram: o programa anterior já fica em `<app>.anterior`.
 export const ESTADO = ["estado.json", "instalacao.json", "contas", "registro", "ponte.json", "ponte.chave", "ligar-pelo-painel"];
-const MANTER_COPIAS = 5;
+const MANTER_COPIAS = 2;
 
 function medir(alvo) {
   if (!existsSync(alvo)) return { arquivos: 0, bytes: 0 };
@@ -95,7 +95,7 @@ const carimbo = (d) => d.toISOString().replace(/[-:]/g, "").replace("T", "-").sl
 
 /**
  * Copia o estado para `<base>/copias/<data>-<rotulo>` e confere a cópia (mesmos arquivos e bytes) antes de devolver.
- * Se a conferência falhar, lança: a atualização para antes de mexer em qualquer coisa. Mantém as 5 cópias mais novas
+ * Se a conferência falhar, lança: a atualização para antes de mexer em qualquer coisa. Mantém as 2 cópias mais novas
  * (as cópias de login antigo da principal, `principal-*.json`, não entram na conta).
  */
 const processoVivo = (pid) => {

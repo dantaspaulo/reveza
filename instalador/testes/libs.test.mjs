@@ -424,7 +424,7 @@ test("sem nuvem continua sem nuvem numa atualização ou sem perguntas, a não s
   assert.equal(semNuvemPrevisto({ inst: { nuvem: { url: "u" } }, semNuvem: true }), true);
 });
 
-test("antes de atualizar: cópia conferida do estado, sem o programa, e só as 5 cópias mais novas ficam", () => {
+test("antes de atualizar: cópia conferida do estado, sem o programa, e só as 2 cópias mais novas ficam", () => {
   const base = mkdtempSync(path.join(os.tmpdir(), "reveza-copia-"));
   try {
     writeFileSync(path.join(base, "estado.json"), '{"versao":1}');
@@ -443,7 +443,7 @@ test("antes de atualizar: cópia conferida do estado, sem o programa, e só as 5
     assert.ok(!existsSync(path.join(c, "logs")));
     for (let i = 1; i <= 6; i++) copiarEstado(base, "antes-x", { agora: new Date(Date.UTC(2026, 9, 12, 4, i)) });
     const datadas = readdirSync(path.join(base, "copias")).filter((n) => /^\d{8}-/.test(n));
-    assert.equal(datadas.length, 5, "só as 5 mais novas");
+    assert.deepEqual(datadas.sort().map((n) => n.slice(0, 15)), ["20261012-040500", "20261012-040600"], "só as 2 mais novas");
     assert.ok(!datadas.some((n) => n.startsWith("20261012-030000")), "a mais velha saiu");
     assert.ok(existsSync(path.join(base, "copias", "principal-123.json")), "a cópia de login antigo da principal fica");
   } finally {
