@@ -540,12 +540,17 @@ async function cmdConectar(amb: Ambiente, a: Args): Promise<number> {
     if (con.url && !mostrouUrl && (con.janela || ++esperas >= 3)) {
       mostrouUrl = true;
       for (const linha of textoDoTerminal(con.janela, con.url, email)) amb.saida(linha);
-      void amb.perguntar(t("Código (ou só espere): ", "Code (or just wait): ")).then(async (codigo) => {
-        if (!codigo.trim()) return;
-        const r = await pedirPonte(porta, "POST", "/api/contas/codigo", { id: corpo.id, codigo: codigo.trim() }, chaveDaPonte(amb.c.ponteChave, false));
-        const c = r?.corpo as { ok?: boolean; erro?: string } | undefined;
-        if (!c?.ok) amb.erro(t(`o código não foi aceito: ${c?.erro ?? "o agente não respondeu"}`, `the code was not accepted: ${c?.erro ?? "the agent did not respond"}`));
-      });
+      // código recusado (incompleto, por exemplo): pergunta de novo, senão o terminal fica parado sem onde colar
+      const pedirCodigo = (): void =>
+        void amb.perguntar(t("Código (ou só espere): ", "Code (or just wait): ")).then(async (codigo) => {
+          if (!codigo.trim()) return;
+          const r = await pedirPonte(porta, "POST", "/api/contas/codigo", { id: corpo.id, codigo: codigo.trim() }, chaveDaPonte(amb.c.ponteChave, false));
+          const c = r?.corpo as { ok?: boolean; erro?: string } | undefined;
+          if (c?.ok) return;
+          amb.erro(t(`o código não foi aceito: ${c?.erro ?? "o agente não respondeu"}`, `the code was not accepted: ${c?.erro ?? "the agent did not respond"}`));
+          if (r) pedirCodigo();
+        });
+      pedirCodigo();
     }
     if (con.estado !== "aguardando") {
       (con.estado === "ok" ? amb.saida : amb.erro)(con.mensagem);

@@ -197,6 +197,17 @@ export class Logins {
     const c = codigo.trim();
     if (!c || c.length > 4000) return { ok: false, erro: t("código vazio", "empty code") };
     if (/[\r\n\0]/.test(c)) return { ok: false, erro: t("o código é uma linha só", "the code must be a single line") };
+    // a página mostra "código#estado"; sem a parte depois do #, o login oficial responde "Invalid code" e segue esperando
+    // calado, sem nunca terminar (15/10/2026: um clique duplo no código copia só até o #)
+    const [antes, depois] = c.split("#");
+    if (!antes || !depois)
+      return {
+        ok: false,
+        erro: t(
+          "o código está incompleto: copie o código inteiro da página, com a parte depois do #",
+          "the code is incomplete: copy the whole code from the page, including the part after the #",
+        ),
+      };
     if (!l.proc.vivo || !l.proc.escrever(c + "\n")) return { ok: false, erro: t("o login já terminou", "the sign-in has already finished") };
     return { ok: true };
   }

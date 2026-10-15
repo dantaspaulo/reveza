@@ -3,8 +3,9 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
+import { executarCli } from "../src/cli.js";
 import { criarPonte } from "../src/ponte.js";
-import { ativaEm, contaEstacionada, montar, type Montado } from "./falsos.js";
+import { ativaEm, blob, contaEstacionada, ExecutorFalso, montar, RelogioFalso, type Montado } from "./falsos.js";
 
 let m: Montado;
 let srv: http.Server;
@@ -123,11 +124,43 @@ describe("ponte local", () => {
     assert.equal(r.status, 200);
     const id = (r.corpo as { id: string }).id;
     const proc = m.cli.logins[m.cli.logins.length - 1]!.proc;
-    const c = await pedir("POST", "/api/contas/codigo", { corpo: { id, codigo: "codigo-da-pagina" } });
+    const c = await pedir("POST", "/api/contas/codigo", { corpo: { id, codigo: "codigo#estado" } });
     assert.equal(c.status, 200);
-    assert.deepEqual(proc.escrito, ["codigo-da-pagina\n"]);
+    assert.deepEqual(proc.escrito, ["codigo#estado\n"]);
     assert.equal((await pedir("POST", "/api/contas/codigo", { corpo: { id: "outro", codigo: "x" } })).status, 400);
     assert.equal((await pedir("POST", "/api/contas/codigo", { corpo: { id, codigo: "x" }, cabecalho: false })).status, 403);
+  });
+
+  test("contas conectar: código incompleto recusado no terminal, que pergunta de novo até o código inteiro", async () => {
+    const respostas = ["so-a-parte-de-antes", "codigo#estado"];
+    const perguntas: string[] = [];
+    const erros: string[] = [];
+    const antes = m.cli.logins.length;
+    const rodando = executarCli(["contas", "conectar", "c@exemplo.com"], {
+      c: m.c,
+      sistema: "linux",
+      exec: new ExecutorFalso(),
+      relogio: new RelogioFalso(),
+      saida: () => undefined,
+      erro: (t) => erros.push(t),
+      perguntar: async (q) => (perguntas.push(q), respostas.shift() ?? ""),
+      env: { REVEZA_PORTA: String(porta) },
+      script: "/app/cli.js",
+    });
+    const esperar = async (cond: () => boolean) => {
+      for (let i = 0; i < 500 && !cond(); i++) await new Promise((r) => setTimeout(r, 5));
+      assert.ok(cond());
+    };
+    await esperar(() => m.cli.logins.length > antes);
+    const { pasta, proc } = m.cli.logins[m.cli.logins.length - 1]!;
+    proc.emitir("If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&client_id=x&state=y");
+    await esperar(() => proc.escrito.length > 0);
+    assert.deepEqual(proc.escrito, ["codigo#estado\n"]);
+    assert.equal(perguntas.length, 2);
+    assert.match(erros.join("\n"), /incompleto/);
+    m.cred.d.set(pasta, blob("C1"));
+    proc.fim(0);
+    assert.equal(await rodando, 0);
   });
 
   test("trocar pela linha de comando (sem nuvem) e conta desconhecida", async () => {
