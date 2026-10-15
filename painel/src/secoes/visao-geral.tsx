@@ -26,7 +26,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { Skeleton } from "@/components/ui/skeleton"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useAgora, useConsulta, useEstado } from "@/dados/contexto"
+import { useAgora, useConsulta, useDados, useEstado } from "@/dados/contexto"
 import {
   estadoComputador,
   estadoConta,
@@ -115,7 +115,8 @@ export default function VisaoGeral() {
 
 function Faixas({ estado, agora }: { estado: Instantaneo; agora: Date }) {
   const { t, idioma } = useT()
-  const faixas = faixasDeAlerta(estado, agora)
+  const { atualizadoEm } = useDados()
+  const faixas = faixasDeAlerta(estado, agora, atualizadoEm)
   if (!faixas.length) return null
   const nomeConta = (id?: string) => estado.contas.find((c) => c.id === id)?.email ?? ""
   const pc = (id?: string) => estado.computadores.find((c) => c.id === id)
@@ -333,8 +334,9 @@ function EmUso({ estado, agora }: { estado: Instantaneo; agora: Date }) {
 function CartaoComputador({ pc, estado, agora }: { pc: Computador; estado: Instantaneo; agora: Date }) {
   const i = useT()
   const { t, idioma } = i
+  const { atualizadoEm } = useDados()
   const conta = estado.contas.find((c) => c.id === pc.atribuicao?.contaId)
-  const situacao = estadoComputador(pc, agora)
+  const situacao = estadoComputador(pc, agora, atualizadoEm)
   const Sistema = ICONE_SISTEMA[pc.sistema]
   const r5 = conta ? resetDe(conta, "five_hour") : null
   const r7 = conta ? resetDe(conta, "seven_day") : null

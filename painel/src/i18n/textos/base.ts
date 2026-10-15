@@ -22,6 +22,13 @@ export default secao({
       aoVivo: "ao vivo",
       atualizado: "atualizado {quando}",
       offline: "Sem conexão: mostrando o último estado lido.",
+      reconectando: "reconectando…",
+      reconectandoDica:
+        "O painel está lendo a nuvem de novo (o navegador pode ter pausado esta aba para poupar memória) e mostra o último estado lido. Os computadores seguem trocando de conta sozinhos, e os alertas chegam mesmo com o painel fechado.",
+      abaDescansouTitulo: "O navegador recarregou esta aba",
+      abaDescansouTexto:
+        "Ele tirou o painel da memória para poupar recursos. Nada parou: os computadores seguem trocando de conta sozinhos, e os alertas chegam mesmo com o painel fechado. Para o painel não recarregar, ponha este endereço entre os sites que ficam sempre ativos, nas opções de economia de memória do navegador.",
+      entendi: "Entendi",
       semNuvemTitulo: "Este painel ainda não está ligado a uma nuvem",
       semNuvemTexto:
         "Faltam a URL e a chave pública do Supabase da sua instalação (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY). O instalador preenche as duas. Enquanto isso, dá para ver tudo com dados de exemplo.",
@@ -299,6 +306,13 @@ export default secao({
       aoVivo: "live",
       atualizado: "updated {quando}",
       offline: "Offline: showing the last state read.",
+      reconectando: "reconnecting…",
+      reconectandoDica:
+        "The panel is reading the cloud again (the browser may have paused this tab to save memory) and shows the last state read. The computers keep switching accounts on their own, and alerts arrive even with the panel closed.",
+      abaDescansouTitulo: "Your browser reloaded this tab",
+      abaDescansouTexto:
+        "It took the panel out of memory to save resources. Nothing stopped: the computers keep switching accounts on their own, and alerts arrive even with the panel closed. To keep the panel from reloading, add this address to the sites that always stay active, in the browser's memory saving options.",
+      entendi: "Got it",
       semNuvemTitulo: "This panel isn't connected to a cloud yet",
       semNuvemTexto:
         "The URL and public key of your installation's Supabase are missing (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY). The installer fills both in. Meanwhile, you can explore everything with sample data.",

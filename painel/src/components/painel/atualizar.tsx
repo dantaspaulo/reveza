@@ -294,7 +294,7 @@ export function LinhaNuvem() {
 /** O cartão de cima da tela Computadores: verificar, atualizar todos, como atualizar sozinho e o andamento. */
 export function CartaoAtualizacoes() {
   const { t } = useT()
-  const { fonte } = useDados()
+  const { fonte, atualizadoEm } = useDados()
   const estado = useEstado()
   const acao = useAcao()
   const agora = useAgora(5000)
@@ -324,7 +324,7 @@ export function CartaoAtualizacoes() {
   const mostrarAndamento =
     algumAtras && (modo !== "desligada" || linhas.some((l) => l.estado === "atualizando" || l.estado === "falhou"))
   const precisaNuvem = !!alvo && (linhas.some((l) => l.estado === "precisa_nuvem") || (resultado?.fase === "disponivel" && resultado.precisaNuvem))
-  const ligados = ativos.filter((pc) => estadoComputador(pc, agora) !== "parado")
+  const ligados = ativos.filter((pc) => estadoComputador(pc, agora, atualizadoEm) !== "parado")
   const conferindo = pedindoConferencia || resultado?.fase === "conferindo"
 
   const verificar = async () => {

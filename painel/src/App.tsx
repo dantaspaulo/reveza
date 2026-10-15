@@ -4,6 +4,7 @@ import { CloudOffIcon, FlaskConicalIcon, LogOutIcon, RefreshCwIcon, RotateCwIcon
 import { AuthDemo, type Autenticacao } from "@/auth/auth"
 import { SessaoProvider, useSessao } from "@/auth/sessao"
 import { AppSidebar } from "@/components/app-sidebar"
+import { AvisoAbaDescartada } from "@/components/painel/aviso-aba"
 import { VigiaTrocas } from "@/components/painel/aviso-trocas"
 import { BotaoCopiar } from "@/components/painel/copiar"
 import { Logo } from "@/components/painel/logo"
@@ -173,6 +174,8 @@ function Painel() {
       <AppSidebar />
       {/* o aviso de troca de conta neste navegador (Alertas, "Neste navegador") vale em qualquer tela */}
       <VigiaTrocas />
+      {/* a aba que o navegador descartou para poupar memória volta recarregada: diz que nada parou */}
+      <AvisoAbaDescartada />
       <SidebarInset className="min-w-0">
         <SiteHeader titulo={t(`menu.secoes.${secao.id}`)} />
         <main id="conteudo" className="min-w-0 flex-1">

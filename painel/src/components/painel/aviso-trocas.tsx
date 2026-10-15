@@ -205,6 +205,7 @@ export function CartaoAvisoNavegador() {
           <span>{situacao.texto}</span>
         </p>
         {mac ? <p className="text-xs text-muted-foreground">{t("alertas.navegador.mac")}</p> : null}
+        <p className="text-xs text-muted-foreground">{t("alertas.navegador.abaAberta")}</p>
       </CardContent>
       <CardFooter className="gap-2">
         <Button variant="outline" size="sm" onClick={() => void testar()}>

@@ -7,6 +7,29 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.6.2 · 15/10/2026
+
+Painel com a economia de memória do navegador (relato de usuário: com o Chrome no máximo de economia de memória, o
+painel "fica desconectando"). Só o painel muda: ele entra pela atualização da nuvem, que acontece sozinha (ou pelo
+**Atualizar a nuvem**). Os computadores não mudam nesta versão.
+
+- **Fechar o painel não para o Reveza.** O serviço de cada computador troca de conta sozinho, e a nuvem vigia os
+  computadores e manda os alertas (no celular, por e-mail, Telegram ou webhook) com o painel fechado. Só o aviso
+  **Neste navegador** depende da aba aberta, e o cartão dele passa a dizer isso.
+- **O que estava errado:** o Chrome e o Edge, para poupar memória, pausam a aba parada ou a descartam e recarregam
+  quando se volta a ela. Na aba pausada, a conexão em tempo real morria sem aviso e o cabeçalho seguia dizendo "ao
+  vivo". Ao voltar, o relógio da tela andava antes de chegar a leitura nova, e computadores ligados apareciam por um
+  instante como **parados**.
+- **Agora:** quando a aba volta (retomada, restaurada do cache, visível de novo ou com a rede de volta), o painel relê
+  tudo na hora e refaz a conexão em tempo real. O cabeçalho só diz "ao vivo" com leitura recente; com leitura velha ou
+  falha na última, mostra **reconectando…** em âmbar, com a hora da última leitura.
+- **Computador ligado não pisca como parado:** o estado de cada computador (e as faixas de alerta do topo) passa a
+  contar o tempo a partir da última leitura, com 20 s de folga, e não do relógio da tela. A cegueira do painel não vira
+  computador parado; quem já estava parado ou atrasado na leitura continua assim.
+- **Aba recarregada pelo navegador:** quando o navegador descartou a aba para poupar memória, o painel avisa uma vez e
+  explica como deixar o painel sempre ativo nas opções de desempenho do navegador. O **Entendi** guarda a escolha.
+- **README:** "Painel fechado", no dia a dia, em português e em inglês.
+
 ## 0.6.1 · 14/10/2026
 
 Duas correções de uma contribuição: Kaio Henrique (pilotaimoveis) achou as falhas num computador com WSL e mandou os

@@ -5,7 +5,7 @@ import { useT } from "@/i18n"
 import { pintarPorWorkspace } from "@/lib/cores"
 import { comDemo } from "@/lib/demo"
 import { navegar } from "@/lib/rota"
-import { ErroPainel, type Fonte } from "./fonte"
+import { ErroPainel, type EstadoTempoReal, type Fonte } from "./fonte"
 import type { Idioma, Instantaneo } from "./tipos"
 
 interface ContextoDados {
@@ -65,7 +65,7 @@ export function DadosProvider({ fonte, children }: { fonte: Fonte; children: Rea
     // Depois de uma ação de quem está no painel, useAcao relê na hora.
     let espera: ReturnType<typeof setTimeout> | null = null
     let ultima = Date.now()
-    const cancelar = fonte.assinar(() => {
+    const aoMudar = () => {
       if (espera) return
       const falta = Math.max(300, ultima + 15_000 - Date.now())
       espera = setTimeout(() => {
@@ -73,12 +73,50 @@ export function DadosProvider({ fonte, children }: { fonte: Fonte; children: Rea
         ultima = Date.now()
         void recarregar()
       }, falta)
-    })
+    }
+    let atual: EstadoTempoReal = "conectando"
+    let desde = 0
+    let cancelar = () => {}
+    const ligar = () => {
+      cancelar()
+      desde = Date.now()
+      cancelar = fonte.assinar(aoMudar, (e) => {
+        atual = e
+      })
+    }
+    ligar()
+    // O cliente do tempo real tenta voltar sozinho; se o canal ficou para trás, assina de novo (no máximo a cada 10 s).
+    const religarSePreciso = () => {
+      if (atual !== "ligado" && Date.now() - desde > 10_000) ligar()
+    }
     // rede de segurança: se o tempo real cair, relê a cada 30 s e ao voltar para a aba
-    const intervalo = setInterval(() => void recarregar(), 30_000)
-    const aoVoltar = () => document.visibilityState === "visible" && void recarregar()
-    const aoMudarRede = () => setOnline(navigator.onLine)
+    const intervalo = setInterval(() => {
+      void recarregar()
+      religarSePreciso()
+    }, 30_000)
+    const aoVoltar = () => {
+      if (document.visibilityState !== "visible") return
+      void recarregar()
+      religarSePreciso()
+    }
+    // A aba que o navegador congelou para poupar memória (ou que voltou do cache de ir e voltar) volta com o canal
+    // parecendo vivo e às vezes morto: relê na hora e assina de novo.
+    const aoDescongelar = () => {
+      void recarregar()
+      ligar()
+    }
+    const aoMostrar = (ev: PageTransitionEvent) => {
+      if (ev.persisted) aoDescongelar()
+    }
+    const aoMudarRede = () => {
+      setOnline(navigator.onLine)
+      if (!navigator.onLine) return
+      void recarregar()
+      religarSePreciso()
+    }
     document.addEventListener("visibilitychange", aoVoltar)
+    document.addEventListener("resume", aoDescongelar)
+    window.addEventListener("pageshow", aoMostrar)
     window.addEventListener("online", aoMudarRede)
     window.addEventListener("offline", aoMudarRede)
     return () => {
@@ -86,6 +124,8 @@ export function DadosProvider({ fonte, children }: { fonte: Fonte; children: Rea
       if (espera) clearTimeout(espera)
       clearInterval(intervalo)
       document.removeEventListener("visibilitychange", aoVoltar)
+      document.removeEventListener("resume", aoDescongelar)
+      window.removeEventListener("pageshow", aoMostrar)
       window.removeEventListener("online", aoMudarRede)
       window.removeEventListener("offline", aoMudarRede)
     }

@@ -46,6 +46,9 @@ export interface ResultadoNuvem {
   motivo: string | null
 }
 
+/** Como está o aviso ao vivo da nuvem para este painel. */
+export type EstadoTempoReal = "conectando" | "ligado" | "caiu"
+
 export interface Fonte {
   readonly demo: boolean
   readonly recursos: Recursos
@@ -57,8 +60,11 @@ export interface Fonte {
   historico(desde: Date): Promise<PontoHistorico[]>
   auditoria(limite: number): Promise<RegistroAuditoria[]>
   minhasSessoes(): Promise<SessaoAberta[]>
-  /** Avisa quando algo mudou na nuvem (ou no relógio da demonstração). Devolve a função que cancela. */
-  assinar(aoMudar: () => void): () => void
+  /**
+   * Avisa quando algo mudou na nuvem (ou no relógio da demonstração). Devolve a função que cancela. `aoEstado` conta
+   * como está o tempo real: conectando, ligado, ou caiu (o navegador congelou a aba, a rede caiu, a nuvem recusou).
+   */
+  assinar(aoMudar: () => void, aoEstado?: (estado: EstadoTempoReal) => void): () => void
 
   // escrita (no banco: admin + aal2; cada função grava a auditoria)
   salvarConfig(campos: Partial<ConfigTroca>): Promise<void>

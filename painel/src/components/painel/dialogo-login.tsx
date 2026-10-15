@@ -101,11 +101,11 @@ export function DialogoLogin({
   conta?: Conta
 }) {
   const { t } = useT()
-  const { fonte } = useDados()
+  const { fonte, atualizadoEm } = useDados()
   const estado = useEstado()
   const agora = useAgora(5000)
   const acao = useAcao()
-  const ligados = estado.computadores.filter((c) => estadoComputador(c, agora) === "online")
+  const ligados = estado.computadores.filter((c) => estadoComputador(c, agora, atualizadoEm) === "online")
   // quem abre passa key={chave da abertura}: o formulário nasce limpo a cada vez
   const [email, setEmail] = React.useState(conta?.email ?? "")
   const [pc, setPc] = React.useState<string>(() => ligados[0]?.id ?? "")

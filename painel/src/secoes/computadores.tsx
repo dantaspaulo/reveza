@@ -131,12 +131,12 @@ export default function Computadores() {
 
 function CartaoComputador({ pc, estado, agora }: { pc: Computador; estado: Instantaneo; agora: Date }) {
   const { t, idioma } = useT()
-  const { fonte } = useDados()
+  const { fonte, atualizadoEm } = useDados()
   const acao = useAcao()
   const { pode } = usePermissao()
   const trocar = useDialogo()
   const [revogar, setRevogar] = React.useState(false)
-  const situacao = estadoComputador(pc, agora)
+  const situacao = estadoComputador(pc, agora, atualizadoEm)
   const Sistema = ICONE_SISTEMA[pc.sistema]
   const conta = estado.contas.find((c) => c.id === pc.atribuicao?.contaId)
   const outras = estado.contas.filter((c) => c.posse?.computadorId === pc.id && c.id !== conta?.id)
@@ -474,13 +474,13 @@ const FASES_EM_CURSO = new Set<FaseLigacao>(["esperando_pedido", "esperando_codi
  */
 function LigarComputadorNovo() {
   const { t, idioma } = useT()
-  const { fonte, recarregar } = useDados()
+  const { fonte, recarregar, atualizadoEm } = useDados()
   const estado = useEstado()
   const agora = useAgora(1000)
   const acao = useAcao()
   const ativos = estado.computadores.filter((c) => !c.revogado && c.sistema !== "pendente")
   const liberam = ativos.filter((c) => compararVersao(c.versao, VERSAO_MINIMA_PARA_LIBERAR) >= 0)
-  const online = (c: Computador) => estadoComputador(c, agora) === "online"
+  const online = (c: Computador) => estadoComputador(c, agora, atualizadoEm) === "online"
   const [pc, setPc] = React.useState(() => (liberam.find(online) ?? liberam[0])?.id ?? "")
   const [etapa, setEtapa] = React.useState<EtapaLigar>({ tipo: "inicio" })
   const [lig, setLig] = React.useState<EstadoLigacao | null>(null)

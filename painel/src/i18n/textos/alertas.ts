@@ -91,6 +91,8 @@ export default secao({
         permissaoPedir: "Ao ligar, o navegador pede a permissão para mostrar notificações.",
         semNotificacao: "Sem notificação do sistema aqui: ficam o sinal e o aviso dentro do painel.",
         mac: "No Mac, se a notificação não aparecer, confira Ajustes do Sistema, Notificações, o seu navegador.",
+        abaAberta:
+          "Este aviso depende da aba aberta: com o painel fechado, ou com a aba pausada pelo navegador para poupar memória, ele para. Os alertas da nuvem (no celular, por e-mail, Telegram ou webhook) chegam mesmo com o painel fechado.",
         notificacaoTitulo: "Troca de conta",
         notificacaoVarias: "{n} trocas de conta",
         testeCorpo: "Assim chega o aviso de uma troca neste navegador.",
@@ -186,6 +188,8 @@ export default secao({
         permissaoPedir: "When you turn it on, the browser asks for permission to show notifications.",
         semNotificacao: "No system notification here: the chime and the in-panel notice remain.",
         mac: "On a Mac, if the notification doesn't show up, check System Settings, Notifications, your browser.",
+        abaAberta:
+          "This notice depends on the open tab: with the panel closed, or with the tab paused by the browser to save memory, it stops. The cloud alerts (on your phone, by email, Telegram or webhook) arrive even with the panel closed.",
         notificacaoTitulo: "Account switch",
         notificacaoVarias: "{n} account switches",
         testeCorpo: "This is how a switch notice arrives in this browser.",

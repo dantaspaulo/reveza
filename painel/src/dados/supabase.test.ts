@@ -2,9 +2,28 @@
 import { describe, expect, it } from "vitest"
 
 import { rotuloDestino } from "./rotulos"
-import { CHAVES_CONFIG, CONFIG_PADRAO, codigoDoErro, faseDaLigacao, modoAtualizar, paraDiagnostico, paraNuvem, paraVez, valorDoModo } from "./supabase"
+import {
+  CHAVES_CONFIG,
+  CONFIG_PADRAO,
+  codigoDoErro,
+  estadoDoCanal,
+  faseDaLigacao,
+  modoAtualizar,
+  paraDiagnostico,
+  paraNuvem,
+  paraVez,
+  valorDoModo,
+} from "./supabase"
 
 describe("FonteSupabase (partes puras)", () => {
+  it("o canal de tempo real conta se está ligado ou caiu; os outros estados não mudam nada", () => {
+    expect(estadoDoCanal("SUBSCRIBED")).toBe("ligado")
+    expect(estadoDoCanal("CHANNEL_ERROR")).toBe("caiu")
+    expect(estadoDoCanal("TIMED_OUT")).toBe("caiu")
+    expect(estadoDoCanal("CLOSED")).toBe("caiu")
+    expect(estadoDoCanal("JOINING")).toBeNull()
+  })
+
   it("mensagens das funções do banco viram códigos traduzíveis", () => {
     expect(codigoDoErro("confirme a verificação em duas etapas")).toBe("precisa_aal2")
     expect(codigoDoErro("só administrador")).toBe("sem_permissao")

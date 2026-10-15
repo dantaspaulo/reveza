@@ -8,7 +8,14 @@ import type { PostgrestError, RealtimeChannel } from "@supabase/supabase-js"
 import { supabase } from "./cliente"
 import { rotuloDestino } from "./rotulos"
 import { codigoDeAcesso } from "../lib/ligacao"
-import { ErroPainel, type CamposConta, type Fonte, type Recursos, type ResultadoNuvem } from "./fonte"
+import {
+  ErroPainel,
+  type CamposConta,
+  type EstadoTempoReal,
+  type Fonte,
+  type Recursos,
+  type ResultadoNuvem,
+} from "./fonte"
 import type {
   AcaoComando,
   Alerta,
@@ -155,6 +162,13 @@ const CAMPOS_CONTA: Record<keyof CamposConta, string> = {
 
 // "posse" fica de fora: ela é renovada a cada busca dos computadores e vem junto na releitura.
 const TABELAS_AO_VIVO = ["contas", "uso_janelas", "computadores", "atribuicao", "config", "eventos", "comandos"]
+
+/** O que o canal do tempo real conta (SUBSCRIBED a cada entrada e reentrada) no estado que o painel mostra. */
+export function estadoDoCanal(status: string): EstadoTempoReal | null {
+  if (status === "SUBSCRIBED") return "ligado"
+  if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") return "caiu"
+  return null
+}
 
 /** Mensagens das funções do banco (0001 a 0004) → códigos que a tela traduz. */
 const MENSAGENS: [RegExp, string][] = [
@@ -372,7 +386,7 @@ export class FonteSupabase implements Fonte {
     listarSessoes: true,
     push: Boolean(import.meta.env.VITE_VAPID_PUBLICA),
   }
-  private canal: RealtimeChannel | null = null
+  private assinaturas = 0
 
   private async eu(): Promise<Eu> {
     const sb = supabase()
@@ -663,15 +677,22 @@ export class FonteSupabase implements Fonte {
     }))
   }
 
-  assinar(aoMudar: () => void): () => void {
+  assinar(aoMudar: () => void, aoEstado?: (estado: EstadoTempoReal) => void): () => void {
     const sb = supabase()
-    let canal = sb.channel("painel")
+    // Um tópico novo a cada assinatura: o cliente devolve o canal que já existe com o mesmo nome, e o de uma aba que
+    // voltou de congelada pode estar morto. Cada assinatura cancela só o canal dela.
+    let canal: RealtimeChannel = sb.channel(`painel-${++this.assinaturas}`)
     for (const tabela of TABELAS_AO_VIVO)
       canal = canal.on("postgres_changes", { event: "*", schema: "public", table: tabela }, () => aoMudar())
-    this.canal = canal.subscribe()
+    let viva = true
+    aoEstado?.("conectando")
+    canal.subscribe((status) => {
+      const estado = estadoDoCanal(status)
+      if (viva && estado) aoEstado?.(estado)
+    })
     return () => {
-      if (this.canal) void sb.removeChannel(this.canal)
-      this.canal = null
+      viva = false
+      void sb.removeChannel(canal)
     }
   }
 

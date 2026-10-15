@@ -42,7 +42,8 @@ function CartaoSaude({ pc }: { pc: Computador }) {
   const { t, tn, tx, idioma } = useT()
   const agora = useAgora(5000)
   const { pode } = usePermissao()
-  const situacao = estadoComputador(pc, agora)
+  const { atualizadoEm } = useDados()
+  const situacao = estadoComputador(pc, agora, atualizadoEm)
   const Sistema = ICONE_SISTEMA[pc.sistema]
   const corrigir = useCorrigir(pc)
   // o que a tela mostra é o mais novo: o guardado (automático, de 10 em 10 min), o do Rodar agora ou o do Corrigir

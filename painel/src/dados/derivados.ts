@@ -55,11 +55,34 @@ export function estadoConta(c: Conta, config: ConfigTroca, agora: Date): EstadoC
 
 export type EstadoComputador = "online" | "atrasado" | "parado" | "revogado"
 
-/** Busca a cada 5 s: até 30 s é normal, até 2 min está atrasado, mais que isso parou. */
-export function estadoComputador(pc: Computador, agora: Date): EstadoComputador {
+/**
+ * Quanto o relógio dos dados anda além da última leitura. Menor que os 30 s de "online" menos a busca de 5 s dos
+ * computadores: a leitura que atrasou não tira do "online" quem está em dia.
+ */
+export const FOLGA_DO_RELOGIO_MS = 20_000
+
+/** Leitura mais velha que isto (o painel relê a cada 30 s) quer dizer que o painel deixou de ler: o cabeçalho avisa. */
+export const LEITURA_VELHA_MS = 45_000
+
+/**
+ * O relógio contra o qual se julga o que a nuvem contou. Com a leitura em dia é o relógio de verdade; com o painel sem
+ * ler (aba congelada pelo navegador, rede fora), para em `lidoEm` mais a folga: o que o painel não viu ele não sabe, e
+ * a cegueira dele não vira "atrasado" nem "parado" nos computadores (o cabeçalho é que avisa que está reconectando).
+ */
+export function relogioDosDados(agora: Date, lidoEm: Date | null | undefined): Date {
+  if (!lidoEm) return agora
+  const limite = lidoEm.getTime() + FOLGA_DO_RELOGIO_MS
+  return agora.getTime() > limite ? new Date(limite) : agora
+}
+
+/**
+ * Busca a cada 5 s: até 30 s é normal, até 2 min está atrasado, mais que isso parou. `lidoEm` é quando o painel leu a
+ * nuvem pela última vez (ver relogioDosDados).
+ */
+export function estadoComputador(pc: Computador, agora: Date, lidoEm?: Date | null): EstadoComputador {
   if (pc.revogado) return "revogado"
   if (!pc.vistoEm) return "parado"
-  const seg = (agora.getTime() - new Date(pc.vistoEm).getTime()) / 1000
+  const seg = (relogioDosDados(agora, lidoEm).getTime() - new Date(pc.vistoEm).getTime()) / 1000
   if (seg <= 30) return "online"
   if (seg <= 120) return "atrasado"
   return "parado"
@@ -112,7 +135,7 @@ export interface FaixaAlerta {
 }
 
 /** As faixas de alerta da visão geral, da mais grave para a mais leve. */
-export function faixasDeAlerta(e: Instantaneo, agora: Date): FaixaAlerta[] {
+export function faixasDeAlerta(e: Instantaneo, agora: Date, lidoEm?: Date | null): FaixaAlerta[] {
   const faixas: FaixaAlerta[] = []
   const ativos = e.computadores.filter((c) => !c.revogado)
   for (const pc of ativos) {
@@ -123,7 +146,7 @@ export function faixasDeAlerta(e: Instantaneo, agora: Date): FaixaAlerta[] {
     if (c.precisaLogin) faixas.push({ tipo: "precisa_login", nivel: "erro", contaId: c.id })
   }
   for (const pc of ativos) {
-    if (estadoComputador(pc, agora) === "parado")
+    if (estadoComputador(pc, agora, lidoEm) === "parado")
       faixas.push({ tipo: "computador_parado", nivel: "atencao", computadorId: pc.id })
   }
   // A validade guardada é a do token de acesso (algumas horas), que o computador renova sozinho com o token de
@@ -135,4 +158,18 @@ export function faixasDeAlerta(e: Instantaneo, agora: Date): FaixaAlerta[] {
   }
   if (!e.config.auto) faixas.push({ tipo: "auto_desligada", nivel: "info" })
   return faixas
+}
+
+export type SituacaoDoPainel = "ao_vivo" | "reconectando" | "sem_rede"
+
+/**
+ * O que o cabeçalho diz sobre o próprio painel. "Ao vivo" com a rede e a última leitura em dia (com o aviso ao vivo da
+ * nuvem ele relê a cada mudança; sem ele, a cada 30 s); leitura que falhou ou ficou velha (a aba congelada pelo
+ * navegador, por exemplo) é "reconectando", com o último estado lido na tela. Nada disso mexe nos computadores: eles
+ * trocam sozinhos com o painel aberto, fechado ou congelado.
+ */
+export function situacaoDoPainel(p: { online: boolean; erro: unknown; atualizadoEm: Date; agora: Date }): SituacaoDoPainel {
+  if (!p.online) return "sem_rede"
+  if (p.erro || p.agora.getTime() - p.atualizadoEm.getTime() > LEITURA_VELHA_MS) return "reconectando"
+  return "ao_vivo"
 }

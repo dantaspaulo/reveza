@@ -9,7 +9,14 @@ import { versao as versaoDoInstalador } from "@/lib/instalador"
 import { localizarDemo } from "./demo-idioma"
 import { compararVersao, FORMATO_MODELO, normalizarModelo } from "./derivados"
 import { rotuloDestino } from "./rotulos"
-import { ErroPainel, type CamposConta, type Fonte, type Recursos, type ResultadoNuvem } from "./fonte"
+import {
+  ErroPainel,
+  type CamposConta,
+  type EstadoTempoReal,
+  type Fonte,
+  type Recursos,
+  type ResultadoNuvem,
+} from "./fonte"
 import type {
   AcaoComando,
   Alerta,
@@ -857,8 +864,10 @@ export class FonteDemo implements Fonte {
     return structuredClone(this.d.sessoesAbertas)
   }
 
-  assinar(aoMudar: () => void): () => void {
+  assinar(aoMudar: () => void, aoEstado?: (estado: EstadoTempoReal) => void): () => void {
     this.ouvintes.add(aoMudar)
+    // a demonstração não tem rede: o "tempo real" dela é o relógio deste navegador, sempre ligado
+    aoEstado?.("ligado")
     if (this.comRelogio && !this.relogio && typeof window !== "undefined") {
       this.relogio = setInterval(() => {
         const t = this.agora().getTime()
