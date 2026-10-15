@@ -1,7 +1,7 @@
 {
   "name": "reveza-painel",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Painel web do Reveza AI: contas, computadores, troca automática, uso e alertas.",
   "license": "MIT",
   "type": "module",
