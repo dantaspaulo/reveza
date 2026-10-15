@@ -223,11 +223,11 @@ open? In the dashboard or in `reveza contas conectar`, open the sign-in address,
 shows. On Windows, the sign-in opens in the default browser.
 
 **Dashboard closed:** you can close it. The agent, running as a service on the computer, switches the account, and the
-cloud sends the notices: the alerts (on your phone, email, Telegram, webhook) and the stopped-computer one arrive with
-the dashboard closed. Only the **In this browser** notice needs the tab open. The browser's memory saving (in Chrome
-and Edge, for example) pauses or reloads an idle tab: the dashboard says it is reconnecting and reads the cloud again
-when you come back. To keep it from reloading, add the dashboard address to the sites that always stay active, in the
-browser's performance options.
+cloud sends the notices: every alert (on your phone, email, Telegram, webhook), including the stopped-computer one
+and the one for each account switch, arrives with the dashboard closed. No notice depends on the open tab. The
+browser's memory saving (in Chrome and Edge, for example) pauses or reloads an idle tab: the dashboard says it is
+reconnecting and reads the cloud again when you come back. To keep it from reloading, add the dashboard address to the
+sites that always stay active, in the browser's performance options.
 
 <details>
 <summary><b>🔌 API and webhooks</b></summary>

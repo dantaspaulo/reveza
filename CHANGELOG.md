@@ -7,6 +7,22 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.6.3 · 15/10/2026
+
+Painel sem o aviso **Neste navegador**. Era o único aviso que dependia da aba aberta, e passava a impressão de que a
+vigilância dos computadores dependia do navegador. Não depende: o serviço de cada computador troca de conta sozinho e
+conversa com a nuvem, e a nuvem manda todos os alertas com o painel fechado. Só o painel muda; os computadores não
+mudam nesta versão. Para receber: em **Computadores → Atualizações**, **Atualizar a nuvem** e depois publicar o painel,
+sozinho com a atualização completa ligada ou com `npx github:dantaspaulo/reveza --atualizar` no computador que criou a
+instalação (o painel mostra o passo).
+
+- **Saiu o cartão Neste navegador** (em Alertas e em Minha conta) e o vigia que, com a aba aberta, transformava cada
+  troca em notificação e sinal sonoro. O painel aberto não dispara mais nenhum aviso por conta própria.
+- **Para ser avisado de cada troca:** em **Alertas**, num canal da nuvem (no celular, por e-mail, Telegram ou webhook),
+  marque **Cada troca de conta**. Chega com o painel fechado.
+- A tela de Alertas passa a dizer que os avisos chegam mesmo com o painel fechado. O botão de testar notificação em
+  **Minha conta → Este aparelho** continua.
+
 ## 0.6.2 · 15/10/2026
 
 Painel com a economia de memória do navegador (relato de usuário: com o Chrome no máximo de economia de memória, o

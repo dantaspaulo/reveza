@@ -1,6 +1,5 @@
 // Minha conta: perfil, idioma e tema, troca de senha com reautenticação, verificação em duas etapas (TOTP com QR),
-// sessões abertas com "sair de todas", o aparelho (instalar o app, testar notificação) e o aviso de troca de conta
-// neste navegador (o mesmo cartão de Alertas).
+// sessões abertas com "sair de todas" e o aparelho (instalar o app, testar notificação).
 
 import * as React from "react"
 import {
@@ -17,7 +16,6 @@ import { toast } from "sonner"
 import { AtivarTotp, CampoCodigo } from "@/auth/telas"
 import { problemaSenha } from "@/auth/auth"
 import { useSessao } from "@/auth/sessao"
-import { CartaoAvisoNavegador } from "@/components/painel/aviso-trocas"
 import { Confirmar } from "@/components/painel/confirmar"
 import { Pagina } from "@/components/painel/pagina"
 import { useTheme, type Tema } from "@/components/theme-provider"
@@ -53,8 +51,6 @@ export default function MinhaConta() {
           <DuasEtapas />
           <Sessoes />
           <Aparelho />
-          {/* o mesmo cartão de Alertas: a escolha é deste navegador, e as duas telas mostram o mesmo estado */}
-          <CartaoAvisoNavegador />
         </div>
       </div>
     </Pagina>

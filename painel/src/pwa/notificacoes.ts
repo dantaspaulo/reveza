@@ -38,10 +38,6 @@ export function suportePush(): Suporte {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window ? "ok" : semSuporte()
 }
 
-export function permissaoAtual(): NotificationPermission | null {
-  return typeof window !== "undefined" && "Notification" in window ? Notification.permission : null
-}
-
 /**
  * Pede a permissão de notificação. Chamar direto do clique, antes de qualquer outra espera: Safari e Firefox só
  * mostram o pedido dentro do gesto da pessoa.

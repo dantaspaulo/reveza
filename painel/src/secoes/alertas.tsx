@@ -12,7 +12,6 @@ import {
   WebhookIcon,
 } from "lucide-react"
 
-import { CartaoAvisoNavegador } from "@/components/painel/aviso-trocas"
 import { Confirmar } from "@/components/painel/confirmar"
 import { AvisoPermissao, Pagina, PedidoDuasEtapas, useFalta2fa } from "@/components/painel/pagina"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -136,7 +135,6 @@ export default function Alertas() {
           ))}
         </div>
       )}
-      <CartaoAvisoNavegador />
       <Card>
         <CardHeader>
           <CardTitle>{t("alertas.dialogo.eventos")}</CardTitle>

@@ -219,11 +219,11 @@ Entre na conta e pronto: o login termina sozinho. Está em outro aparelho, ou a 
 login abre no navegador padrão.
 
 **Painel fechado:** pode fechar. Quem troca a conta é o agente, que roda como serviço no computador, e quem avisa é a
-nuvem: os alertas (no celular, e-mail, Telegram, webhook) e o de computador parado chegam com o painel fechado. Só o
-aviso **Neste navegador** precisa da aba aberta. A economia de memória do navegador (no Chrome e no Edge, por exemplo)
-pausa ou recarrega a aba parada: o painel avisa que está reconectando e lê a nuvem de novo quando você volta. Para ele
-não recarregar, ponha o endereço do painel entre os sites que ficam sempre ativos, nas opções de desempenho do
-navegador.
+nuvem: todos os alertas (no celular, e-mail, Telegram, webhook), inclusive o de computador parado e o de cada troca
+de conta, chegam com o painel fechado. Nenhum aviso depende da aba aberta. A economia de memória do navegador (no
+Chrome e no Edge, por exemplo) pausa ou recarrega a aba parada: o painel avisa que está reconectando e lê a nuvem de
+novo quando você volta. Para ele não recarregar, ponha o endereço do painel entre os sites que ficam sempre ativos, nas
+opções de desempenho do navegador.
 
 <details>
 <summary><b>🔌 API e webhooks</b></summary>

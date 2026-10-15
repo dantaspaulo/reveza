@@ -5,7 +5,6 @@ import { AuthDemo, type Autenticacao } from "@/auth/auth"
 import { SessaoProvider, useSessao } from "@/auth/sessao"
 import { AppSidebar } from "@/components/app-sidebar"
 import { AvisoAbaDescartada } from "@/components/painel/aviso-aba"
-import { VigiaTrocas } from "@/components/painel/aviso-trocas"
 import { BotaoCopiar } from "@/components/painel/copiar"
 import { Logo } from "@/components/painel/logo"
 import { SiteHeader } from "@/components/site-header"
@@ -172,8 +171,6 @@ function Painel() {
         {t("app.pularConteudo")}
       </a>
       <AppSidebar />
-      {/* o aviso de troca de conta neste navegador (Alertas, "Neste navegador") vale em qualquer tela */}
-      <VigiaTrocas />
       {/* a aba que o navegador descartou para poupar memória volta recarregada: diz que nada parou */}
       <AvisoAbaDescartada />
       <SidebarInset className="min-w-0">

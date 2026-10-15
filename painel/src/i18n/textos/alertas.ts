@@ -3,7 +3,8 @@ import { secao } from "../secao"
 export default secao({
   pt: {
     alertas: {
-      descricao: "Para onde a nuvem avisa quando algo pede atenção. Cada canal escolhe os seus eventos.",
+      descricao:
+        "Para onde a nuvem avisa quando algo pede atenção, mesmo com o painel fechado. Cada canal escolhe os seus eventos.",
       novo: "Novo alerta",
       canais: { telegram: "Telegram", email: "E-mail", webhook: "Webhook", push: "Notificação no celular" },
       eventos: {
@@ -75,33 +76,12 @@ export default secao({
         receber: "Receber neste aparelho",
         passouAReceber: "Este aparelho passou a receber as notificações",
       },
-      navegador: {
-        titulo: "Neste navegador",
-        descricao:
-          "Enquanto o painel estiver aberto aqui (numa aba ou instalado), cada troca de conta aparece como notificação, com um sinal curto. A escolha fica só neste navegador.",
-        ligar: "Avisar trocas de conta neste navegador",
-        som: "Tocar um sinal",
-        somDica:
-          "Depois de recarregar a página, o sinal volta a tocar a partir do primeiro clique nela (regra dos navegadores).",
-        testar: "Testar",
-        permitir: "Permitir notificações",
-        ligado: "Aviso de trocas ligado neste navegador",
-        desligado: "Aviso de trocas desligado neste navegador",
-        permissaoOk: "Notificações liberadas neste navegador.",
-        permissaoPedir: "Ao ligar, o navegador pede a permissão para mostrar notificações.",
-        semNotificacao: "Sem notificação do sistema aqui: ficam o sinal e o aviso dentro do painel.",
-        mac: "No Mac, se a notificação não aparecer, confira Ajustes do Sistema, Notificações, o seu navegador.",
-        abaAberta:
-          "Este aviso depende da aba aberta: com o painel fechado, ou com a aba pausada pelo navegador para poupar memória, ele para. Os alertas da nuvem (no celular, por e-mail, Telegram ou webhook) chegam mesmo com o painel fechado.",
-        notificacaoTitulo: "Troca de conta",
-        notificacaoVarias: "{n} trocas de conta",
-        testeCorpo: "Assim chega o aviso de uma troca neste navegador.",
-      },
     },
   },
   en: {
     alertas: {
-      descricao: "Where the cloud notifies you when something needs attention. Each channel picks its events.",
+      descricao:
+        "Where the cloud notifies you when something needs attention, even with the panel closed. Each channel picks its events.",
       novo: "New alert",
       canais: { telegram: "Telegram", email: "Email", webhook: "Webhook", push: "Phone notification" },
       eventos: {
@@ -172,27 +152,6 @@ export default secao({
         naoRecebe: "This device doesn't receive them yet.",
         receber: "Receive on this device",
         passouAReceber: "This device now receives the notifications",
-      },
-      navegador: {
-        titulo: "In this browser",
-        descricao:
-          "While the panel is open here (in a tab or installed), each account switch shows up as a notification, with a short chime. The choice stays in this browser only.",
-        ligar: "Notify account switches in this browser",
-        som: "Play a chime",
-        somDica: "After reloading the page, the chime plays again from your first click on it (a browser rule).",
-        testar: "Test",
-        permitir: "Allow notifications",
-        ligado: "Switch notifications on in this browser",
-        desligado: "Switch notifications off in this browser",
-        permissaoOk: "Notifications allowed in this browser.",
-        permissaoPedir: "When you turn it on, the browser asks for permission to show notifications.",
-        semNotificacao: "No system notification here: the chime and the in-panel notice remain.",
-        mac: "On a Mac, if the notification doesn't show up, check System Settings, Notifications, your browser.",
-        abaAberta:
-          "This notice depends on the open tab: with the panel closed, or with the tab paused by the browser to save memory, it stops. The cloud alerts (on your phone, by email, Telegram or webhook) arrive even with the panel closed.",
-        notificacaoTitulo: "Account switch",
-        notificacaoVarias: "{n} account switches",
-        testeCorpo: "This is how a switch notice arrives in this browser.",
       },
     },
   },
