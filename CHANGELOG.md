@@ -7,6 +7,22 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.7.1 · 15/10/2026
+
+Correção do alerta de segurança do GitHub sobre o pacote `braces` ([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)):
+padrões muito aninhados estouram a pilha e derrubam o processo Node. Não há versão corrigida do `braces`, então ele
+saiu do painel. Nada muda no que se vê: o painel construído sai idêntico, arquivo por arquivo. Chega na próxima vez que
+o painel for publicado (com a atualização completa ligada, sozinho; ou com `npx github:dantaspaulo/reveza --atualizar`
+no computador que criou a instalação).
+
+- **Painel sem a linha de comando do shadcn/ui:** ela só entrava na instalação por um arquivo de CSS (variantes e
+  utilitários), e trazia mais 250 pacotes, entre eles o `braces`. O CSS foi copiado sem mudança para
+  `painel/src/shadcn-tailwind.css`, com a licença MIT. A instalação do painel fica mais leve.
+- **O código vulnerável nunca rodava no Reveza:** o `braces` só era usado por essa linha de comando, que nem o
+  instalador nem o painel executam. O alerta era de pacote instalado, não de falha alcançável.
+- **Teste novo** (`painel/src/dependencias.test.ts`): recusa a linha de comando do shadcn de volta nas dependências e
+  qualquer `braces` até a 3.0.3 no `package-lock.json` do painel.
+
 ## 0.7.0 · 15/10/2026
 
 O Reveza AI em inglês, contribuição de [@andrefrd](https://github.com/andrefrd) ([#3](https://github.com/dantaspaulo/reveza/pull/3)).

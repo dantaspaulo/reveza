@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./shadcn-tailwind.css";
 @import "@fontsource-variable/geist";
 
 /* Os componentes do React Bits ficam numa pasta que o git ignora; o Tailwind não olha pastas ignoradas sozinho. */
