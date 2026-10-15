@@ -10,8 +10,9 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 ## 0.6.2 · 15/10/2026
 
 Painel com a economia de memória do navegador (relato de usuário: com o Chrome no máximo de economia de memória, o
-painel "fica desconectando"). Só o painel muda: ele entra pela atualização da nuvem, que acontece sozinha (ou pelo
-**Atualizar a nuvem**). Os computadores não mudam nesta versão.
+painel "fica desconectando"). Só o painel muda; os computadores não mudam nesta versão. Para receber: em
+**Computadores → Atualizações**, **Atualizar a nuvem** e depois publicar o painel, sozinho com a atualização completa
+ligada ou com `npx github:dantaspaulo/reveza --atualizar` no computador que criou a instalação (o painel mostra o passo).
 
 - **Fechar o painel não para o Reveza.** O serviço de cada computador troca de conta sozinho, e a nuvem vigia os
   computadores e manda os alertas (no celular, por e-mail, Telegram ou webhook) com o painel fechado. Só o aviso
