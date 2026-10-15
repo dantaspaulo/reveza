@@ -3,12 +3,13 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { t } from "./texto.mjs";
 
 const API = "https://api.vercel.com";
 
 export class Vercel {
   constructor(token, { fetch: f = globalThis.fetch, equipe = null, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
-    if (!token) throw new Error("falta o token da Vercel");
+    if (!token) throw new Error(t("falta o token da Vercel", "the Vercel token is missing"));
     this.token = token;
     this.fetch = f;
     this.equipe = equipe;
@@ -61,7 +62,7 @@ export class Vercel {
 
   /** Projeto pelo nome: pega o que existe ou cria (sem framework: o painel vai pronto). */
   async projeto(nome) {
-    if (!/^[a-z0-9][a-z0-9-]{0,98}$/.test(nome)) throw new Error("nome de projeto: letras minúsculas, números e hífen");
+    if (!/^[a-z0-9][a-z0-9-]{0,98}$/.test(nome)) throw new Error(t("nome de projeto: letras minúsculas, números e hífen", "project name: lowercase letters, numbers and hyphens"));
     try {
       const p = await this.pedir("GET", `/v9/projects/${encodeURIComponent(nome)}`);
       return { id: p.id, nome: p.name, novo: false };
@@ -75,13 +76,13 @@ export class Vercel {
   /** Sobe cada arquivo pelo hash (o que a Vercel já tem não sobe de novo) e cria a implantação de produção. */
   async publicar(projeto, pasta, { log = () => {} } = {}) {
     const arquivos = listar(pasta);
-    if (!arquivos.some((a) => a.arquivo === "index.html")) throw new Error("a pasta do painel não tem index.html (o build rodou?)");
+    if (!arquivos.some((a) => a.arquivo === "index.html")) throw new Error(t("a pasta do painel não tem index.html (o build rodou?)", "the panel folder has no index.html (did the build run?)"));
     for (const a of arquivos) {
       const conteudo = readFileSync(path.join(pasta, a.arquivo));
       // o Content-Length sai sozinho do corpo (pôr à mão duplica o cabeçalho e o servidor fecha a conexão)
       await this.pedir("POST", "/v2/files", conteudo, { "Content-Type": "application/octet-stream", "x-vercel-digest": a.sha });
     }
-    log(`${arquivos.length} arquivos enviados`);
+    log(t(`${arquivos.length} arquivos enviados`, `${arquivos.length} files uploaded`));
     const d = await this.pedir("POST", "/v13/deployments", {
       name: projeto.nome, project: projeto.id, target: "production",
       files: arquivos.map((a) => ({ file: a.arquivo, sha: a.sha, size: a.tamanho })),
@@ -100,10 +101,10 @@ export class Vercel {
           return { id: d.id, url: `https://${alias}` };
         }
       }
-      if (e.readyState === "ERROR" || e.readyState === "CANCELED") throw new Error(`a implantação terminou em ${e.readyState}`);
+      if (e.readyState === "ERROR" || e.readyState === "CANCELED") throw new Error(t(`a implantação terminou em ${e.readyState}`, `the deployment ended with status ${e.readyState}`));
       await this.esperar(2000);
     }
-    throw new Error("a implantação não ficou pronta em 3 minutos");
+    throw new Error(t("a implantação não ficou pronta em 3 minutos", "the deployment was not ready after 3 minutes"));
   }
 
   /** Domínio próprio no projeto; devolve o registro de DNS que a pessoa cria (na Cloudflare ou onde estiver o domínio). */
@@ -114,7 +115,7 @@ export class Vercel {
       if (e.codigo !== "domain_already_in_use" && e.status !== 409) throw e;
       // já ligado a ESTE projeto (uma atualização anterior, ou ligado à mão): segue; em outro projeto: para
       const meu = await this.pedir("GET", `/v9/projects/${encodeURIComponent(projeto.id)}/domains/${encodeURIComponent(dominio)}`).catch(() => null);
-      if (!meu && e.codigo === "domain_already_in_use") throw new Error(`${dominio} já está em outro projeto da Vercel`);
+      if (!meu && e.codigo === "domain_already_in_use") throw new Error(t(`${dominio} já está em outro projeto da Vercel`, `${dominio} is already in another Vercel project`));
     }
     return this.registroDns(dominio);
   }

@@ -84,7 +84,7 @@ revoke all on public.reveza_migracoes from anon, authenticated;`;
  * entram também. Banco de antes do registro: as de tabela contam como feitas e as reaplicáveis rodam de novo. As
  * permissões (0099) fecham qualquer aplicação.
  */
-export function planoMigracoes(todas, feitas, bancoExiste) {
+export function planoMigracoes(todas, feitas, bancoExiste, t = (pt) => pt) {
   const conhecidas = new Map(feitas);
   if (bancoExiste && conhecidas.size === 0) {
     for (const m of todas) if (!reaplicavel(m)) conhecidas.set(m.nome, hashDe(m.sql));
@@ -100,7 +100,8 @@ export function planoMigracoes(todas, feitas, bancoExiste) {
     const igual = antes !== undefined && hashesAceitos(m.sql).includes(antes);
     if (igual && !(depoisDeUma && reaplicavel(m))) continue;
     if (!igual && antes !== undefined && !reaplicavel(m)) {
-      throw new Error(`${m.nome} mudou depois de aplicada e mexe em tabela: a mudança precisa ir numa migração nova`);
+      throw new Error(t(`${m.nome} mudou depois de aplicada e mexe em tabela: a mudança precisa ir numa migração nova`,
+        `${m.nome} changed after it was applied and touches a table: the change must go in a new migration`));
     }
     aplicar.push({ ...m, hash });
     depoisDeUma = true;
@@ -110,15 +111,15 @@ export function planoMigracoes(todas, feitas, bancoExiste) {
   return aplicar;
 }
 
-export function sqlRegistrar(nome, hash) {
-  if (!/^[0-9a-z_.]+$/.test(nome) || !/^[0-9a-f]{64}$/.test(hash)) throw new Error("migração com nome inesperado");
+export function sqlRegistrar(nome, hash, t = (pt) => pt) {
+  if (!/^[0-9a-z_.]+$/.test(nome) || !/^[0-9a-f]{64}$/.test(hash)) throw new Error(t("migração com nome inesperado", "migration with an unexpected name"));
   return `insert into public.reveza_migracoes (nome, hash) values ('${nome}', '${hash}') ` +
     `on conflict (nome) do update set hash = excluded.hash, aplicada_em = now()`;
 }
 
 export class Gerencia {
-  constructor(token, { fetch: f = globalThis.fetch, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
-    if (!token) throw new Error("falta o token de acesso do Supabase");
+  constructor(token, { fetch: f = globalThis.fetch, esperar = (ms) => new Promise((r) => setTimeout(r, ms)), t = (pt) => pt } = {}) {
+    if (!token) throw new Error(t("falta o token de acesso do Supabase", "the Supabase access token is missing"));
     this.token = token;
     this.fetch = f;
     this.esperar = esperar;
@@ -144,13 +145,13 @@ export class Gerencia {
 
   projeto(ref) { return this.pedir("GET", `/v1/projects/${ref}`); }
 
-  async esperarAtivo(ref, tentativas = 60) {
+  async esperarAtivo(ref, tentativas = 60, t = (pt) => pt) {
     for (let i = 0; i < tentativas; i++) {
       const p = await this.projeto(ref);
       if (p.status === "ACTIVE_HEALTHY") return p;
       await this.esperar(10_000);
     }
-    throw new Error("o projeto não ficou pronto em 10 minutos");
+    throw new Error(t("o projeto não ficou pronto em 10 minutos", "the project was not ready after 10 minutes"));
   }
 
   // `parametros` vão à parte do texto ($1, $2...): é assim que segredo entra no banco, porque o texto do SQL pode ficar
@@ -203,12 +204,12 @@ export function chavesVapid() {
 export const FUNCOES = { convite: true, "computador-novo": true, alertas: false, api: false, "atualizar-nuvem": false };
 
 export async function provisionar({ gerencia, ref, site, admin, smtp, turnstileSegredo, computador: criarComputador = true,
-  log = () => {}, fetch: f = globalThis.fetch }) {
-  log("Esperando o projeto ficar pronto");
-  const projeto = await gerencia.esperarAtivo(ref);
+  log = () => {}, fetch: f = globalThis.fetch, t = (pt) => pt }) {
+  log(t("Esperando o projeto ficar pronto", "Waiting for the project to be ready"));
+  const projeto = await gerencia.esperarAtivo(ref, 60, t);
   const url = `https://${ref}.supabase.co`;
 
-  log("Criando o banco (tabelas, segurança de linha, funções)");
+  log(t("Criando o banco (tabelas, segurança de linha, funções)", "Creating the database (tables, row-level security, functions)"));
   const existe = await gerencia.sql(ref, "select to_regclass('public.contas') is not null as existe");
   const jaTem = Array.isArray(existe) && existe[0] && existe[0].existe;
   await gerencia.sql(ref, SQL_REGISTRO);
@@ -217,23 +218,24 @@ export async function provisionar({ gerencia, ref, site, admin, smtp, turnstileS
   await gerencia.sql(ref, SQL_FECHAR_PADRAO);
   const registro = await gerencia.sql(ref, "select nome, hash from public.reveza_migracoes");
   const feitas = new Map((Array.isArray(registro) ? registro : []).map((r) => [r.nome, r.hash]));
-  const plano = planoMigracoes(migracoes(), feitas, jaTem);
+  const plano = planoMigracoes(migracoes(), feitas, jaTem, t);
   for (const m of plano) {
     await gerencia.sql(ref, m.sql);
-    await gerencia.sql(ref, sqlRegistrar(m.nome, m.hash));
+    await gerencia.sql(ref, sqlRegistrar(m.nome, m.hash, t));
   }
-  log(plano.length ? `Banco: ${plano.map((m) => m.nome).join(", ")}` : "Banco já estava em dia");
+  log(plano.length ? t(`Banco: ${plano.map((m) => m.nome).join(", ")}`, `Database: ${plano.map((m) => m.nome).join(", ")}`)
+    : t("Banco já estava em dia", "Database was already up to date"));
 
-  log("Configurando o login (senha forte, duas etapas, sem cadastro aberto)");
+  log(t("Configurando o login (senha forte, duas etapas, sem cadastro aberto)", "Setting up login (strong password, two-step verification, no open sign-up)"));
   const { base, opcionais } = configuracaoAuth({ site, smtp, turnstileSegredo });
   await gerencia.configAuth(ref, base);
   const recusados = [];
   for (const o of opcionais) {
     try { await gerencia.configAuth(ref, o); } catch (e) { recusados.push(Object.keys(o)[0]); }
   }
-  if (recusados.length) log(`Do plano pago, ficaram de fora: ${recusados.join(", ")}`);
+  if (recusados.length) log(t(`Do plano pago, ficaram de fora: ${recusados.join(", ")}`, `Left out (paid plan only): ${recusados.join(", ")}`));
 
-  log("Publicando as funções da nuvem");
+  log(t("Publicando as funções da nuvem", "Publishing the cloud functions"));
   const raizFuncoes = path.join(aqui, "funcoes");
   for (const [slug, jwt] of Object.entries(FUNCOES)) {
     const dir = path.join(raizFuncoes, slug);
@@ -249,26 +251,26 @@ export async function provisionar({ gerencia, ref, site, admin, smtp, turnstileS
     ...(vapid ? [{ name: "VAPID_PUBLICA", value: vapid.publica }, { name: "VAPID_PRIVADA", value: vapid.privada }] : []),
   ]);
   // O pg_cron chama a função de alertas com estes dois segredos (lidos do Vault pelo próprio banco).
-  await gravarSegredosVault(gerencia, ref, { reveza_url: url, reveza_cron: cron });
+  await gravarSegredosVault(gerencia, ref, { reveza_url: url, reveza_cron: cron }, t);
 
   const { anon, servico } = await gerencia.chaves(ref);
-  if (!anon || !servico) throw new Error("não consegui ler as chaves do projeto");
+  if (!anon || !servico) throw new Error(t("não consegui ler as chaves do projeto", "could not read the project's keys"));
 
   let adminCriado = null;
   if (admin) {
-    log("Criando o primeiro administrador");
-    adminCriado = await garantirUsuario(f, url, servico, gerencia, ref, admin.email, admin.senha);
+    log(t("Criando o primeiro administrador", "Creating the first administrator"));
+    adminCriado = await garantirUsuario(f, url, servico, gerencia, ref, admin.email, admin.senha, t);
     await gerencia.sql(ref, `insert into public.membros (user_id, papel) values ('${adminCriado}', 'admin') on conflict (user_id) do update set papel = 'admin'`);
   }
 
   let computador = null;
   if (criarComputador) {
-    log("Criando a identidade deste computador");
+    log(t("Criando a identidade deste computador", "Creating this computer's identity"));
     computador = {
       email: `pc-${randomBytes(6).toString("hex")}@computadores.reveza.invalid`,
       senha: randomBytes(36).toString("base64url"),
     };
-    const pcId = await criarUsuario(f, url, servico, computador.email, computador.senha);
+    const pcId = await criarUsuario(f, url, servico, computador.email, computador.senha, t);
     await gerencia.sql(ref, `insert into public.membros (user_id, papel) values ('${pcId}', 'computador') on conflict do nothing;
       insert into public.computadores (user_id, nome, sistema, versao) values ('${pcId}', 'Computador novo', 'pendente', '') on conflict (user_id) do nothing`);
   }
@@ -277,16 +279,16 @@ export async function provisionar({ gerencia, ref, site, admin, smtp, turnstileS
 }
 
 // Endereço do painel mudou (domínio próprio depois do da Vercel): login e funções passam a aceitar só o novo.
-export async function trocarSite(gerencia, ref, site) {
-  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(site)) throw new Error("endereço do painel inválido");
+export async function trocarSite(gerencia, ref, site, t = (pt) => pt) {
+  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(site)) throw new Error(t("endereço do painel inválido", "invalid panel address"));
   await gerencia.configAuth(ref, { site_url: site, uri_allow_list: `${site}/**` });
   await gerencia.segredos(ref, [{ name: "REVEZA_SITE", value: site }]);
 }
 
 // O valor de cada segredo vai como parâmetro, nunca no texto do SQL (auditoria, 11/10/2026).
-export async function gravarSegredosVault(gerencia, ref, pares) {
+export async function gravarSegredosVault(gerencia, ref, pares, t = (pt) => pt) {
   for (const [nome, valor] of Object.entries(pares)) {
-    if (!/^[a-z_]+$/.test(nome) || typeof valor !== "string" || !valor) throw new Error("segredo do Vault inválido");
+    if (!/^[a-z_]+$/.test(nome) || typeof valor !== "string" || !valor) throw new Error(t("segredo do Vault inválido", "invalid Vault secret"));
     const linhas = await gerencia.sql(ref, "select id from vault.secrets where name = $1", [nome]);
     const id = Array.isArray(linhas) && linhas[0] ? linhas[0].id : null;
     if (id) await gerencia.sql(ref, "select vault.update_secret($1::uuid, $2::text) is null as ok", [id, valor]);
@@ -295,9 +297,9 @@ export async function gravarSegredosVault(gerencia, ref, pares) {
 }
 
 // Instalação que caiu no meio e rodou de novo: o administrador já existe; a senha passa a ser a digitada agora.
-async function garantirUsuario(f, url, servico, gerencia, ref, email, senha) {
+async function garantirUsuario(f, url, servico, gerencia, ref, email, senha, t = (pt) => pt) {
   try {
-    return await criarUsuario(f, url, servico, email, senha);
+    return await criarUsuario(f, url, servico, email, senha, t);
   } catch (e) {
     if (e.status !== 422) throw e;
     const linhas = await gerencia.sql(ref, `select id from auth.users where email = '${email.toLowerCase()}'`);
@@ -308,13 +310,13 @@ async function garantirUsuario(f, url, servico, gerencia, ref, email, senha) {
       headers: { apikey: servico, Authorization: `Bearer ${servico}`, "Content-Type": "application/json" },
       body: JSON.stringify({ password: senha }),
     });
-    if (!r.ok) throw new Error(`atualizar o administrador: ${r.status}`);
+    if (!r.ok) throw new Error(t(`atualizar o administrador: ${r.status}`, `updating the administrator: ${r.status}`));
     return id;
   }
 }
 
-async function criarUsuario(f, url, servico, email, senha) {
-  if (!/^[^@\s'"]+@[^@\s'"]+\.[^@\s'"]+$/.test(email)) throw new Error("e-mail inválido");
+async function criarUsuario(f, url, servico, email, senha, t = (pt) => pt) {
+  if (!/^[^@\s'"]+@[^@\s'"]+\.[^@\s'"]+$/.test(email)) throw new Error(t("e-mail inválido", "invalid email"));
   const r = await f(`${url}/auth/v1/admin/users`, {
     method: "POST",
     headers: { apikey: servico, Authorization: `Bearer ${servico}`, "Content-Type": "application/json" },
@@ -322,11 +324,11 @@ async function criarUsuario(f, url, servico, email, senha) {
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const e = new Error(`criar usuário: ${r.status} ${d.msg || d.message || ""}`.trim());
+    const e = new Error(t(`criar usuário: ${r.status} ${d.msg || d.message || ""}`.trim(), `creating user: ${r.status} ${d.msg || d.message || ""}`.trim()));
     e.status = r.status;
     throw e;
   }
-  if (!/^[0-9a-f-]{36}$/.test(d.id || "")) throw new Error("criar usuário: resposta sem id");
+  if (!/^[0-9a-f-]{36}$/.test(d.id || "")) throw new Error(t("criar usuário: resposta sem id", "creating user: response without an id"));
   return d.id;
 }
 

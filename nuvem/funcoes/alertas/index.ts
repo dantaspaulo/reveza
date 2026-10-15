@@ -3,6 +3,7 @@
 // Canais: telegram, e-mail (Resend), webhook (assinado) e notificação no celular (Web Push com VAPID e o texto cifrado
 // para cada aparelho, RFC 8291). O ntfy saiu em 12/10/2026 (migração 0017).
 import { ambiente, bearer, comCors, duasEtapasOk, hex, iguais, resposta, rpc, urlExterna, usuario, type Ambiente } from "../_comum/comum.ts";
+import { idiomaDe, textoDoEvento, textos } from "../_comum/i18n.ts";
 
 export interface Evento { id: number; tipo: string; texto: string; dados: Record<string, any> }
 export interface Canal { id: string; canal: string; destino: Record<string, any>; tem_segredo: boolean; eventos: string[] }
@@ -185,18 +186,21 @@ export async function enviarPush(amb: Ambiente, f: typeof fetch = fetch, titulo 
 
 export async function enviarPendentes(amb: Ambiente, f: typeof fetch = fetch): Promise<{ eventos: number; envios: number }> {
   const p = await rpc(amb, "alertas_pendentes", { p_limite: 50 });
+  // a língua do alerta é a da instalação (a nuvem antiga não devolve: português)
+  const idioma = idiomaDe(p.idioma);
   let envios = 0;
   for (const e of p.eventos as Evento[]) {
     const chave = chaveDoEvento(e);
+    const texto = textoDoEvento(e, idioma);
     for (const c of p.canais as Canal[]) {
-      if (c.eventos.includes(chave) && (await tentar(() => enviarCanal(amb, c, "Reveza AI", e.texto, f)))) envios++;
+      if (c.eventos.includes(chave) && (await tentar(() => enviarCanal(amb, c, "Reveza AI", texto, f)))) envios++;
     }
     for (const w of p.webhooks as { id: string; url: string; eventos: string[] }[]) {
       if (!w.eventos.includes(chave) && !w.eventos.includes("*")) continue;
       if (!urlExterna(w.url)) continue;
       const enviado = await tentar(async () => {
         const s = String(await rpc(amb, "servico_segredo_webhook", { p_webhook: w.id }) ?? "");
-        const corpo = JSON.stringify({ evento: chave, tipo: e.tipo, texto: e.texto, dados: e.dados, id: e.id });
+        const corpo = JSON.stringify({ evento: chave, tipo: e.tipo, texto, dados: e.dados, id: e.id });
         const r = await f(w.url, {
           method: "POST", headers: { "Content-Type": "application/json", "X-Reveza-Assinatura": await assinatura(corpo, s) }, body: corpo,
           redirect: "manual", signal: prazo(),
@@ -209,10 +213,17 @@ export async function enviarPendentes(amb: Ambiente, f: typeof fetch = fetch): P
   return { eventos: p.eventos.length, envios };
 }
 
-export function textoResumo(r: any): string {
-  const usd = Number(r.usd ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const contas = (r.contas ?? []).map((c: any) => `${c.email}: ${c.pct == null ? "sem leitura" : Math.round(c.pct) + "%"}`).join("\n");
-  return `Hoje: US$ ${usd} equivalentes, ${r.trocas ?? 0} troca(s), ${r.agentes ?? 0} agente(s).\n${contas}`;
+export function textoResumo(r: any, idioma: unknown = "pt-BR"): string {
+  const x = textos(idioma);
+  const usd = Number(r.usd ?? 0).toLocaleString(x.local, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const contas = (r.contas ?? []).map((c: any) => `${c.email}: ${c.pct == null ? x.semLeitura : Math.round(c.pct) + "%"}`).join("\n");
+  return x.resumo(usd, r.trocas ?? 0, r.agentes ?? 0, contas);
+}
+
+// O idioma da instalação, para as ações que não leem alertas pendentes (consulta sem marcar nada como enviado).
+async function idiomaDaInstalacao(amb: Ambiente): Promise<string> {
+  const p = await rpc(amb, "alertas_pendentes", { p_limite: 0 }).catch(() => null);
+  return idiomaDe(p?.idioma);
 }
 
 export async function tratar(req: Request, amb: Ambiente, segredoCron: string): Promise<Response> {
@@ -228,9 +239,10 @@ export async function tratar(req: Request, amb: Ambiente, segredoCron: string): 
   if (doCron && corpo.acao === "resumo") {
     const r = await rpc(amb, "resumo_dia", {});
     const p = await rpc(amb, "alertas_pendentes", { p_limite: 0 });
+    const idioma = idiomaDe(p.idioma);
     let envios = 0;
     for (const c of p.canais as Canal[]) {
-      if (c.eventos.includes("resumo_dia") && (await tentar(() => enviarCanal(amb, c, "Reveza AI · resumo do dia", textoResumo(r), amb.fetch ?? fetch)))) envios++;
+      if (c.eventos.includes("resumo_dia") && (await tentar(() => enviarCanal(amb, c, textos(idioma).tituloResumo, textoResumo(r, idioma), amb.fetch ?? fetch)))) envios++;
     }
     return resposta({ ok: true, envios });
   }
@@ -243,7 +255,7 @@ export async function tratar(req: Request, amb: Ambiente, segredoCron: string): 
     if (!w || !w.ativo || !w.tem_segredo) return resposta({ ok: false, erro: "webhook desconhecido, desligado ou sem segredo" }, 404);
     if (!urlExterna(w.url)) return resposta({ ok: false, erro: "o endereço precisa ser https e público" }, 400);
     const s = String(await rpc(amb, "servico_segredo_webhook", { p_webhook: w.id }) ?? "");
-    const texto = JSON.stringify({ evento: "teste", tipo: "teste", texto: "Se chegou, o webhook está certo.", dados: {}, id: 0 });
+    const texto = JSON.stringify({ evento: "teste", tipo: "teste", texto: textos(await idiomaDaInstalacao(amb)).testeWebhook, dados: {}, id: 0 });
     const r = await (amb.fetch ?? fetch)(w.url, {
       method: "POST", headers: { "Content-Type": "application/json", "X-Reveza-Assinatura": await assinatura(texto, s) }, body: texto,
       redirect: "manual",
@@ -258,13 +270,14 @@ export async function tratar(req: Request, amb: Ambiente, segredoCron: string): 
     const p = await rpc(amb, "alertas_pendentes", { p_limite: 0 });
     const c = (p.canais as Canal[]).find((x) => x.id === corpo.alerta_id);
     if (!c) return resposta({ ok: false, erro: "alerta desconhecido ou desligado" }, 404);
+    const x = textos(p.idioma);
     if (c.canal === "push") {
-      const aceitos = await enviarPush(amb, amb.fetch ?? fetch, "Reveza AI · teste", "Se chegou, a notificação está certa.");
+      const aceitos = await enviarPush(amb, amb.fetch ?? fetch, x.tituloTeste, x.testePush);
       return aceitos > 0
         ? resposta({ ok: true, aparelhos: aceitos })
         : resposta({ ok: false, erro: "nenhum aparelho recebeu: ative a notificação neste aparelho e teste de novo" }, 502);
     }
-    const ok = await enviarCanal(amb, c, "Reveza AI · teste", "Se chegou, o canal está certo.", amb.fetch ?? fetch);
+    const ok = await enviarCanal(amb, c, x.tituloTeste, x.testeCanal, amb.fetch ?? fetch);
     return resposta({ ok }, ok ? 200 : 502);
   }
   return resposta({ ok: false, erro: "não autorizado" }, 401);

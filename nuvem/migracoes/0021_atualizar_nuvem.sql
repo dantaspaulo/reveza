@@ -27,7 +27,7 @@ alter table public.config add constraint config_chave_check check (chave in ('au
   'rodizio_minutos', 'rodizio_ordem', 'intervalo_s', 'retomar_terminal', 'espera_entre_trocas_s', 'proximo_rodizio_em',
   'fuso', 'alertas_ate', 'exigir_duas_etapas', 'cofre_impressao', 'atualizar_sozinho', 'atualizacao_vez',
   'nuvem_versao', 'nuvem_atualizacao', 'publicado', 'impressoes', 'painel_publicacao', 'atualizacao_completa',
-  'publicacao_vez'));
+  'publicacao_vez', 'idioma'));
 
 -- Os tokens cifrados (AES-256-GCM com a chave do cofre, dado associado "reveza-atualizacao|<nome>"). Ninguém lê de
 -- fora: nem o painel, nem a chave de serviço. Só as funções agente_* (computador ativo) e o apagar do administrador.

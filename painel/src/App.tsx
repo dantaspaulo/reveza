@@ -227,7 +227,7 @@ export function SecaoQuebrou({
   componentes?: string | null
   aoTentar: () => void
 }) {
-  const { t } = useT()
+  const { t, idioma } = useT()
   const versaoNova = ehFalhaDeCarga(erro)
   const mensagem = erro instanceof Error ? erro.message : String(erro ?? "")
   // a rota e a hora de quando a tela quebrou
@@ -239,8 +239,9 @@ export function SecaoQuebrou({
         caminho: window.location.pathname,
         versao: __VERSAO_PAINEL__,
         navegador: typeof navigator === "undefined" ? undefined : navigator.userAgent,
+        idioma,
       }),
-    [erro, componentes]
+    [erro, componentes, idioma]
   )
   return (
     // margem por fora (padding do invólucro): com margem no próprio cartão de largura cheia, ele vazava no celular

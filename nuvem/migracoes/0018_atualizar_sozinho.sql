@@ -14,7 +14,7 @@ alter table public.config add constraint config_chave_check check (chave in ('au
   'rodizio_minutos', 'rodizio_ordem', 'intervalo_s', 'retomar_terminal', 'espera_entre_trocas_s', 'proximo_rodizio_em',
   'fuso', 'alertas_ate', 'exigir_duas_etapas', 'cofre_impressao', 'atualizar_sozinho', 'atualizacao_vez',
   'nuvem_versao', 'nuvem_atualizacao', 'publicado', 'impressoes', 'painel_publicacao', 'atualizacao_completa',
-  'publicacao_vez'));
+  'publicacao_vez', 'idioma'));
 
 alter table public.alertas drop constraint if exists alertas_eventos_check;
 alter table public.alertas add constraint alertas_eventos_check check (eventos <@ array['sem_livre', 'precisa_login',

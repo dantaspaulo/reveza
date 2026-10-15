@@ -2,6 +2,7 @@
 // (por DNS sobre HTTPS).
 
 import { domainToASCII } from "node:url";
+import { t } from "./texto.mjs";
 
 /**
  * O subdomínio do painel, como a Vercel e o DNS entendem: minúsculas, sem esquema nem barra, sem o ponto final de nome
@@ -42,7 +43,8 @@ export function dominioPedido(opcao, env = {}) {
   if (opcao !== undefined) {
     if (/^\s*vercel\s*$/i.test(String(opcao))) return null;
     const d = dominioValido(opcao);
-    if (!d) throw new Error(`domínio inválido: ${opcao} (use um subdomínio, como contas.meudominio.com, ou vercel)`);
+    if (!d) throw new Error(t(`domínio inválido: ${opcao} (use um subdomínio, como contas.meudominio.com, ou vercel)`,
+      `invalid domain: ${opcao} (use a subdomain, like accounts.mydomain.com, or vercel)`));
     return d;
   }
   const v = env.REVEZA_DOMINIO;

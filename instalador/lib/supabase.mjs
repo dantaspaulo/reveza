@@ -1,5 +1,6 @@
 // Projetos do Supabase pela Management API: listar, criar e escolher a região mais perto.
 import { randomBytes } from "node:crypto";
+import { t } from "./texto.mjs";
 
 /** Região sugerida pelo fuso do computador (a pessoa pode trocar). */
 export function regiaoSugerida(fuso = Intl.DateTimeFormat().resolvedOptions().timeZone || "") {
@@ -35,14 +36,14 @@ export async function projetos(gerencia) {
  * (fala com o banco pela Management API), e a pessoa pode trocá-la no painel do Supabase quando quiser.
  */
 export async function criarProjeto(gerencia, { org, nome = "reveza", regiao }) {
-  if (!/^[\w-]+$/.test(org || "")) throw new Error("organização inválida");
-  if (!REGIOES.includes(regiao)) throw new Error("região desconhecida");
+  if (!/^[\w-]+$/.test(org || "")) throw new Error(t("organização inválida", "invalid organization"));
+  if (!REGIOES.includes(regiao)) throw new Error(t("região desconhecida", "unknown region"));
   const p = await gerencia.pedir("POST", "/v1/projects", {
     name: nome, organization_slug: org, db_pass: randomBytes(24).toString("base64url"),
     region_selection: { type: "specific", code: regiao },
   });
   const ref = p.ref || p.id;
-  if (!/^[a-z0-9]{20}$/.test(ref || "")) throw new Error("o Supabase não devolveu o projeto criado");
+  if (!/^[a-z0-9]{20}$/.test(ref || "")) throw new Error(t("o Supabase não devolveu o projeto criado", "Supabase did not return the created project"));
   return ref;
 }
 
@@ -52,8 +53,9 @@ export async function conferirToken(gerencia) {
     await gerencia.pedir("GET", "/v1/organizations");
     return { ok: true };
   } catch (e) {
-    if (e.status === 401) return { ok: false, erro: "token recusado (confira se copiou inteiro)" };
-    if (e.status === 403) return { ok: false, erro: "este token não pode listar organizações: use um token pessoal (Account → Access Tokens)" };
+    if (e.status === 401) return { ok: false, erro: t("token recusado (confira se copiou inteiro)", "token rejected (make sure you copied all of it)") };
+    if (e.status === 403) return { ok: false, erro: t("este token não pode listar organizações: use um token pessoal (Account → Access Tokens)",
+      "this token cannot list organizations: use a personal token (Account → Access Tokens)") };
     throw e;
   }
 }

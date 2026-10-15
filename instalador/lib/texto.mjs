@@ -2,8 +2,21 @@
 import { createInterface } from "node:readline/promises";
 
 let idioma = "pt";
-export const usarIdioma = (i) => { idioma = i === "en" ? "en" : "pt"; };
+// aceita "en", "en-US", "pt", "pt-BR"; qualquer outra coisa fica no português (o padrão)
+export const usarIdioma = (i) => { idioma = /^en\b/i.test(String(i ?? "")) ? "en" : "pt"; };
 export const t = (pt, en) => (idioma === "en" ? en : pt);
+/** O idioma como vai para o instalacao.json e para o agente (o mesmo código do painel e da nuvem). */
+export const idiomaGravado = () => (idioma === "en" ? "en" : "pt-BR");
+/** O --idioma da linha de comando, lido antes de conferir as opções: assim os erros delas já saem no idioma. */
+export function idiomaDoArgv(argv) {
+  const i = argv.indexOf("--idioma");
+  return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : undefined;
+}
+/**
+ * O idioma sugerido na pergunta inicial, pelo LANG/LC_ALL do terminal. Só sugere: sem terminal (ou com --sim) o idioma
+ * nunca vem do ambiente, porque o LANG das máquinas de CI é inglês e a saída sem --idioma tem de seguir em português.
+ */
+export const idiomaDoTerminal = (env = process.env) => (/^en/i.test(env.LC_ALL || env.LC_MESSAGES || env.LANG || "") ? "en" : "pt");
 
 const cor = (c, s) => (process.stdout.isTTY ? `\x1b[${c}m${s}\x1b[0m` : s);
 export const verde = (s) => cor("32", s);

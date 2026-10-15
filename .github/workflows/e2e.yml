@@ -6,7 +6,7 @@
 # Ensaio de uma mudança ainda não publicada, sem branch: `git diff origin/main | gzip | base64 > ensaio.txt` e
 # `gh workflow run e2e.yml -F ensaio=@ensaio.txt`. Mudança grande (o disparo aceita até 65 mil caracteres): o arquivo vai
 # num gist secreto do dono e o disparo leva o endereço "raw" dele. Só quem escreve no repositório dispara; nada é publicado.
-name: Ponta a ponta
+name: End to end
 
 # o ensaio acha a sua execução pelo nome (várias sessões podem ensaiar ao mesmo tempo); sem id, o nome de sempre
 run-name: ${{ inputs.id && format('ensaio {0}', inputs.id) || '' }}
@@ -17,11 +17,11 @@ on:
   workflow_dispatch:
     inputs:
       id:
-        description: "identificador do ensaio (scripts/ensaio.mjs acha a execução pelo nome)"
+        description: "trial run id (scripts/ensaio.mjs finds the run by its name)"
         required: false
         default: ""
       ensaio:
-        description: "mudança a ensaiar (git diff | gzip | base64); vazio = a main como está"
+        description: "change to try out (git diff | gzip | base64); empty = main as it is"
         required: false
         default: ""
 
@@ -42,7 +42,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Ensaio (só no disparo manual com mudança)
+      - name: Trial run (manual dispatch with a change only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.ensaio != '' }}
         env:
           DONO: ${{ github.repository_owner }}
@@ -57,7 +57,7 @@ jobs:
           if [[ "$ENSAIO" =~ $G ]] && [ "${BASH_REMATCH[1]}" = "$DONO" ]; then
             curl -fsS --proto =https --max-redirs 0 "$ENSAIO" -o "$A"
           elif [[ "$ENSAIO" == http* ]]; then
-            echo "só gist do dono do repositório" >&2; exit 1
+            echo "only gists owned by the repository owner are accepted" >&2; exit 1
           else
             printf '%s' "$ENSAIO" > "$A"
           fi
@@ -67,7 +67,7 @@ jobs:
           git add -A
           git -c user.name=ensaio -c user.email=ensaio@exemplo.invalid commit -q -m "ensaio"
 
-      - name: Repositório dentro de um node_modules (como o npx deixa)
+      - name: Repository inside a node_modules (the way npx installs it)
         run: |
           D="$RUNNER_TEMP/npx/_npx/e2e/node_modules/reveza"
           mkdir -p "$D"
@@ -75,7 +75,7 @@ jobs:
           git ls-files -z --others --exclude-standard | xargs -0 -r -I{} cp --parents {} "$D"
           echo "E2E_DIR=$D" >> "$GITHUB_ENV"
 
-      - name: Instalador, nuvem emulada e agente
+      - name: Installer, emulated cloud and agent
         working-directory: ${{ env.E2E_DIR }}
         run: |
           npm ci --ignore-scripts --no-audit --no-fund --loglevel=error

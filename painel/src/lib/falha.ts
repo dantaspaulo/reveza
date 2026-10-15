@@ -4,6 +4,8 @@
 
 import * as React from "react"
 
+import type { Idioma } from "@/dados/tipos"
+
 const CHAVE_RECARGA = "reveza.recarregou-por-versao"
 
 /**
@@ -81,10 +83,45 @@ export interface ContextoFalha {
   versao: string
   agora?: Date
   navegador?: string
+  /** Idioma da tela. Ausente cai em pt-BR (testes afirmam o português). */
+  idioma?: Idioma
 }
 
+// Os rótulos de "Copiar detalhes" nos dois idiomas: é texto que a pessoa manda para quem cuida da instalação.
+const TEXTOS = {
+  "pt-BR": {
+    cabecalho: "Reveza AI · painel",
+    tela: "Tela",
+    quando: "Quando",
+    navegador: "Navegador",
+    erro: "Erro",
+    tipoSemCarregar: "Tipo: pedaço do build não carregou (versão nova publicada com a aba aberta?)",
+    pilha: "Pilha",
+    componentes: "Componentes",
+  },
+  en: {
+    cabecalho: "Reveza AI · panel",
+    tela: "Page",
+    quando: "When",
+    navegador: "Browser",
+    erro: "Error",
+    tipoSemCarregar: "Type: build chunk failed to load (new version published while this tab was open?)",
+    pilha: "Stack",
+    componentes: "Components",
+  },
+} as const
+
 /** O texto de "Copiar detalhes": mensagem, pilha curta, rota e versão, sem dado sensível. */
-export function detalhesDaFalha({ erro, componentes, caminho, versao, agora = new Date(), navegador }: ContextoFalha) {
+export function detalhesDaFalha({
+  erro,
+  componentes,
+  caminho,
+  versao,
+  agora = new Date(),
+  navegador,
+  idioma = "pt-BR",
+}: ContextoFalha) {
+  const x = TEXTOS[idioma]
   const e = erro instanceof Error ? erro : null
   const mensagem = e ? `${e.name}: ${e.message}` : String(erro)
   const pilha = (e?.stack ?? "")
@@ -101,14 +138,14 @@ export function detalhesDaFalha({ erro, componentes, caminho, versao, agora = ne
     .slice(0, 6)
     .map((l) => l.replace(/https?:\/\/[^/\s)]+/g, "").replace(/\?[^\s):]*/g, ""))
   const linhas = [
-    `Reveza AI · painel ${versao}`,
-    `Tela: ${caminho.split(/[?#]/)[0]}`,
-    `Quando: ${agora.toISOString()}`,
-    ...(navegador ? [`Navegador: ${navegador}`] : []),
-    `Erro: ${mensagem}`,
-    ...(ehFalhaDeCarga(erro) ? ["Tipo: pedaço do build não carregou (versão nova publicada com a aba aberta?)"] : []),
-    ...(pilha.length ? ["Pilha:", ...pilha.map((l) => `  ${l}`)] : []),
-    ...(comps.length ? ["Componentes:", ...comps.map((l) => `  ${l}`)] : []),
+    `${x.cabecalho} ${versao}`,
+    `${x.tela}: ${caminho.split(/[?#]/)[0]}`,
+    `${x.quando}: ${agora.toISOString()}`,
+    ...(navegador ? [`${x.navegador}: ${navegador}`] : []),
+    `${x.erro}: ${mensagem}`,
+    ...(ehFalhaDeCarga(erro) ? [`${x.tipoSemCarregar}`] : []),
+    ...(pilha.length ? [`${x.pilha}:`, ...pilha.map((l) => `  ${l}`)] : []),
+    ...(comps.length ? [`${x.componentes}:`, ...comps.map((l) => `  ${l}`)] : []),
   ]
   return semDadoSensivel(linhas.join("\n"))
 }

@@ -6,6 +6,7 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Sistema } from "./config.js";
+import { t } from "./i18n.js";
 import type { Executor } from "./util/executor.js";
 
 export const ROTULO = "ai.reveza.agente";
@@ -281,8 +282,8 @@ export async function instalar(o: OpcoesServico): Promise<string> {
       await dormir(1000);
       r = await o.exec.rodar(["launchctl", "bootstrap", `gui/${uid(o)}`, arq]);
     }
-    if (r.codigo !== 0) throw new Error(`launchctl bootstrap falhou: ${r.erro.trim() || r.codigo}`);
-    return `serviço ${ROTULO} instalado (${arq})`;
+    if (r.codigo !== 0) throw new Error(t(`launchctl bootstrap falhou: ${r.erro.trim() || r.codigo}`, `launchctl bootstrap failed: ${r.erro.trim() || r.codigo}`));
+    return t(`serviço ${ROTULO} instalado (${arq})`, `service ${ROTULO} installed (${arq})`);
   }
   if (o.sistema === "linux") {
     const arq = arquivoUnidade(o);
@@ -290,11 +291,14 @@ export async function instalar(o: OpcoesServico): Promise<string> {
     fs.writeFileSync(arq, unidade(o), { mode: 0o644 });
     await o.exec.rodar(["systemctl", "--user", "daemon-reload"]);
     const r = await o.exec.rodar(["systemctl", "--user", "enable", UNIDADE]);
-    if (r.codigo !== 0) throw new Error(`systemctl --user enable falhou: ${r.erro.trim() || r.codigo}`);
+    if (r.codigo !== 0) throw new Error(t(`systemctl --user enable falhou: ${r.erro.trim() || r.codigo}`, `systemctl --user enable failed: ${r.erro.trim() || r.codigo}`));
     // restart, não `enable --now`: numa atualização o agente antigo já está rodando, e o `--now` o deixaria lá
     const rr = await o.exec.rodar(["systemctl", "--user", "restart", UNIDADE]);
-    if (rr.codigo !== 0) throw new Error(`systemctl --user restart falhou: ${rr.erro.trim() || rr.codigo}`);
-    return `serviço ${UNIDADE} instalado (${arq}); para seguir rodando sem sessão aberta: loginctl enable-linger ${os.userInfo().username}`;
+    if (rr.codigo !== 0) throw new Error(t(`systemctl --user restart falhou: ${rr.erro.trim() || rr.codigo}`, `systemctl --user restart failed: ${rr.erro.trim() || rr.codigo}`));
+    return t(
+      `serviço ${UNIDADE} instalado (${arq}); para seguir rodando sem sessão aberta: loginctl enable-linger ${os.userInfo().username}`,
+      `service ${UNIDADE} installed (${arq}); to keep running without an open session: loginctl enable-linger ${os.userInfo().username}`,
+    );
   }
   const arq = arquivoTarefa(o);
   fs.mkdirSync(path.dirname(arq), { recursive: true });
@@ -303,29 +307,29 @@ export async function instalar(o: OpcoesServico): Promise<string> {
   // numa atualização o agente antigo está rodando: sai antes, senão a tarefa nova não sobe (uma instância por vez)
   await pararTarefa(o);
   const r = await o.exec.rodar(["schtasks", "/Create", "/F", "/TN", TAREFA, "/XML", arq]);
-  if (r.codigo !== 0) throw new Error(`schtasks /Create falhou: ${r.erro.trim() || r.saida.trim() || r.codigo}`);
+  if (r.codigo !== 0) throw new Error(t(`schtasks /Create falhou: ${r.erro.trim() || r.saida.trim() || r.codigo}`, `schtasks /Create failed: ${r.erro.trim() || r.saida.trim() || r.codigo}`));
   await o.exec.rodar(["schtasks", "/Run", "/TN", TAREFA]);
-  return `tarefa "${TAREFA}" criada (roda ao entrar no Windows, sem janela, e volta sozinha se cair)`;
+  return t(`tarefa "${TAREFA}" criada (roda ao entrar no Windows, sem janela, e volta sozinha se cair)`, `task "${TAREFA}" created (runs when you sign in to Windows, without a window, and restarts on its own if it crashes)`);
 }
 
 export async function remover(o: OpcoesServico): Promise<string> {
   if (o.sistema === "macos") {
     await o.exec.rodar(["launchctl", "bootout", `gui/${uid(o)}/${ROTULO}`]);
     fs.rmSync(arquivoPlist(o), { force: true });
-    return `serviço ${ROTULO} removido`;
+    return t(`serviço ${ROTULO} removido`, `service ${ROTULO} removed`);
   }
   if (o.sistema === "linux") {
     await o.exec.rodar(["systemctl", "--user", "disable", "--now", UNIDADE]);
     fs.rmSync(arquivoUnidade(o), { force: true });
     await o.exec.rodar(["systemctl", "--user", "daemon-reload"]);
-    return `serviço ${UNIDADE} removido`;
+    return t(`serviço ${UNIDADE} removido`, `service ${UNIDADE} removed`);
   }
   // desliga antes de parar: o gatilho de minuto em minuto não sobe o agente de novo no meio da remoção
   await o.exec.rodar(["schtasks", "/Change", "/TN", TAREFA, "/DISABLE"]);
   await pararTarefa(o);
   await o.exec.rodar(["schtasks", "/Delete", "/F", "/TN", TAREFA]);
   fs.rmSync(arquivoTarefa(o), { force: true });
-  return `tarefa "${TAREFA}" removida`;
+  return t(`tarefa "${TAREFA}" removida`, `task "${TAREFA}" removed`);
 }
 
 /**
@@ -356,15 +360,15 @@ export async function status(o: OpcoesServico): Promise<StatusServico> {
     const instalado = fs.existsSync(arquivoPlist(o));
     const r = await o.exec.rodar(["launchctl", "print", `gui/${uid(o)}/${ROTULO}`]);
     const rodando = r.codigo === 0 && /state = running/.test(r.saida);
-    return { instalado, rodando, detalhe: r.codigo === 0 ? (rodando ? "rodando" : "carregado, parado") : "não carregado" };
+    return { instalado, rodando, detalhe: r.codigo === 0 ? (rodando ? t("rodando", "running") : t("carregado, parado", "loaded, stopped")) : t("não carregado", "not loaded") };
   }
   if (o.sistema === "linux") {
     const instalado = fs.existsSync(arquivoUnidade(o));
     const r = await o.exec.rodar(["systemctl", "--user", "is-active", UNIDADE]);
-    const estado = r.saida.trim() || "desconhecido";
+    const estado = r.saida.trim() || t("desconhecido", "unknown");
     return { instalado, rodando: estado === "active", detalhe: estado, gerenciador: r.saida.trim() !== "" };
   }
   const r = await o.exec.rodar(["schtasks", "/Query", "/TN", TAREFA, "/FO", "LIST"]);
   const rodando = /Running|Em execu/i.test(r.saida);
-  return { instalado: r.codigo === 0, rodando, detalhe: r.codigo === 0 ? (rodando ? "rodando" : "pronta") : "não instalada" };
+  return { instalado: r.codigo === 0, rodando, detalhe: r.codigo === 0 ? (rodando ? t("rodando", "running") : t("pronta", "ready")) : t("não instalada", "not installed") };
 }

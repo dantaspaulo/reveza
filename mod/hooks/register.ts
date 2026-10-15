@@ -1,5 +1,8 @@
 import type { HttpInit, Register, SessionRateLimit } from 'claude-code'
+
+import type { Idioma } from './textos'
 import { enxugarSaida } from './enxugar'
+import { idiomaDaInstalacao, textos, usarIdioma } from './textos'
 
 // O lado de cada sessão do Reveza AI (o agente roda no computador e escuta em 127.0.0.1, porta configurável).
 // 1. Mostra na linha de status a conta em uso e o % da janela de 5 h.
@@ -44,22 +47,8 @@ export type Estado = {
   nuvem?: { ligada?: boolean; online?: boolean | null }
 }
 
-const ROTULO_ESTADO: Record<string, string> = {
-  ativa: 'em uso',
-  proxima: 'próxima',
-  livre: 'livre',
-  esgotada: 'esgotada',
-  pausada: 'pausada',
-  precisa_login: 'precisa entrar de novo',
-  sem_leitura: 'sem leitura',
-}
-
-const ROTULO_JANELA: Record<string, string> = {
-  five_hour: '5 horas',
-  seven_day: 'Semana',
-  seven_day_opus: 'Semana, modelo maior',
-  seven_day_sonnet: 'Semana, modelo médio',
-}
+// Os rótulos e as frases ficam em textos.ts, nos dois idiomas (o da instalação, lido do instalacao.json no começo da
+// sessão). Aqui fica só o que não se traduz: os nomes de comando (/compact, /rewind) e o que a ponte devolve.
 
 export function base(porta: unknown): string {
   const p = typeof porta === 'number' && Number.isInteger(porta) && porta > 0 && porta < 65536 ? porta : PORTA_PADRAO
@@ -71,33 +60,29 @@ function hora(epoch: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export function janelasTexto(janelas: Janela[]): string {
+export function janelasTexto(janelas: Janela[], idioma?: Idioma): string {
+  const x = textos(idioma)
   const partes = janelas
     .filter(j => j.pct !== null)
     .map(
       j =>
-        `${ROTULO_JANELA[j.tipo] ?? j.rotulo ?? j.tipo} ${Math.round(j.pct ?? 0)}%${j.resetEm ? ` (renova ${hora(j.resetEm)})` : ''}`,
+        `${x.janelas[j.tipo] ?? j.rotulo ?? j.tipo} ${Math.round(j.pct ?? 0)}%${j.resetEm ? x.renova(hora(j.resetEm)) : ''}`,
     )
-  return partes.length ? partes.join(', ') : 'sem leitura ainda'
+  return partes.length ? partes.join(', ') : x.semLeitura
 }
 
-export function resumo(estado: Estado): string {
+export function resumo(estado: Estado, idioma?: Idioma): string {
+  const x = textos(idioma)
   const linhas = estado.contas.map(
-    c => `- ${c.email}${c.org ? ` (${c.org})` : ''}: ${ROTULO_ESTADO[c.estado] ?? c.estado}. ${janelasTexto(c.janelas)}`,
+    c => `- ${c.email}${c.org ? ` (${c.org})` : ''}: ${x.estados[c.estado] ?? c.estado}. ${janelasTexto(c.janelas, idioma)}`,
   )
   const modo =
-    estado.modo === 'limite'
-      ? 'só no limite'
-      : estado.modo === 'rodizio'
-        ? 'rodízio ao longo do dia'
-        : `aviso em ${estado.limiares.aviso}%, troca em ${estado.limiares.troca}%`
-  const troca = estado.auto ? `Troca automática ligada (${modo}).` : 'Troca automática desligada.'
+    estado.modo === 'limite' ? x.soNoLimite : estado.modo === 'rodizio' ? x.rodizio : x.limiar(estado.limiares.aviso, estado.limiares.troca)
+  const troca = estado.auto ? x.trocaLigada(modo) : x.trocaDesligada
   const extra: string[] = []
-  if (estado.sombra) extra.push('Agente em modo sombra: só observa e registra o que faria.')
-  if (estado.nuvem?.ligada && estado.nuvem.online === false) extra.push('Sem falar com a nuvem agora: a conta atual fica.')
-  return ['Reveza AI', troca, ...extra, ...(linhas.length ? linhas : ['Nenhuma conta conectada. No terminal: reveza contas conectar <email>'])].join(
-    '\n',
-  )
+  if (estado.sombra) extra.push(x.sombra)
+  if (estado.nuvem?.ligada && estado.nuvem.online === false) extra.push(x.semNuvem)
+  return ['Reveza AI', troca, ...extra, ...(linhas.length ? linhas : [x.semContas])].join('\n')
 }
 
 export function janelasDaMedida(limites: readonly SessionRateLimit[]) {
@@ -176,11 +161,14 @@ export const register: Register = (on, options) => {
   let espera: { referencia: number; desde: number } | null = null
   let retomando = false
   let enxugar = false
+  // O idioma da instalação, lido uma vez por sessão (o arquivo não muda no meio dela); null até a primeira leitura.
+  let idioma: Idioma | null = null
 
   function textoStatus(): string | undefined {
-    if (foraDoAr) return 'Reveza: agente fora do ar'
+    const x = textos()
+    if (foraDoAr) return x.agenteForaDoAr
     if (!email) return undefined
-    return `conta ${email.split('@')[0]}${cinco ? ` · ${cinco}` : ''}`
+    return x.contaEmUso(email.split('@')[0]!, cinco)
   }
 
   // Devolve o aviso a mostrar quando a conta mudou desde a última leitura.
@@ -191,7 +179,7 @@ export const register: Register = (on, options) => {
     email = a.email
     if (!mudou) return null
     cinco = ''
-    return `Reveza: agora na conta ${a.email}`
+    return textos().contaMudou(a.email!)
   }
 
   on('session.start', async ($, e, next) => {
@@ -200,10 +188,11 @@ export const register: Register = (on, options) => {
     const raiz =
       (await $.env.get('REVEZA_HOME')) ??
       `${(await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''}/.reveza`
+    if (!idioma) idioma = usarIdioma(await idiomaDaInstalacao(caminho => $.fs.read(caminho), raiz))
     chavePonte = String(await $.fs.read(`${raiz}/ponte.chave`).catch(() => '')).trim()
     await $.command.register({
       name: 'reveza',
-      description: 'Reveza AI: a conta em uso, o uso de cada conta e o estado do agente',
+      description: textos().descricao,
     })
 
     $.clock.every(5000, () => {
@@ -233,7 +222,7 @@ export const register: Register = (on, options) => {
         retomando = true
         await $.prompt.submit({
           // texto fixo: o que a ponte local devolve não entra no prompt (outro programa poderia ocupar a porta)
-          text: 'A conta anterior bateu o limite de uso e o Reveza trocou de conta. Continue a tarefa de onde parou.',
+          text: textos().retomada,
         })
         await $.http
           .fetch(
@@ -263,10 +252,11 @@ export const register: Register = (on, options) => {
   })
 
   on('classic.StopFailure', async ($, e, next) => {
+    const x = textos()
     if (e.error === 'invalid_request' && /^Prompt is too long/i.test(e.last_assistant_message ?? '')) {
       // A conversa passou do limite e nem o /compact cabe mais (relato do Paulo, 13/10/2026): diz como sair e manda ao
       // agente o tamanho dela, que fica nos eventos (sem isso, só lendo as transcrições do computador).
-      $.ui.toast('A conversa passou do limite: rode /rewind, volte algumas mensagens e rode /compact (ou comece outra sessão).')
+      $.ui.toast(x.toasts.limite)
       const uso = await $.session.usage().catch(() => null)
       await $.http
         .fetch(
@@ -279,7 +269,7 @@ export const register: Register = (on, options) => {
     if (e.error !== 'rate_limit') return next(e)
     const tipoLimite = tipoDoLimite(e.error_details, e.last_assistant_message)
     if (tipoLimite === 'contexto_longo') {
-      $.ui.toast('A conversa passou do contexto que esta conta usa sem crédito extra: rode /compact (ou comece outra sessão). Trocar de conta não resolve.')
+      $.ui.toast(x.toasts.contexto)
       return next(e)
     }
     if (tipoLimite !== 'uso') return next(e)
@@ -295,10 +285,10 @@ export const register: Register = (on, options) => {
       resposta = null
     }
     if (!resposta) {
-      $.ui.toast('Limite da conta atingido e o agente do Reveza está fora do ar: a sessão espera o reset.')
+      $.ui.toast(x.toasts.semAgente)
     } else if (tipo === 'interativa') {
       espera = { referencia: antes ?? resposta.versao, desde: Date.now() }
-      $.ui.toast('Limite da conta atingido. Assim que o Reveza trocar de conta, a sessão continua sozinha.')
+      $.ui.toast(x.toasts.troca)
     }
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -328,12 +318,11 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'reveza' }, async $ => {
     let estado: Estado | null = null
-    if (!chavePonte) {
-      const raiz =
-        (await $.env.get('REVEZA_HOME')) ??
-        `${(await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''}/.reveza`
-      chavePonte = String(await $.fs.read(`${raiz}/ponte.chave`).catch(() => '')).trim()
-    }
+    const raiz =
+      (await $.env.get('REVEZA_HOME')) ??
+      `${(await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''}/.reveza`
+    if (!idioma) idioma = usarIdioma(await idiomaDaInstalacao(caminho => $.fs.read(caminho), raiz))
+    if (!chavePonte) chavePonte = String(await $.fs.read(`${raiz}/ponte.chave`).catch(() => '')).trim()
     try {
       const p = await pedido('GET', '/api/estado')
       const r = await $.http.fetch(`${BASE}/api/estado`, p.init)
@@ -342,9 +331,7 @@ export const register: Register = (on, options) => {
       estado = null
     }
     if (!estado) {
-      return {
-        text: 'O agente do Reveza está fora do ar. No terminal: reveza servico instalar (ou reveza rodar), e depois reveza doctor.',
-      }
+      return { text: textos().foraDoAr }
     }
     return { text: resumo(estado) }
   })

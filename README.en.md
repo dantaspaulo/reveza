@@ -22,6 +22,8 @@ Logins stay encrypted on your computer, and the dashboard lives in your own clou
 
 🌐 **Project website: [https://reveza.ia.br/en](https://reveza.ia.br/en)**
 
+🌐 [Português](README.md) · **English**
+
 </div>
 
 <br/>
@@ -91,6 +93,10 @@ The computer only calls the cloud: no open port, no tunnel. Without internet, it
 <br/>
 
 ## 📥 Install
+
+The installer's first step asks for your language: Portuguese (Brazil) or English (United States). `--idioma en`
+skips the question and goes straight to English (with `--sim` there is no question and it stays in Portuguese, unless
+you pass `--idioma en`):
 
 ```bash
 npx github:dantaspaulo/reveza --idioma en
@@ -311,7 +317,7 @@ and sends only the result to your Vercel.
   full update, and then encrypted with the vault key.
 - **Audited** with [Cloudflare's security audit skill](https://github.com/cloudflare/security-audit-skill): the confirmed findings were fixed, and the repository guard refuses secrets and personal data on every commit.
 
-The whole architecture is in [docs/ARQUITETURA.md](docs/ARQUITETURA.md) (Portuguese).
+The whole architecture is in [docs/ARQUITETURA.en.md](docs/ARQUITETURA.en.md).
 
 <br/>
 

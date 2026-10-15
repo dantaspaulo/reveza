@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import * as path from "node:path";
 import type { Abertura } from "./abrir-login.js";
 import type { Cli } from "./claudecli.js";
+import { t } from "./i18n.js";
 import { enderecoDoLogin } from "./navegador.js";
 import type { Credenciais } from "./credenciais/tipos.js";
 import type { Trocador } from "./troca.js";
@@ -45,13 +46,21 @@ export const EMAIL_VALIDO = /^[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9](?:[A-Za-z
 export const TEXTO_DO_LOGIN =
   "Abra o endereço do login (de preferência numa janela anônima, para não entrar com a conta que já está aberta no navegador), entre na conta e cole aqui o código que a página mostrar.";
 
+const TEXTO_DO_LOGIN_EN =
+  "Open the sign-in address (preferably in a private window, so you do not use the account already open in the browser), sign in to the account and paste the code the page shows here.";
+
 export function textoDoLogin(janela: Abertura | null): string {
-  if (!janela) return TEXTO_DO_LOGIN;
-  if (!janela.aberto) return `Não consegui abrir o navegador neste computador. ${TEXTO_DO_LOGIN}`;
-  const onde = janela.privado ? `numa janela anônima${janela.navegador ? ` do ${janela.navegador}` : ""}` : "no navegador";
-  return (
+  const base = t(TEXTO_DO_LOGIN, TEXTO_DO_LOGIN_EN);
+  if (!janela) return base;
+  if (!janela.aberto) return t(`Não consegui abrir o navegador neste computador. ${TEXTO_DO_LOGIN}`, `I could not open the browser on this computer. ${TEXTO_DO_LOGIN_EN}`);
+  const onde = janela.privado
+    ? t(`numa janela anônima${janela.navegador ? ` do ${janela.navegador}` : ""}`, `in a private window${janela.navegador ? ` of ${janela.navegador}` : ""}`)
+    : t("no navegador", "in the browser");
+  return t(
     `Abri o login ${onde} neste computador: entre na conta e pronto, o login termina sozinho. ` +
-    "Em outro aparelho? Abra o endereço, entre na conta e cole aqui o código que a página mostrar."
+      "Em outro aparelho? Abra o endereço, entre na conta e cole aqui o código que a página mostrar.",
+    `I opened the sign-in ${onde} on this computer: sign in to the account and that's it: the sign-in finishes on its own. ` +
+      "On another device? Open the address, sign in to the account and paste the code the page shows here.",
   );
 }
 
@@ -91,7 +100,7 @@ export class Logins {
   }
 
   iniciar(email: string | null): Login {
-    if (email !== null && !EMAIL_VALIDO.test(email)) throw new Error("e-mail inválido");
+    if (email !== null && !EMAIL_VALIDO.test(email)) throw new Error(t("e-mail inválido", "invalid email"));
     const id = randomBytes(16).toString("hex");
     const pasta = this.trocador.novaPasta();
     const proc = this.cli.login(pasta, email);
@@ -101,7 +110,7 @@ export class Logins {
       estado: "aguardando",
       url: null,
       janela: null,
-      mensagem: "Abrindo o login oficial…",
+      mensagem: t("Abrindo o login oficial…", "Opening the official sign-in…"),
       iniciadaEm: this.relogio.agora(),
       conta: null,
       pasta,
@@ -184,11 +193,11 @@ export class Logins {
 
   codigo(id: string, codigo: string): { ok: boolean; erro?: string } {
     const l = this.mapa.get(id);
-    if (!l) return { ok: false, erro: "login desconhecido" };
+    if (!l) return { ok: false, erro: t("login desconhecido", "unknown sign-in") };
     const c = codigo.trim();
-    if (!c || c.length > 4000) return { ok: false, erro: "código vazio" };
-    if (/[\r\n\0]/.test(c)) return { ok: false, erro: "o código é uma linha só" };
-    if (!l.proc.vivo || !l.proc.escrever(c + "\n")) return { ok: false, erro: "o login já terminou" };
+    if (!c || c.length > 4000) return { ok: false, erro: t("código vazio", "empty code") };
+    if (/[\r\n\0]/.test(c)) return { ok: false, erro: t("o código é uma linha só", "the code must be a single line") };
+    if (!l.proc.vivo || !l.proc.escrever(c + "\n")) return { ok: false, erro: t("o login já terminou", "the sign-in has already finished") };
     return { ok: true };
   }
 
@@ -199,10 +208,10 @@ export class Logins {
 
   cancelar(id: string): { ok: boolean; erro?: string } {
     const l = this.mapa.get(id);
-    if (!l) return { ok: false, erro: "login desconhecido" };
+    if (!l) return { ok: false, erro: t("login desconhecido", "unknown sign-in") };
     if (l.proc.vivo) l.proc.terminar();
     l.estado = "erro";
-    l.mensagem = "Cancelado.";
+    l.mensagem = t("Cancelado.", "Canceled.");
     return { ok: true };
   }
 
@@ -214,7 +223,7 @@ export class Logins {
       if (login.estado === "aguardando") {
         login.estado = "erro";
         const ultimo = [...login.saida].reverse().find((l) => l.trim()) ?? "";
-        login.mensagem = `O login não terminou. ${ultimo}`.trim();
+        login.mensagem = t(`O login não terminou. ${ultimo}`, `The sign-in did not finish. ${ultimo}`).trim();
       }
       fs.rmSync(login.pasta, { recursive: true, force: true });
       return;
@@ -222,7 +231,7 @@ export class Logins {
     const perfil = await this.trocador.identidade(blob);
     if (!perfil) {
       login.estado = "erro";
-      login.mensagem = "Login feito, mas não consegui ler o perfil da conta.";
+      login.mensagem = t("Login feito, mas não consegui ler o perfil da conta.", "Signed in, but I could not read the account profile.");
       return;
     }
     const pedido = (login.email ?? "").toLowerCase();
@@ -232,9 +241,14 @@ export class Logins {
       fs.rmSync(login.pasta, { recursive: true, force: true });
       login.estado = "erro";
       login.mensagem = login.janela?.privado
-        ? `O login entrou como ${perfil.email}, não como ${login.email}. Tente de novo e, na janela que abrir, entre com ${login.email}.`
-        : `O navegador entrou como ${perfil.email}, não como ${login.email}. Saia da conta no navegador ` +
-          "(ou abra o link numa janela anônima) e tente de novo.";
+        ? t(
+            `O login entrou como ${perfil.email}, não como ${login.email}. Tente de novo e, na janela que abrir, entre com ${login.email}.`,
+            `The sign-in came in as ${perfil.email}, not as ${login.email}. Try again and, in the window that opens, sign in with ${login.email}.`,
+          )
+        : t(
+            `O navegador entrou como ${perfil.email}, não como ${login.email}. Saia da conta no navegador ` + "(ou abra o link numa janela anônima) e tente de novo.",
+            `The browser signed in as ${perfil.email}, not as ${login.email}. Sign out of the account in the browser ` + "(or open the link in a private window) and try again.",
+          );
       this.trocador.evento("erro", `Login pedido para ${login.email} entrou como ${perfil.email}; descartado.`, { login: login.id });
       await this.aoTerminar(login, null);
       return;
@@ -249,10 +263,10 @@ export class Logins {
         Object.assign(c, { pasta: login.pasta, precisaLogin: false, erro: null, versaoCofre: c.versaoCofre });
         if (antiga !== login.pasta) await this.cred.apagar(antiga);
         id = existente;
-        texto = `${perfil.email} entrou de novo.`;
+        texto = t(`${perfil.email} entrou de novo.`, `${perfil.email} signed in again.`);
       } else {
         id = this.trocador.registrar(perfil, login.pasta, blob);
-        texto = `${perfil.email} (${perfil.org ?? "sem organização"}) conectada.`;
+        texto = t(`${perfil.email} (${perfil.org ?? "sem organização"}) conectada.`, `${perfil.email} (${perfil.org ?? "no organization"}) connected.`);
       }
       login.estado = "ok";
       login.mensagem = texto;

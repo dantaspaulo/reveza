@@ -22,6 +22,8 @@ Os logins ficam cifrados no seu computador, e o painel mora na sua própria nuve
 
 🌐 **Site do projeto: [https://reveza.ia.br](https://reveza.ia.br)**
 
+🌐 **Português** · [English](README.en.md)
+
 </div>
 
 <br/>
@@ -102,6 +104,9 @@ As etapas contam de 1 até o total do seu caminho. Na hora de cada token, a pág
 (com tela; o endereço também aparece no terminal), e os tokens do Supabase e da Vercel **não ficam guardados** em lugar
 nenhum (a não ser que você ligue a [atualização completa](#-atualizar), que os guarda cifrados). A troca automática já vem ligada, antes do limite (avisa em 90%, troca em 95%): muda no painel, em **Troca
 automática**. Quem importa de outro gestor (`--importar`) fica com a configuração de lá.
+
+O instalador começa pelo idioma (português ou inglês); `--idioma pt|en` pula a pergunta. Com `--sim` não há pergunta e
+fica em português, salvo `--idioma en`.
 
 | Precisa de | |
 |---|---|

@@ -10,6 +10,7 @@ import { gravarAtomico } from "../util/arquivos.js";
 import type { Executor } from "../util/executor.js";
 import { comandoGravar, decodificarSaida } from "../credenciais/macos.js";
 import type { Sistema } from "../config.js";
+import { t } from "../i18n.js";
 
 export interface Guarda {
   readonly tipo: "keychain" | "dpapi" | "secret-tool" | "arquivo" | "falsa";
@@ -135,9 +136,15 @@ export class GuardaSecretTool implements Guarda {
 
 export class GuardaArquivo implements Guarda {
   readonly tipo = "arquivo" as const;
-  readonly aviso =
-    "Os segredos do agente estão em arquivo com permissão 600 (sem Secret Service neste computador). " +
-    "Instale o gnome-keyring ou o KeePassXC com o secret-tool para guardar no chaveiro do sistema.";
+  // no idioma da hora em que o doctor lê (o idioma só existe depois do import)
+  get aviso(): string {
+    return t(
+      "Os segredos do agente estão em arquivo com permissão 600 (sem Secret Service neste computador). " +
+        "Instale o gnome-keyring ou o KeePassXC com o secret-tool para guardar no chaveiro do sistema.",
+      "The agent's secrets are in a file with permission 600 (no Secret Service on this computer). " +
+        "Install gnome-keyring or KeePassXC with secret-tool to store them in the system keychain.",
+    );
+  }
   constructor(private pasta: string) {}
 
   private arquivo(nome: string): string {

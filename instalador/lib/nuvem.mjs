@@ -2,22 +2,23 @@
 // registro do que está no ar (versões e dados do painel na Vercel, para qualquer computador conseguir publicar).
 // `consultar(sql)` é a Management API do Supabase (ou, nos testes, um Postgres local com as mesmas migrações).
 import { comoAdmin, jsonb, texto, textos, uuid, valor } from "./sql.mjs";
+import { idiomaGravado, t } from "./texto.mjs";
 
 export const MODOS = ["limite", "limiar", "rodizio"];
 export const EVENTOS_PADRAO = ["sem_livre", "precisa_login", "computador_parado", "login_vence"];
 
 async function chamar(consultar, adminId, expressao, parametros) {
   const r = valor(await consultar(comoAdmin(adminId, expressao), parametros));
-  if (r && r.ok === false) throw new Error(r.erro || "o banco recusou");
+  if (r && r.ok === false) throw new Error(r.erro || t("o banco recusou", "the database refused"));
   return r;
 }
 
 /** Troca automática e modo, pelas mesmas regras do painel (painel_config). */
 export async function salvarTroca(consultar, adminId, { auto, modo, aviso, troca, fuso }) {
-  if (!MODOS.includes(modo)) throw new Error("modo desconhecido");
+  if (!MODOS.includes(modo)) throw new Error(t("modo desconhecido", "unknown mode"));
   const pares = [["modo", modo]];
   if (modo === "limiar") {
-    if (!(aviso >= 1 && troca <= 100 && aviso < troca)) throw new Error("o aviso precisa ser menor que a troca (1 a 100)");
+    if (!(aviso >= 1 && troca <= 100 && aviso < troca)) throw new Error(t("o aviso precisa ser menor que a troca (1 a 100)", "the warning must be lower than the switch (1 to 100)"));
     // o banco exige aviso < troca a cada gravação: a troca vai a 100 antes, e nenhum passo fica invertido
     pares.push(["troca", 100], ["aviso", aviso], ["troca", troca]);
   }
@@ -26,10 +27,20 @@ export async function salvarTroca(consultar, adminId, { auto, modo, aviso, troca
   for (const [k, v] of pares) await chamar(consultar, adminId, `public.painel_config(${texto(k)}, ${jsonb(v)})`);
 }
 
+/**
+ * O idioma da instalação (o da escolha no instalador) na configuração da nuvem: é a língua dos alertas que saem pelos
+ * canais. Direto na tabela, como o resto do que o instalador registra (o painel não grava `idioma`); o valor vai como
+ * parâmetro. Vale o idioma do último computador que atualizou a nuvem.
+ */
+export async function gravarIdioma(consultar, idioma = idiomaGravado()) {
+  await consultar(`insert into public.config (chave, valor, mudado_em) values ('idioma', to_jsonb($1::text), now())
+    on conflict (chave) do update set valor = excluded.valor, mudado_em = now()`, [idioma === "en" ? "en" : "pt-BR"]);
+}
+
 /** Canal de alerta: o destino vai na tabela e o segredo (token, tópico, chave) no Vault. Devolve o id. */
 export async function salvarAlerta(consultar, adminId, { canal, destino, eventos = EVENTOS_PADRAO, segredo }) {
   const r = await chamar(consultar, adminId, `public.painel_alerta(${texto(canal)}, ${jsonb(destino)}, ${textos(eventos)})`);
-  if (!r || !r.id) throw new Error("o alerta não foi salvo");
+  if (!r || !r.id) throw new Error(t("o alerta não foi salvo", "the alert was not saved"));
   // o segredo vai como parâmetro, fora do texto do SQL (que pode ficar no histórico de consultas do banco)
   if (segredo) await chamar(consultar, adminId, `public.painel_alerta_segredo(${uuid(r.id)}, $1::text)`, [String(segredo)]);
   return r.id;
@@ -49,7 +60,7 @@ export async function pedirComando(consultar, adminId, computadorId, acao, corpo
 }
 
 export async function estadoComando(consultar, id) {
-  if (!Number.isInteger(Number(id))) throw new Error("comando inválido");
+  if (!Number.isInteger(Number(id))) throw new Error(t("comando inválido", "invalid command"));
   const r = await consultar(`select estado::text as estado, http from public.comandos where id = ${Number(id)}`);
   return Array.isArray(r) && r[0] ? r[0] : null;
 }
@@ -73,11 +84,11 @@ const VERSAO = /^(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})$/;
  */
 export function dadosDaPublicacao({ projeto, equipe = null, dominio = null, url, urlVercel = null, vapid = null }) {
   const https = (u) => typeof u === "string" && /^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(u);
-  if (!/^[a-z0-9][a-z0-9-]{0,98}$/.test(String(projeto || ""))) throw new Error("projeto da Vercel inválido");
-  if (equipe !== null && !/^[A-Za-z0-9_-]{1,100}$/.test(String(equipe))) throw new Error("equipe da Vercel inválida");
-  if (dominio !== null && !/^[a-z0-9.-]{4,253}$/.test(String(dominio))) throw new Error("domínio inválido");
-  if (!https(url) || (urlVercel !== null && !https(urlVercel))) throw new Error("endereço do painel inválido");
-  if (vapid !== null && !/^[A-Za-z0-9_-]{20,200}$/.test(String(vapid))) throw new Error("chave pública do push inválida");
+  if (!/^[a-z0-9][a-z0-9-]{0,98}$/.test(String(projeto || ""))) throw new Error(t("projeto da Vercel inválido", "invalid Vercel project"));
+  if (equipe !== null && !/^[A-Za-z0-9_-]{1,100}$/.test(String(equipe))) throw new Error(t("equipe da Vercel inválida", "invalid Vercel team"));
+  if (dominio !== null && !/^[a-z0-9.-]{4,253}$/.test(String(dominio))) throw new Error(t("domínio inválido", "invalid domain"));
+  if (!https(url) || (urlVercel !== null && !https(urlVercel))) throw new Error(t("endereço do painel inválido", "invalid panel address"));
+  if (vapid !== null && !/^[A-Za-z0-9_-]{20,200}$/.test(String(vapid))) throw new Error(t("chave pública do push inválida", "invalid push public key"));
   return { projeto, equipe, dominio, url, url_vercel: urlVercel, vapid };
 }
 
@@ -87,7 +98,7 @@ export function dadosDaPublicacao({ projeto, equipe = null, dominio = null, url,
  * painel e os dados do painel. Valores como parâmetro, nunca no texto do SQL.
  */
 export async function registrarPublicacao(consultar, { versao, funcoes = true, painel = true, publicacao = null }) {
-  if (!VERSAO.test(String(versao))) throw new Error("versão inválida");
+  if (!VERSAO.test(String(versao))) throw new Error(t("versão inválida", "invalid version"));
   await consultar(`insert into public.config (chave, valor, mudado_em) values ('nuvem_versao', to_jsonb($1::text), now())
     on conflict (chave) do update set valor = excluded.valor, mudado_em = now()
     where public.rvz_versao_num(public.config.valor #>> '{}') is null

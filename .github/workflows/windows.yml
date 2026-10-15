@@ -6,7 +6,7 @@
 #
 # Ensaio de uma mudança ainda não publicada, sem branch: `git diff origin/main | gzip | base64 > ensaio.txt` e
 # `gh workflow run windows.yml -F ensaio=@ensaio.txt`. Só quem escreve no repositório dispara; nada é publicado.
-name: Windows de verdade
+name: Real Windows
 
 # o ensaio acha a sua execução pelo nome (várias sessões podem ensaiar ao mesmo tempo); sem id, o nome de sempre
 run-name: ${{ inputs.id && format('ensaio {0}', inputs.id) || '' }}
@@ -17,11 +17,11 @@ on:
   workflow_dispatch:
     inputs:
       id:
-        description: "identificador do ensaio (scripts/ensaio.mjs acha a execução pelo nome)"
+        description: "trial run id (scripts/ensaio.mjs finds the run by its name)"
         required: false
         default: ""
       ensaio:
-        description: "mudança a ensaiar (git diff | gzip | base64); vazio = a main como está"
+        description: "change to try out (git diff | gzip | base64); empty = main as it is"
         required: false
         default: ""
 
@@ -38,7 +38,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Ensaio (só no disparo manual com mudança)
+      - name: Trial run (manual dispatch with a change only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.ensaio != '' }}
         shell: bash
         env:
@@ -55,7 +55,7 @@ jobs:
           if [[ "$ENSAIO" =~ $G ]] && [ "${BASH_REMATCH[1]}" = "$DONO" ]; then
             curl -fsS --proto =https --max-redirs 0 "$ENSAIO" -o "$A"
           elif [[ "$ENSAIO" == http* ]]; then
-            echo "só gist do dono do repositório" >&2; exit 1
+            echo "only gists owned by the repository owner are accepted" >&2; exit 1
           else
             printf '%s' "$ENSAIO" > "$A"
           fi
@@ -65,17 +65,17 @@ jobs:
           git add -A
           git -c user.name=ensaio -c user.email=ensaio@exemplo.invalid commit -q -m "ensaio"
 
-      - name: Testes do agente
+      - name: Agent tests
         working-directory: agente
         run: npm ci --ignore-scripts --no-audit --no-fund && npm test
 
-      - name: Claude Code de verdade (binário e caminhos)
+      - name: Real Claude Code (binary and paths)
         run: npm install -g @anthropic-ai/claude-code@2.1.296 --no-audit --no-fund
 
-      - name: Serviço, janela, som e caminhos
+      - name: Service, window, sound and paths
         run: node scripts/e2e-windows.mjs
 
-      - name: Provas (capturas de tela, tarefa, saídas)
+      - name: Evidence (screenshots, task, output)
         if: always()
         uses: actions/upload-artifact@v4
         with:

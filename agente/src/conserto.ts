@@ -9,6 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { doctor, type Conferencia, type DepsDoctor, type IdConserto } from "./doctor.js";
+import { t } from "./i18n.js";
 import type { Executor } from "./util/executor.js";
 
 export interface Resultado {
@@ -38,14 +39,14 @@ export async function consertar(d: DepsDoctor, k: Consertos): Promise<Conserto> 
     if (!pedidos.has(id)) continue;
     const fazer = k[id];
     if (!fazer) {
-      feitos.push({ id, ok: false, texto: "este conserto não roda daqui: no terminal deste computador, rode reveza doctor" });
+      feitos.push({ id, ok: false, texto: t("este conserto não roda daqui: no terminal deste computador, rode reveza doctor", "this fix does not run from here: in this computer's terminal, run reveza doctor") });
       continue;
     }
     try {
       const r = await fazer();
-      feitos.push({ id, ok: !!r.ok, texto: String(r.texto || (r.ok ? "feito" : "o conserto não terminou")).slice(0, 300) });
+      feitos.push({ id, ok: !!r.ok, texto: String(r.texto || (r.ok ? t("feito", "done") : t("o conserto não terminou", "the fix did not finish"))).slice(0, 300) });
     } catch (e) {
-      feitos.push({ id, ok: false, texto: `o conserto falhou: ${(e as Error).message}`.slice(0, 300) });
+      feitos.push({ id, ok: false, texto: t(`o conserto falhou: ${(e as Error).message}`, `the fix failed: ${(e as Error).message}`).slice(0, 300) });
     }
   }
   const depois = feitos.length ? await doctor(d) : antes.map((c) => ({ ...c }));
@@ -57,10 +58,10 @@ export async function consertar(d: DepsDoctor, k: Consertos): Promise<Conserto> 
     // a falha virou só um aviso que o conserto não cobre (o login novo vencido, que as sessões renovam): corrigido
     const sobrouAviso = a.situacao === "falha" && agora.situacao === "aviso" && !agora.conserto && !!f?.ok;
     if (agora.situacao === "ok" || sobrouAviso) {
-      const texto = f?.ok ? f.texto : "voltou a funcionar";
-      agora.consertado = { resultado: "corrigido", texto: sobrouAviso ? `${texto} (fica o aviso: ${agora.detalhe})` : texto };
+      const texto = f?.ok ? f.texto : t("voltou a funcionar", "it works again");
+      agora.consertado = { resultado: "corrigido", texto: sobrouAviso ? t(`${texto} (fica o aviso: ${agora.detalhe})`, `${texto} (the warning stays: ${agora.detalhe})`) : texto };
     } else {
-      const motivo = f && !f.ok ? f.texto : agora.fazer ?? `o conserto rodou, mas o problema continua (${agora.detalhe})`;
+      const motivo = f && !f.ok ? f.texto : agora.fazer ?? t(`o conserto rodou, mas o problema continua (${agora.detalhe})`, `the fix ran, but the problem remains (${agora.detalhe})`);
       agora.consertado = { resultado: "nao_deu", texto: motivo };
     }
   }
@@ -71,8 +72,11 @@ export async function consertar(d: DepsDoctor, k: Consertos): Promise<Conserto> 
 export function resumoConserto(depois: Conferencia[]): string {
   const corrigidos = depois.filter((c) => c.consertado?.resultado === "corrigido").map((c) => c.nome);
   const naoDeu = depois.filter((c) => c.consertado?.resultado === "nao_deu").map((c) => c.nome);
-  if (!corrigidos.length && !naoDeu.length) return "nada com conserto automático para fazer";
-  return [corrigidos.length ? `corrigido: ${corrigidos.join(", ")}` : "", naoDeu.length ? `não deu: ${naoDeu.join(", ")}` : ""]
+  if (!corrigidos.length && !naoDeu.length) return t("nada com conserto automático para fazer", "nothing to fix automatically");
+  return [
+    corrigidos.length ? t(`corrigido: ${corrigidos.join(", ")}`, `fixed: ${corrigidos.join(", ")}`) : "",
+    naoDeu.length ? t(`não deu: ${naoDeu.join(", ")}`, `not fixed: ${naoDeu.join(", ")}`) : "",
+  ]
     .filter(Boolean)
     .join("; ");
 }
@@ -107,12 +111,26 @@ export function ambienteDoUsuario(base: NodeJS.ProcessEnv = process.env): NodeJS
 export async function instalarMod(o: { exec: Executor; assistente: string; app: string; porta: number; env?: NodeJS.ProcessEnv }): Promise<Resultado> {
   const rodar = (args: string[]) => o.exec.rodar([o.assistente, ...args], { env: o.env ?? ambienteDoUsuario(), timeoutMs: 180_000 });
   const r = await rodar(["plugin", "install", "reveza", "--marketplace", o.app, "--scope", "user", "--config", `porta=${o.porta}`, "--json", "-y"]);
-  if (r.codigo === 0) return { ok: true, texto: "mod reinstalado (vale nas sessões novas)" };
+  if (r.codigo === 0) return { ok: true, texto: t("mod reinstalado (vale nas sessões novas)", "mod reinstalled (applies to new sessions)") };
   if (/already installed|já instalad/i.test(r.saida + r.erro)) {
     const u = await rodar(["plugin", "marketplace", "update", "reveza"]);
     const p = await rodar(["plugin", "update", "reveza@reveza"]);
-    if (u.codigo === 0 && p.codigo === 0) return { ok: true, texto: "mod atualizado (vale nas sessões novas)" };
-    return { ok: false, texto: `o assistente não atualizou o mod (${(u.erro + p.erro).trim().slice(-200) || "sem mensagem"}); rode o instalador com --atualizar` };
+    if (u.codigo === 0 && p.codigo === 0) return { ok: true, texto: t("mod atualizado (vale nas sessões novas)", "mod updated (applies to new sessions)") };
+    const motivo = (u.erro + p.erro).trim().slice(-200);
+    return {
+      ok: false,
+      texto: t(
+        `o assistente não atualizou o mod (${motivo || "sem mensagem"}); rode o instalador com --atualizar`,
+        `the assistant did not update the mod (${motivo || "no message"}); run the installer with --atualizar`,
+      ),
+    };
   }
-  return { ok: false, texto: `o assistente não instalou o mod (${(r.saida + r.erro).trim().slice(-200) || `código ${r.codigo}`}); rode o instalador com --atualizar` };
+  const motivo = (r.saida + r.erro).trim().slice(-200);
+  return {
+    ok: false,
+    texto: t(
+      `o assistente não instalou o mod (${motivo || `código ${r.codigo}`}); rode o instalador com --atualizar`,
+      `the assistant did not install the mod (${motivo || `code ${r.codigo}`}); run the installer with --atualizar`,
+    ),
+  };
 }

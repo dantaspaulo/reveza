@@ -1,7 +1,7 @@
 # Instala o Reveza de verdade em macOS, Linux e Windows (os três sistemas que ele promete), do mesmo jeito que o
 # `npx github:dantaspaulo/reveza` deixa: o repositório dentro de um node_modules. Sem nuvem, sem serviço e sem conta:
 # o que se prova aqui é que o instalador roda, copia, compila o agente e o comando `reveza` responde em cada sistema.
-name: Instalar nos três sistemas
+name: Install on all three OSes
 
 # o ensaio acha a sua execução pelo nome (várias sessões podem ensaiar ao mesmo tempo); sem id, o nome de sempre
 run-name: ${{ inputs.id && format('ensaio {0}', inputs.id) || '' }}
@@ -13,11 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       id:
-        description: "identificador do ensaio (scripts/ensaio.mjs acha a execução pelo nome)"
+        description: "trial run id (scripts/ensaio.mjs finds the run by its name)"
         required: false
         default: ""
       ensaio:
-        description: "endereço raw de um gist secreto do dono com a mudança a ensaiar (git diff | gzip | base64); vazio = a main"
+        description: "raw URL of a secret gist owned by the repository owner with the change to try out (git diff | gzip | base64); empty = main"
         required: false
         default: ""
 
@@ -40,7 +40,7 @@ jobs:
 
       # ensaio de uma mudança ainda não publicada (scripts/ensaio.mjs): aplica e commita aqui, porque o passo da
       # instalação empacota com `git archive HEAD`
-      - name: Ensaio (só no disparo manual com mudança)
+      - name: Trial run (manual dispatch with a change only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.ensaio != '' }}
         shell: bash
         env:
@@ -55,7 +55,7 @@ jobs:
           if [[ "$ENSAIO" =~ $G ]] && [ "${BASH_REMATCH[1]}" = "$DONO" ]; then
             curl -fsS --proto =https --max-redirs 0 "$ENSAIO" -o "$A"
           elif [[ "$ENSAIO" == http* ]]; then
-            echo "só gist do dono do repositório" >&2; exit 1
+            echo "only gists owned by the repository owner are accepted" >&2; exit 1
           else
             printf '%s' "$ENSAIO" > "$A"
           fi
@@ -63,11 +63,11 @@ jobs:
           git add -A
           git -c user.name=ensaio -c user.email=ensaio@exemplo.invalid commit -q -m "ensaio"
 
-      - name: Testes do agente
+      - name: Agent tests
         working-directory: agente
         run: npm ci --ignore-scripts --no-audit --no-fund && npm test
 
-      - name: Instalador, de dentro de um node_modules (como o npx deixa)
+      - name: Installer, from inside a node_modules (the way npx installs it)
         shell: bash
         run: |
           # no Windows, o RUNNER_TEMP vem como D:\a\_temp, que o tar entende como "máquina:caminho"; o caminho do bash não
@@ -81,7 +81,7 @@ jobs:
           node instalador/instalar.mjs --sim --sem-servico --sem-nuvem --sem-react-bits 2>&1 | tee "$RUNNER_TEMP/saida.txt"
           grep -q "Pronto: Reveza AI" "$RUNNER_TEMP/saida.txt"
 
-      - name: O comando reveza responde
+      - name: The reveza command responds
         shell: bash
         run: |
           export HOME="$RUNNER_TEMP/casa" USERPROFILE="$RUNNER_TEMP/casa"

@@ -17,6 +17,7 @@ import type { Caminhos } from "./config.js";
 import { servicoDaPasta } from "./credenciais/blob.js";
 import type { Credenciais } from "./credenciais/tipos.js";
 import { carregarEstado, novaConta, salvarEstado, type ContaLocal, type EstadoLocal, type ItemFila } from "./estado.js";
+import { t } from "./i18n.js";
 import { copiarPasta } from "./util/arquivos.js";
 import type { Executor } from "./util/executor.js";
 import { Contador, projetoDe, type LinhaHora, type SessaoReg } from "./registro/contador.js";
@@ -86,7 +87,7 @@ export async function lerBancoSqlite(arquivo: string, exec: Executor): Promise<D
     } else {
       for (const [k, sql] of consultas) {
         const r = await exec.rodar(["sqlite3", "-json", copia, sql], { timeoutMs: 120_000 });
-        if (r.codigo !== 0) throw new Error(`sqlite3 falhou: ${r.erro.trim()}`);
+        if (r.codigo !== 0) throw new Error(t(`sqlite3 falhou: ${r.erro.trim()}`, `sqlite3 failed: ${r.erro.trim()}`));
         saida[k] = r.saida.trim() ? (JSON.parse(r.saida) as unknown[]) : [];
       }
     }
@@ -162,7 +163,7 @@ export async function importar(o: OpcoesImportar): Promise<RelatorioImportacao> 
   try {
     antigo = JSON.parse(fs.readFileSync(arqEstado, "utf8")) as EstadoAntigo;
   } catch {
-    throw new Error(`não achei o registro do roteador em ${arqEstado}`);
+    throw new Error(t(`não achei o registro do roteador em ${arqEstado}`, `I could not find the router record at ${arqEstado}`));
   }
   const estado: EstadoLocal = carregarEstado(o.c.estado);
   const rel: RelatorioImportacao = { contas: [], ativa: null, uso: { importado: false, linhas: 0, sessoes: 0, vistos: 0 }, avisos: [] };
@@ -170,11 +171,11 @@ export async function importar(o: OpcoesImportar): Promise<RelatorioImportacao> 
 
   for (const [slug, ca] of Object.entries(antigo.contas ?? {})) {
     if (!ca.email || !ca.pasta) {
-      rel.avisos.push(`conta ${slug} sem e-mail ou pasta: ficou de fora`);
+      rel.avisos.push(t(`conta ${slug} sem e-mail ou pasta: ficou de fora`, `account ${slug} without an email or folder: left out`));
       continue;
     }
     if (o.conferirServico && ca.servico && ca.servico !== servicoDaPasta(ca.pasta)) {
-      rel.avisos.push(`${ca.email}: a entrada antiga (${ca.servico}) não bate com a pasta; credencial não copiada`);
+      rel.avisos.push(t(`${ca.email}: a entrada antiga (${ca.servico}) não bate com a pasta; credencial não copiada`, `${ca.email}: the old entry (${ca.servico}) does not match the folder; credential not copied`));
     }
     let conta: ContaLocal | undefined = Object.values(estado.contas).find(
       (c) => (c.accountUuid && c.accountUuid === ca.accountUuid && c.orgUuid === ca.orgUuid) || c.email === ca.email!.toLowerCase(),
@@ -212,7 +213,7 @@ export async function importar(o: OpcoesImportar): Promise<RelatorioImportacao> 
       // Os arquivos da pasta (o .claude.json com o oauthAccount, e no Linux/Windows o .credentials.json).
       copiados = copiarPasta(ca.pasta, conta.pasta);
     } else {
-      rel.avisos.push(`${ca.email}: a pasta antiga ${ca.pasta} não existe`);
+      rel.avisos.push(t(`${ca.email}: a pasta antiga ${ca.pasta} não existe`, `${ca.email}: the old folder ${ca.pasta} does not exist`));
     }
     let credencial: RelatorioImportacao["contas"][number]["credencial"] = "sem credencial";
     const servicoOk = !o.conferirServico || !ca.servico || ca.servico === servicoDaPasta(ca.pasta);
@@ -273,9 +274,9 @@ export async function importar(o: OpcoesImportar): Promise<RelatorioImportacao> 
   const marca = path.join(o.c.registro, "importado-do-roteador.json");
   const banco = path.join(o.de, "uso.db");
   if (fs.existsSync(marca)) {
-    rel.uso.motivo = "já importado antes";
+    rel.uso.motivo = t("já importado antes", "already imported before");
   } else if (!fs.existsSync(banco)) {
-    rel.uso.motivo = "sem uso.db na origem";
+    rel.uso.motivo = t("sem uso.db na origem", "no uso.db at the source");
   } else {
     const dados = await (o.lerBanco ?? ((a: string) => lerBancoSqlite(a, o.exec)))(banco);
     const conta = (slug: string | null | undefined) => (slug ? (mapa.get(slug) ?? "") : "");

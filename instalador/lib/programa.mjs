@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { t } from "./texto.mjs";
 
 const WIN = process.platform === "win32";
 
@@ -145,7 +146,8 @@ export function copiarEstado(base, rotulo, { agora = new Date(), manter = MANTER
     const a = medir(de);
     const b = medir(path.join(destino, item));
     if (a.arquivos !== b.arquivos || a.bytes !== b.bytes) {
-      throw new Error(`a cópia de ${item} não bateu (${b.arquivos}/${a.arquivos} arquivos): nada foi atualizado`);
+      throw new Error(t(`a cópia de ${item} não bateu (${b.arquivos}/${a.arquivos} arquivos): nada foi atualizado`,
+        `copying ${item} did not match (${b.arquivos}/${a.arquivos} files): nothing was updated`));
     }
   }
   const datadas = readdirSync(pasta).filter((n) => /^\d{8}-\d{6}-/.test(n)).sort();
@@ -178,14 +180,15 @@ export function instalarPrograma(raiz, app, { log = () => {} } = {}) {
   const agente = path.join(novo, "agente");
   // Só as versões travadas no package-lock.json (com o resumo de cada pacote) e sem script de instalação de terceiros:
   // o agente guarda a chave do cofre e os logins (auditoria de segurança de 11/10/2026).
-  if (!existsSync(path.join(agente, "package-lock.json"))) throw new Error("agente/package-lock.json ausente: a instalação só usa versões travadas");
-  log("instalando as dependências do agente (versões travadas)");
+  if (!existsSync(path.join(agente, "package-lock.json"))) throw new Error(t("agente/package-lock.json ausente: a instalação só usa versões travadas",
+    "agente/package-lock.json is missing: the installation only uses locked versions"));
+  log(t("instalando as dependências do agente (versões travadas)", "installing the agent dependencies (locked versions)"));
   let r = rodar(npm, ["ci", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: agente });
-  if (!r.ok) throw new Error(`npm install do agente falhou: ${r.erro.slice(-400)}`);
-  log("compilando o agente");
+  if (!r.ok) throw new Error(t(`npm install do agente falhou: ${r.erro.slice(-400)}`, `the agent npm install failed: ${r.erro.slice(-400)}`));
+  log(t("compilando o agente", "building the agent"));
   r = rodar(npm, ["run", "build"], { cwd: agente });
-  if (!r.ok) throw new Error(`build do agente falhou: ${(r.saida + r.erro).slice(-400)}`);
-  if (!existsSync(path.join(agente, "dist", "src", "cli.js"))) throw new Error("o build do agente não gerou dist/src/cli.js");
+  if (!r.ok) throw new Error(t(`build do agente falhou: ${(r.saida + r.erro).slice(-400)}`, `the agent build failed: ${(r.saida + r.erro).slice(-400)}`));
+  if (!existsSync(path.join(agente, "dist", "src", "cli.js"))) throw new Error(t("o build do agente não gerou dist/src/cli.js", "the agent build did not produce dist/src/cli.js"));
   const anterior = `${app}.anterior`;
   rmSync(anterior, { recursive: true, force: true });
   if (existsSync(app)) renameSync(app, anterior);
@@ -268,7 +271,7 @@ export function acrescentarPath(bin) {
 
 /** O mod nas sessões: o marketplace é a pasta do programa; a porta acompanha o agente (7789 no modo sombra). */
 export function instalarMod(app, { porta = 7788, env } = {}) {
-  if (!existe("claude")) return { ok: false, erro: "claude não encontrado no PATH" };
+  if (!existe("claude")) return { ok: false, erro: t("claude não encontrado no PATH", "claude not found on PATH") };
   const r = rodar("claude", ["plugin", "install", "reveza", "--marketplace", app, "--scope", "user", "--config", `porta=${porta}`, "--json", "-y"], { env });
   if (r.ok) return { ok: true };
   if (/already installed|já instalad/i.test(r.saida + r.erro)) {
@@ -307,7 +310,8 @@ export function lerInstalacao(arquivo) {
 export function gravarInstalacao(arquivo, dados) {
   const proibido = /(token|senha|secret|segredo|service_role|sbp_)/i;
   for (const [k, v] of Object.entries(flat(dados))) {
-    if (proibido.test(k) || (typeof v === "string" && /^(sbp_|sk-|sb_secret_)/.test(v))) throw new Error(`instalacao.json não guarda segredo (${k})`);
+    if (proibido.test(k) || (typeof v === "string" && /^(sbp_|sk-|sb_secret_)/.test(v))) throw new Error(t(`instalacao.json não guarda segredo (${k})`,
+      `instalacao.json does not store secrets (${k})`));
   }
   mkdirSync(path.dirname(arquivo), { recursive: true, mode: 0o700 });
   if (!WIN) chmodSync(path.dirname(arquivo), 0o700);

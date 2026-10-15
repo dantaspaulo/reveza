@@ -1,3 +1,5 @@
+🌐 **Português** · [English](ARQUITETURA.en.md)
+
 # Reveza AI: arquitetura
 
 Gestor de várias contas de assistente de código, com painel na nuvem, troca de conta automática e registro de uso.
@@ -354,6 +356,11 @@ ou sem terminal, fica desligada. Depois de publicar, o instalador grava na nuvem
 Na hora de pedir cada token, o instalador abre a página de criá-lo (`open`, `xdg-open` ou `explorer.exe`), só com
 tela e pergunta: nunca com `--sim` ou sem terminal, por SSH sem tela, ou com o token já no ambiente; numa atualização,
 em que o token do Supabase é opcional, essa página não abre. Falhar ao abrir não para nada: o endereço fica impresso.
+
+**Idioma.** O instalador pergunta o idioma no primeiro passo (português ou inglês) e o grava em
+`~/.reveza/instalacao.json` (campo `idioma`); `--idioma pt|en` pula a pergunta. O agente lê esse campo a cada execução, e
+o mod lê pelo caminho absoluto: os dois falam o idioma escolhido na instalação. No painel o idioma é de cada pessoa:
+fica no navegador (localStorage) e na conta dela (`membros.idioma`), e não muda o de ninguém.
 
 ## 11. Segurança do painel publicado
 

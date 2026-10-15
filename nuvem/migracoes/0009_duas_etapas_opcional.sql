@@ -10,7 +10,7 @@ alter table public.config add constraint config_chave_check check (chave in ('au
   'rodizio_minutos', 'rodizio_ordem', 'intervalo_s', 'retomar_terminal', 'espera_entre_trocas_s', 'proximo_rodizio_em',
   'fuso', 'alertas_ate', 'exigir_duas_etapas', 'cofre_impressao', 'atualizar_sozinho', 'atualizacao_vez',
   'nuvem_versao', 'nuvem_atualizacao', 'publicado', 'impressoes', 'painel_publicacao', 'atualizacao_completa',
-  'publicacao_vez'));
+  'publicacao_vez', 'idioma'));
 
 -- A instalação exige as duas etapas de todo administrador?
 create or replace function public.rvz_exige_duas_etapas() returns boolean

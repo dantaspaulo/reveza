@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { en, pt } from "./dicionario"
+import { idiomaDoNavegador, idiomaGuardado } from "./index"
 import { buscar, interpolar, traduzir, traduzirPlural } from "./traduzir"
 
 function folhas(o: unknown, prefixo = ""): Record<string, string> {
@@ -62,5 +63,56 @@ describe("i18n", () => {
     expect(traduzirPlural(dic, dic, "pt-BR", "c", 0)).toBe("0 contas")
     expect(traduzirPlural(dic, dic, "pt-BR", "c", 2)).toBe("2 contas")
     expect(traduzirPlural(dic, dic, "en", "z", 0)).toBe("nenhuma")
+  })
+})
+
+describe("idioma do navegador", () => {
+  it("qualquer 'pt...' é português; o resto cai no inglês", () => {
+    expect(idiomaDoNavegador(["pt-BR"])).toBe("pt-BR")
+    expect(idiomaDoNavegador(["pt", "en-US"])).toBe("pt-BR")
+    expect(idiomaDoNavegador(["pt-PT"])).toBe("pt-BR")
+    expect(idiomaDoNavegador(["en-US"])).toBe("en")
+    expect(idiomaDoNavegador(["fr-FR", "en-GB"])).toBe("en")
+    expect(idiomaDoNavegador(["en-US", "pt-BR"])).toBe("en")
+    expect(idiomaDoNavegador([])).toBe("pt-BR")
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function comNavegador() {
+    vi.stubGlobal("document", {})
+  }
+
+  function armazenamento(valor: string | null) {
+    vi.stubGlobal("localStorage", {
+      getItem: () => valor,
+      setItem: () => {},
+    })
+  }
+
+  it("a escolha explícita vence o navegador; sem escolha, vale o navegador", () => {
+    comNavegador()
+    vi.stubGlobal("navigator", { languages: ["en-US"], language: "en-US" })
+    armazenamento("pt-BR")
+    expect(idiomaGuardado()).toBe("pt-BR")
+
+    armazenamento("en")
+    expect(idiomaGuardado()).toBe("en")
+
+    armazenamento(null)
+    expect(idiomaGuardado()).toBe("en")
+  })
+
+  it("sem localStorage (prévia, janela privada) usa o navegador sem quebrar", () => {
+    comNavegador()
+    vi.stubGlobal("navigator", { languages: ["pt-BR"], language: "pt-BR" })
+    expect(idiomaGuardado()).toBe("pt-BR")
+  })
+
+  it("fora do navegador (sem document, como nos testes) o padrão é pt-BR, qualquer que seja o LANG", () => {
+    vi.stubGlobal("navigator", { languages: ["en-US"], language: "en-US" })
+    expect(idiomaGuardado()).toBe("pt-BR")
   })
 })

@@ -6,6 +6,7 @@
 // o embrulho só sai da nuvem para um computador já autenticado, uma vez.
 
 import { randomBytes, randomInt, scryptSync } from "node:crypto";
+import type { Idioma } from "../i18n.js";
 import { cifrar, decifrar, TAMANHO_CHAVE } from "./cifra.js";
 import { PALAVRAS_EN, PALAVRAS_PT } from "./palavras.js";
 
@@ -13,7 +14,7 @@ export const PALAVRAS_NA_FRASE = 6;
 const AAD = "reveza-ligacao|1";
 export const SCRYPT = { N: 1 << 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 
-export type Idioma = "pt-BR" | "en";
+export type { Idioma };
 
 export function listaDo(idioma: Idioma): readonly string[] {
   return idioma === "en" ? PALAVRAS_EN : PALAVRAS_PT;

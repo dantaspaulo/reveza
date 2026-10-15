@@ -1,10 +1,11 @@
 import type { On } from 'claude-code'
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 
-import { hmacHex, tipoDoLimite } from './register'
+import { hmacHex, janelasTexto, resumo, tipoDoLimite } from './register'
 
 // Agente falso: responde /api/ativa com a versão do momento e guarda o que o mod mandou.
-function agente(on: On) {
+// `instalacao` é o conteúdo do instalacao.json (o idioma da instalação); sem ele, o arquivo não existe (português).
+function agente(on: On, instalacao?: string) {
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.id', () => ({ value: 'sessao-teste' }))
   on('session.cwd', () => ({ value: '/tmp/projeto' }))
@@ -48,6 +49,7 @@ function agente(on: On) {
   on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/teste' : undefined }))
   on('fs.read', ($, e) => {
     if (e.path === '/home/teste/.reveza/ponte.chave') return { value: `${'c'.repeat(64)}\n` }
+    if (instalacao && e.path === '/home/teste/.reveza/instalacao.json') return { value: instalacao }
     throw new Error('ENOENT')
   })
   return { recebidos, estado, avisos }
@@ -66,6 +68,10 @@ test('no limite, avisa o agente e continua sozinha quando a conta troca', async 
   await relogio.advance(5000)
   // a prova do agente é conferida com digest assíncrono: deixa a leitura da conta em uso terminar
   await relogio.settle()
+  for (let i = 0; i < 5 && !recebidos.some(r => r.url.endsWith('/api/ativa')); i++) {
+    await relogio.advance(5000)
+    await relogio.settle()
+  }
   await $.classic.StopFailure({ error: 'rate_limit' })
 
   // a chave nunca viaja: vai só a prova
@@ -325,3 +331,61 @@ test('saída enxuta: com pipe, interrompida ou com erro, nada muda', async ($, o
   expect(r.result).toBe('Exit code 1')
 })
 
+// Instalação em inglês (instalacao.json com "idioma":"en"): tudo o que a pessoa vê sai em inglês.
+
+test('/reveza sai em inglês com a instalação em inglês', async ($, on) => {
+  agente(on, JSON.stringify({ idioma: 'en' }))
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  const r = await $.command.run({
+    command: 'reveza',
+    args: '',
+    origin: { kind: 'composer' } as never,
+    presentation: { isFullscreen: false, columns: 100 },
+  })
+  expect(r.text).toContain('a@exemplo.com')
+  expect(r.text).toContain('5 hours 42%')
+  expect(r.text).toContain('Week, larger model 12%')
+  expect(r.text).toContain('Auto switch is on')
+  expect(/claude|anthropic|opus|sonnet/i.test(r.text ?? '')).toBe(false)
+})
+
+test('a retomada sai em inglês com a instalação em inglês', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado } = agente(on, JSON.stringify({ idioma: 'en' }))
+  const enviados: string[] = []
+  on('prompt.submit', ($, e) => {
+    enviados.push(e.text)
+    return { text: e.text }
+  })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await relogio.advance(5000)
+  await relogio.settle()
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  estado.versao = 4
+  estado.email = 'b@exemplo.com'
+  await relogio.advance(5000)
+  await relogio.settle()
+  for (let i = 0; i < 5 && enviados.length === 0; i++) {
+    await relogio.advance(5000)
+    await relogio.settle()
+  }
+  expect(enviados).toHaveLength(1)
+  expect(enviados[0]).toContain('Continue the task')
+  expect(enviados[0]).not.toContain('b@exemplo.com') // o que a ponte devolve não entra no prompt
+})
+
+test('resumo e janelasTexto no idioma pedido, com o português como padrão', () => {
+  const estado = {
+    auto: true,
+    modo: 'limiar',
+    limiares: { aviso: 90, troca: 95 },
+    contas: [{ email: 'a@exemplo.com', org: null, estado: 'ativa', janelas: [{ tipo: 'five_hour', pct: 42, resetEm: null }] }],
+  }
+  expect(resumo(estado)).toContain('Troca automática ligada (aviso em 90%, troca em 95%)')
+  expect(resumo(estado)).toContain('5 horas 42%')
+  expect(resumo(estado, 'pt-BR')).toBe(resumo(estado))
+  expect(resumo(estado, 'en')).toContain('Auto switch is on (warning at 90%, switch at 95%)')
+  expect(janelasTexto([{ tipo: 'seven_day', pct: 10, resetEm: null }], 'en')).toBe('Week 10%')
+  expect(janelasTexto([], 'en')).toBe('no reading yet')
+  expect(janelasTexto([{ tipo: 'five_hour', pct: 42, resetEm: 1000000000 }], 'en')).toContain('(resets ')
+})

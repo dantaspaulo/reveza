@@ -1,16 +1,18 @@
 // SQL que o instalador manda ao banco da pessoa (pela Management API do Supabase): literais escapados e as funções do
 // painel chamadas como o administrador, para valerem as mesmas regras e a mesma auditoria do painel.
 
+import { t } from "./texto.mjs";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function uuid(v) {
-  if (!UUID.test(String(v))) throw new Error("identificador inválido");
+  if (!UUID.test(String(v))) throw new Error(t("identificador inválido", "invalid identifier"));
   return `'${v}'::uuid`;
 }
 
 export function texto(v) {
   const s = String(v);
-  if (s.includes("\0")) throw new Error("texto com caractere nulo");
+  if (s.includes("\0")) throw new Error(t("texto com caractere nulo", "text contains a null character"));
   return `'${s.replaceAll("'", "''")}'`;
 }
 

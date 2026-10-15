@@ -89,6 +89,24 @@ describe("detalhes para copiar", () => {
     expect(texto).toContain("pedaço do build não carregou")
   })
 
+  it("em inglês os rótulos e a versão saem no idioma da tela", () => {
+    const texto = detalhesDaFalha({
+      erro: new TypeError("Failed to fetch dynamically imported module: https://painel.exemplo/assets/alertas-OLD.js"),
+      caminho: "/alertas?convite=segredo123",
+      versao: "0.1.5",
+      agora: new Date("2026-10-12T04:00:00Z"),
+      navegador: "Mozilla/5.0 (Macintosh)",
+      idioma: "en",
+    })
+    expect(texto).toContain("Reveza AI · panel 0.1.5")
+    expect(texto).toContain("Page: /alertas\n")
+    expect(texto).toContain("When: 2026-10-12T04:00:00.000Z")
+    expect(texto).toContain("Browser: Mozilla/5.0 (Macintosh)")
+    expect(texto).toContain("build chunk failed to load")
+    expect(texto).not.toMatch(/Tela:|Quando:|Navegador:|pedaço do build/)
+    expect(texto).not.toContain("segredo123")
+  })
+
   it("tira chaves, valores longos e telefones", () => {
     expect(semDadoSensivel("chave re_AbCdEfGh12345678 e sk-ant-api03-xyzxyzxyz")).toBe("chave <chave> e <chave>")
     expect(semDadoSensivel("x " + "A".repeat(50))).toBe("x <valor longo>")

@@ -25,6 +25,7 @@ import { createHash, createHmac, randomBytes, scrypt as scryptCb, timingSafeEqua
 import { novaChave, TAMANHO_CHAVE } from "./cofre/cifra.js";
 import { desembrulhar, embrulhar, gerarFrase, palavrasDesconhecidas, type Idioma } from "./cofre/frase.js";
 import { SEGREDO_COFRE, type Guarda } from "./cofre/guarda.js";
+import { t } from "./i18n.js";
 import { ErroNuvem, type ChavePublica, type EnvelopeChave, type Nuvem, type PedidoLigacao } from "./nuvem/tipos.js";
 
 export async function lerChave(guarda: Guarda): Promise<Buffer | null> {
@@ -48,30 +49,37 @@ export async function iniciarCofre(guarda: Guarda): Promise<boolean> {
 
 export async function publicarLigacao(guarda: Guarda, nuvem: Nuvem, idioma: Idioma = "pt-BR"): Promise<{ frase: string; expiraEm: string | null }> {
   const k = await lerChave(guarda);
-  if (!k) throw new Error("este computador não tem a chave do cofre; mostre a frase num que tenha (reveza ligar --mostrar-frase)");
+  if (!k) throw new Error(t("este computador não tem a chave do cofre; mostre a frase num que tenha (reveza ligar --mostrar-frase)", "this computer does not have the vault key; show the phrase on one that does (reveza ligar --mostrar-frase)"));
   const frase = gerarFrase(idioma);
   const { embrulho, sal } = embrulhar(k, frase);
   const r = await nuvem.ligacaoPublicar(embrulho, sal);
-  if (!r.ok) throw new Error("a nuvem recusou a ligação");
+  if (!r.ok) throw new Error(t("a nuvem recusou a ligação", "the cloud refused the link"));
   return { frase, expiraEm: r.expira_em };
 }
 
 export async function receberLigacao(guarda: Guarda, nuvem: Nuvem, frase: string): Promise<void> {
   const erradas = palavrasDesconhecidas(frase);
-  if (erradas.length) throw new Error(`palavra fora da lista: ${erradas.join(", ")} (confira a digitação)`);
-  if (await lerChave(guarda)) throw new Error("este computador já tem a chave do cofre");
+  if (erradas.length) throw new Error(t(`palavra fora da lista: ${erradas.join(", ")} (confira a digitação)`, `word not in the list: ${erradas.join(", ")} (check what you typed)`));
+  if (await lerChave(guarda)) throw new Error(t("este computador já tem a chave do cofre", "this computer already has the vault key"));
   const pacote = await nuvem.ligacaoBuscar();
-  if (!pacote) throw new Error("nenhuma frase aberta (vale 10 minutos; mostre outra com reveza ligar --mostrar-frase no computador que tem a chave)");
+  if (!pacote) {
+    throw new Error(
+      t(
+        "nenhuma frase aberta (vale 10 minutos; mostre outra com reveza ligar --mostrar-frase no computador que tem a chave)",
+        "no open phrase (it is valid for 10 minutes; show another with reveza ligar --mostrar-frase on the computer that has the key)",
+      ),
+    );
+  }
   let k: Buffer;
   try {
     k = desembrulhar(pacote.embrulho, pacote.sal, frase);
   } catch {
-    throw new Error("a frase não abriu a chave; confira as 6 palavras e a ordem");
+    throw new Error(t("a frase não abriu a chave; confira as 6 palavras e a ordem", "the phrase did not open the key; check the 6 words and their order"));
   }
   // a chave precisa ser a desta instalação (a nuvem guarda a impressão da primeira); outra chave dividiria o cofre
   const daInstalacao = await nuvem.cofreImpressao(null);
   if (daInstalacao && daInstalacao !== impressaoDaChave(k)) {
-    throw new Error("a chave recebida não é a desta instalação: gere a frase num computador que já usa o Reveza");
+    throw new Error(t("a chave recebida não é a desta instalação: gere a frase num computador que já usa o Reveza", "the key received is not from this installation: generate the phrase on a computer that already uses Reveza"));
   }
   await guarda.gravar(SEGREDO_COFRE, k.toString("base64"));
   if (!daInstalacao) await nuvem.cofreImpressao(impressaoDaChave(k));
@@ -88,9 +96,12 @@ const aad = (computadorId: string) => new TextEncoder().encode(`${V3}|${computad
 /** Pedido de um computador novo com o Reveza anterior à 0.4.0 (código de 8): não se libera. */
 export const ANTIGO =
   "o código tem 12 letras e números (XXXX-XXXX-YYYY); se o computador novo mostra só 8, ele está com uma versão antiga do Reveza: instale de novo nele (a versão mais nova) e gere outro código no painel";
+const ANTIGO_EN =
+  "the code has 12 letters and numbers (XXXX-XXXX-YYYY); if the new computer shows only 8, it runs an old version of Reveza: install it again there (the newest version) and generate another code in the panel";
 
 /** Dois pedidos ao mesmo tempo: todos recusados (falha fechada; revisão de segurança de 11/10/2026). */
 export const LIGACAO_DUPLA = "dois pedidos de ligação ao mesmo tempo: recusei os dois; gere de novo no painel";
+const LIGACAO_DUPLA_EN = "two link requests at the same time: I refused both; generate a new code in the panel";
 
 /** A parte do código que sai da chave pública: 8 símbolos de 32 (40 bits). */
 export const TAMANHO_LIGACAO = 8;
@@ -200,7 +211,7 @@ export async function abrirChaveDoEnvelope(privada: webcrypto.CryptoKey, env: En
   const claro = Buffer.from(
     await webcrypto.subtle.decrypt({ name: "AES-GCM", iv: Buffer.from(env.iv, "base64"), additionalData: aad(computadorId) }, chave, Buffer.from(env.cifrado, "base64")),
   );
-  if (claro.length !== TAMANHO_CHAVE) throw new Error("a chave entregue não tem o tamanho de uma chave do cofre");
+  if (claro.length !== TAMANHO_CHAVE) throw new Error(t("a chave entregue não tem o tamanho de uma chave do cofre", "the key delivered is not the size of a vault key"));
   return claro;
 }
 
@@ -215,18 +226,23 @@ export interface OpcoesPedir {
   intervaloMs?: number;
 }
 
-const MOTIVOS: Record<string, string> = {
-  recusado_na_tela: "o pedido foi recusado na tela do computador que já usa o Reveza",
-  dois_pedidos: "chegaram dois pedidos ao mesmo tempo e os dois foram recusados, por segurança",
-  codigo_errado: "o código digitado não conferiu três vezes e o pedido foi recusado",
-};
+/** Por que a nuvem recusou o pedido (a chave é o código do motivo, que não muda; o texto sai no idioma do processo). */
+function motivoDaRecusa(motivo: string | null | undefined): string {
+  const motivos: Record<string, [string, string]> = {
+    recusado_na_tela: ["o pedido foi recusado na tela do computador que já usa o Reveza", "the request was refused on the screen of the computer that already uses Reveza"],
+    dois_pedidos: ["chegaram dois pedidos ao mesmo tempo e os dois foram recusados, por segurança", "two requests arrived at the same time and both were refused, for safety"],
+    codigo_errado: ["o código digitado não conferiu três vezes e o pedido foi recusado", "the code typed did not match three times and the request was refused"],
+  };
+  const m = motivos[motivo ?? ""];
+  return m ? t(m[0], m[1]) : t("o pedido foi recusado", "the request was refused");
+}
 
 /**
  * O computador novo pede para entrar: registra a chave pública, mostra o código e espera a chave do cofre chegar
  * (até o pedido vencer). Confere a impressão contra a da instalação antes de guardar. Devolve a impressão da instalação.
  */
 export async function pedirParaEntrar(guarda: Guarda, nuvem: Nuvem, o: OpcoesPedir): Promise<{ impressao: string | null }> {
-  if (await lerChave(guarda)) throw new Error("este computador já tem a chave do cofre");
+  if (await lerChave(guarda)) throw new Error(t("este computador já tem a chave do cofre", "this computer already has the vault key"));
   const agora = o.agoraMs ?? (() => Date.now());
   const par = await prepararPedido();
   const pedido = await nuvem.ligacaoPedir(par.publica);
@@ -244,35 +260,45 @@ export async function pedirParaEntrar(guarda: Guarda, nuvem: Nuvem, o: OpcoesPed
       continue;
     }
     if (r.estado === "entregue") {
-      if (!r.envelope) throw new Error("a nuvem não trouxe a chave do cofre: gere outro código no painel");
+      if (!r.envelope) throw new Error(t("a nuvem não trouxe a chave do cofre: gere outro código no painel", "the cloud did not bring the vault key: generate another code in the panel"));
       let k: Buffer;
       try {
         k = await abrirChaveDoEnvelope(par.privada, r.envelope, pedido.computador_id, par.segredo);
       } catch {
         // só abre o envelope de quem digitou o código desta tela: um erro nos 4 últimos, ou um envelope montado sem ele
-        throw new Error("a chave entregue não abriu com o código deste computador: confira os 4 últimos caracteres ao digitar e gere outro código no painel");
+        throw new Error(
+          t(
+            "a chave entregue não abriu com o código deste computador: confira os 4 últimos caracteres ao digitar e gere outro código no painel",
+            "the key delivered did not open with the code of this computer: check the last 4 characters when typing and generate another code in the panel",
+          ),
+        );
       }
       // a chave precisa ser a desta instalação; outra dividiria o cofre. Sem a impressão na nuvem, recusa: um pedido só
       // é liberado por um computador que já tem a chave, e ele grava a impressão ao subir (revisão de código da 0.2.0,
       // 12/10/2026). Desde a versão 3 o envelope já só abre com o código; a impressão segue como segunda conferência.
       if (!r.impressao) {
-        throw new Error("a nuvem não tem a impressão da chave do cofre desta instalação: abra o Reveza num computador que já o usa (ele grava a impressão) e gere outro código no painel");
+        throw new Error(
+          t(
+            "a nuvem não tem a impressão da chave do cofre desta instalação: abra o Reveza num computador que já o usa (ele grava a impressão) e gere outro código no painel",
+            "the cloud does not have the vault key fingerprint of this installation: open Reveza on a computer that already uses it (it stores the fingerprint) and generate another code in the panel",
+          ),
+        );
       }
       if (r.impressao !== impressaoDaChave(k)) {
-        throw new Error("a chave recebida não é a desta instalação: libere num computador que já usa o Reveza nesta instalação");
+        throw new Error(t("a chave recebida não é a desta instalação: libere num computador que já usa o Reveza nesta instalação", "the key received is not from this installation: let it in from a computer that already uses Reveza in this installation"));
       }
       await guarda.gravar(SEGREDO_COFRE, k.toString("base64"));
       return { impressao: r.impressao };
     }
-    if (r.estado === "recusado") throw new Error(`${MOTIVOS[r.motivo ?? ""] ?? "o pedido foi recusado"}: gere outro código no painel`);
-    if (r.estado === "vencido") throw new Error("o pedido venceu (10 minutos): gere outro código no painel");
-    if (r.estado === "lido") throw new Error("a chave deste pedido já foi lida: gere outro código no painel");
-    if (r.estado === "sem_pedido") throw new Error("a nuvem não achou o pedido deste computador: gere outro código no painel");
+    if (r.estado === "recusado") throw new Error(t(`${motivoDaRecusa(r.motivo)}: gere outro código no painel`, `${motivoDaRecusa(r.motivo)}: generate another code in the panel`));
+    if (r.estado === "vencido") throw new Error(t("o pedido venceu (10 minutos): gere outro código no painel", "the request expired (10 minutes): generate another code in the panel"));
+    if (r.estado === "lido") throw new Error(t("a chave deste pedido já foi lida: gere outro código no painel", "this request's key was already read: generate another code in the panel"));
+    if (r.estado === "sem_pedido") throw new Error(t("a nuvem não achou o pedido deste computador: gere outro código no painel", "the cloud could not find this computer's request: generate another code in the panel"));
     if (r.aprovador !== aprovador) {
       aprovador = r.aprovador;
       o.aoEsperar?.(aprovador);
     }
-    if (agora() > vence) throw new Error("o pedido venceu (10 minutos): gere outro código no painel");
+    if (agora() > vence) throw new Error(t("o pedido venceu (10 minutos): gere outro código no painel", "the request expired (10 minutes): generate another code in the panel"));
     await o.dormir(o.intervaloMs ?? 2000);
   }
 }
@@ -282,11 +308,11 @@ export async function entregarChave(nuvem: Nuvem, k: Buffer, pedido: PedidoLigac
   // quem entrega garante a impressão da chave na nuvem (grava se faltar): o computador novo recusa chave sem impressão
   const daInstalacao = await nuvem.cofreImpressao(impressaoDaChave(k));
   if (daInstalacao && daInstalacao !== impressaoDaChave(k)) {
-    throw new Error("a chave do cofre deste computador não é a da instalação: libere em outro computador");
+    throw new Error(t("a chave do cofre deste computador não é a da instalação: libere em outro computador", "this computer's vault key is not the installation's: let it in from another computer"));
   }
   const env = await cifrarChaveParaComputadorNovo(pedido.publica, k, pedido.computador_id, segredo);
   const r = await nuvem.ligacaoEntregar(pedido.computador_id, pedido.publica, env);
-  if (!r.ok) throw new Error(r.erro ?? "a nuvem recusou a entrega");
+  if (!r.ok) throw new Error(r.erro ?? t("a nuvem recusou a entrega", "the cloud refused the delivery"));
 }
 
 /**
@@ -295,23 +321,23 @@ export async function entregarChave(nuvem: Nuvem, k: Buffer, pedido: PedidoLigac
  */
 export async function liberarComputadorNovo(guarda: Guarda, nuvem: Nuvem, digitado: string): Promise<PedidoLigacao> {
   const k = await lerChave(guarda);
-  if (!k) throw new Error("este computador não tem a chave do cofre: libere num computador que já usa o Reveza");
+  if (!k) throw new Error(t("este computador não tem a chave do cofre: libere num computador que já usa o Reveza", "this computer does not have the vault key: let it in from a computer that already uses Reveza"));
   const daInstalacao = await nuvem.cofreImpressao(null);
   if (daInstalacao && daInstalacao !== impressaoDaChave(k)) {
-    throw new Error("a chave do cofre deste computador não é a da instalação: libere em outro computador");
+    throw new Error(t("a chave do cofre deste computador não é a da instalação: libere em outro computador", "this computer's vault key is not the installation's: let it in from another computer"));
   }
   const n = normalizarCodigo(digitado).length;
-  if (n === TAMANHO_LIGACAO) throw new Error(ANTIGO);
-  if (n !== TAMANHO_CODIGO) throw new Error("o código tem 12 letras e números (XXXX-XXXX-YYYY), como aparece no computador novo");
+  if (n === TAMANHO_LIGACAO) throw new Error(t(ANTIGO, ANTIGO_EN));
+  if (n !== TAMANHO_CODIGO) throw new Error(t("o código tem 12 letras e números (XXXX-XXXX-YYYY), como aparece no computador novo", "the code has 12 letters and numbers (XXXX-XXXX-YYYY), as shown on the new computer"));
   const pedidos = await nuvem.ligacoesAbertas();
-  if (!pedidos.length) throw new Error("nenhum computador novo pedindo para entrar agora (o pedido vale 10 minutos)");
+  if (!pedidos.length) throw new Error(t("nenhum computador novo pedindo para entrar agora (o pedido vale 10 minutos)", "no new computer asking to join right now (the request is valid for 10 minutes)"));
   if (pedidos.length > 1) {
     for (const p of pedidos) await nuvem.ligacaoRecusar(p.computador_id, "dois_pedidos").catch(() => undefined);
-    throw new Error(LIGACAO_DUPLA);
+    throw new Error(t(LIGACAO_DUPLA, LIGACAO_DUPLA_EN));
   }
   const p = pedidos[0]!;
   const segredo = await conferirCodigo(digitado, p.publica);
-  if (!segredo) throw new Error("o código não confere com o do computador novo: confira as 12 letras e números na tela dele");
+  if (!segredo) throw new Error(t("o código não confere com o do computador novo: confira as 12 letras e números na tela dele", "the code does not match the one on the new computer: check the 12 letters and numbers on its screen"));
   await entregarChave(nuvem, k, p, segredo);
   return p;
 }
