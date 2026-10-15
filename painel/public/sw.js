@@ -8,13 +8,13 @@
 const VERSAO = "reveza-v2"
 const CASCA = ["/", "/index.html", "/manifest.webmanifest", "/icones/icone.svg", "/icones/icone-192.png"]
 
-// O service worker não enxerga o localStorage: para o texto do aviso sem corpo, segue o idioma do sistema.
-// pt-BR é o padrão do produto quando não há navigator.
+// O service worker não enxerga o localStorage: para o texto do aviso sem corpo, segue o idioma do sistema, pela mesma
+// regra do painel (idiomaDoNavegador: vale o primeiro idioma da lista). pt-BR é o padrão quando não há navigator.
 function idiomaDoSistema() {
   const nav = self.navigator
   const lista = (nav && nav.languages && nav.languages.length ? nav.languages : [nav ? nav.language : ""]).filter(Boolean)
   if (lista.length === 0) return "pt-BR"
-  return lista.some((l) => String(l).toLowerCase().startsWith("pt")) ? "pt-BR" : "en"
+  return String(lista[0]).toLowerCase().startsWith("pt") ? "pt-BR" : "en"
 }
 
 self.addEventListener("install", (evento) => {
