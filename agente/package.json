@@ -1,6 +1,6 @@
 {
   "name": "reveza-agente",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Agente do Reveza AI: troca de conta, uso, cofre cifrado e ponte com a nuvem, em cada computador",
   "license": "MIT",
   "type": "module",
