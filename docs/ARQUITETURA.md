@@ -185,6 +185,15 @@ a dele, pelo instalador da própria versão nova, num processo separado, com a c
 - **A ordem** (0.3.0): com a atualização completa ligada (7e), a vez de se atualizar sozinho (`agente_vez_de_atualizar`)
   espera as funções e o painel da versão da nuvem irem ao ar (`motivo: publicacao`), e para se a publicação parou
   (`publicacao_falhou`). Enquanto um computador publica, ele mesmo não se atualiza (a publicação é um processo dele).
+- **O assistente de código** (0.8.0, `agente/src/assistente.ts`, migração 0027): a escolha da instalação
+  `config.assistente_atualizar` é `padrao` (sem a linha: o Reveza não mexe), `sozinho` (o agente roda `claude update` de
+  6 em 6 horas, num momento calmo e fora de uma atualização ou publicação do Reveza) ou `manual` (o agente escreve
+  `env.DISABLE_AUTOUPDATER = "1"` no `settings.json` do usuário; o `claude update` segue funcionando com ela). O agente
+  só tira o valor que ele mesmo escreveu (`assistenteDesligouAuto` no estado); o da pessoa fica, e `reveza assistente
+  liberar` (a desinstalação chama) devolve o dele. O painel pede pelo `atualizar` com `{ assistente: true }`: o agente
+  responde na hora e roda o `claude update` solto (pode levar minutos); o agente de antes da 0.8.0 recusa o corpo ("só
+  leva a versão") sem mexer em nada. O diagnóstico leva `assistente: { versao, modo, autoDesligado, atualizando,
+  ultima }`; a versão vem do doctor (`Conferencia.valor`), não do texto.
 
 ## 7e. Atualizar a nuvem e o painel (0.3.0)
 

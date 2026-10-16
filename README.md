@@ -272,6 +272,20 @@ Tudo fica em **Computadores → Atualizações**, no painel.
 3h às 5h) ou **Assim que sair**. Se um passo falhar, os seguintes param, o painel mostra o motivo e sai um alerta (o
 evento "Atualização sozinha parou", nos canais que você escolher em Alertas).
 
+**O assistente de código** (o Claude Code) também aparece ali, no cartão **Assistente de código**: a versão de cada
+computador lado a lado, o **Atualizar** de cada um e o **Atualizar os atrasados**. E a escolha de como ele se atualiza:
+
+- **Do jeito do assistente** (o padrão): o Reveza não mexe. O assistente se atualiza quando uma sessão abre, e um
+  computador parado pode ficar atrás.
+- **Sempre a mais nova**: cada computador roda a atualização do assistente a cada 6 horas, num momento calmo, mesmo sem
+  sessão aberta. Mantém todos na mesma versão.
+- **Só pelo painel**: o Reveza desliga a atualização automática do assistente (`DISABLE_AUTOUPDATER` no
+  `~/.claude/settings.json`) e a versão só muda pelo Atualizar. Serve para segurar todos numa versão que funciona. Um
+  valor que você escreveu à mão nesse arquivo é seu, e o Reveza não mexe nele; a desinstalação devolve o que ele desligou.
+
+Sessões abertas seguem na versão em que começaram; a nova vale nas próximas. Instalação pelo apt, dnf ou apk precisa de
+root para atualizar, e o painel mostra o erro.
+
 <details>
 <summary><b>Atualização completa: os tokens guardados cifrados (opcional, desligada de fábrica)</b></summary>
 

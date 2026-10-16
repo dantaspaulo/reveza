@@ -8,6 +8,7 @@ import {
   codigoDoErro,
   estadoDoCanal,
   faseDaLigacao,
+  modoAssistente,
   modoAtualizar,
   paraDiagnostico,
   paraNuvem,
@@ -39,6 +40,7 @@ describe("FonteSupabase (partes puras)", () => {
   it("chaves de configuração e padrões iguais aos do banco", () => {
     expect(Object.values(CHAVES_CONFIG).sort()).toEqual(
       [
+        "assistente_atualizar",
         "atualizar_sozinho",
         "auto",
         "aviso",
@@ -60,6 +62,7 @@ describe("FonteSupabase (partes puras)", () => {
       troca: 95,
       rodizioOrdem: "aleatoria",
       atualizarSozinho: "desligada",
+      assistenteAtualizar: "padrao",
     })
   })
 
@@ -123,6 +126,43 @@ describe("diagnóstico do agente", () => {
     // o agente da 0.2.1 conta que entende o "assim que sair"; o de antes, não
     expect(paraDiagnostico({ em: 1791700000, conferencias: [], assimQueSair: true }, "0.2.1")?.assimQueSair).toBe(true)
     expect(paraDiagnostico({ em: 1791700000, conferencias: [] }, "0.2.0")?.assimQueSair).toBe(false)
+  })
+
+  it("o assistente de código (agente 0.8.0): só X.Y.Z nas versões, erro curto, e nada estranho passa", () => {
+    const d = paraDiagnostico(
+      {
+        em: 1791700000,
+        conferencias: [],
+        assistente: {
+          versao: "2.1.301",
+          modo: "sozinho",
+          autoDesligado: "pessoa",
+          atualizando: true,
+          ultima: { em: "2026-10-15T12:00:00Z", ok: false, de: "2.1.293", para: "<b>", sozinho: true, erro: "x".repeat(500) },
+        },
+      },
+      "0.8.0"
+    )!
+    expect(d.assistente).toEqual({
+      versao: "2.1.301",
+      autoDesligado: "pessoa",
+      atualizando: true,
+      ultima: { em: "2026-10-15T12:00:00.000Z", ok: false, de: "2.1.293", para: null, sozinho: true, erro: "x".repeat(200) },
+    })
+    expect(paraDiagnostico({ em: 1791700000, conferencias: [], assistente: { versao: "rm -rf", autoDesligado: "outro", ultima: { em: "lixo" } } }, "0.8.0")?.assistente).toEqual({
+      versao: null,
+      autoDesligado: null,
+      atualizando: false,
+      ultima: null,
+    })
+    // o agente de antes da 0.8.0 não manda nada: o painel tira a versão do texto da conferência
+    expect(paraDiagnostico({ em: 1791700000, conferencias: [] }, "0.7.1")?.assistente).toBeNull()
+  })
+
+  it("a escolha do assistente gravada na nuvem: só sozinho e manual valem; o resto (e nuvem de antes) é o padrão", () => {
+    expect(modoAssistente("sozinho")).toBe("sozinho")
+    expect(modoAssistente("manual")).toBe("manual")
+    for (const v of [undefined, null, true, "padrao", "outro"]) expect(modoAssistente(v)).toBe("padrao")
   })
 })
 

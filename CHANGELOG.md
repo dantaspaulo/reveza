@@ -7,6 +7,29 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.8.0 · 15/10/2026
+
+A versão do assistente de código (o Claude Code) em cada computador, no painel, e a escolha de como ele se atualiza.
+Veio de um caso real: dois computadores da mesma instalação em versões diferentes do assistente. Precisa da nuvem
+atualizada (migração 0027: a nuvem se atualiza sozinha, ou pelo **Atualizar a nuvem**) e dos computadores na 0.8.0
+(pelo painel, ou com `npx github:dantaspaulo/reveza --atualizar` em cada um).
+
+- **Cartão Assistente de código** em **Computadores**: a versão de cada computador lado a lado, qual é a mais nova
+  entre eles e quem está atrás, o **Atualizar** de cada um e o **Atualizar os atrasados**. Sessões abertas seguem na
+  versão em que começaram; a nova vale nas próximas. Computador com o agente de antes da 0.8.0 mostra a versão, mas só
+  atualiza pelo painel depois de atualizar o agente.
+- **Como o assistente se atualiza**, para a instalação toda:
+  - **Do jeito do assistente** (o padrão): o Reveza não mexe, como antes.
+  - **Sempre a mais nova**: cada computador roda a atualização do assistente a cada 6 horas, num momento calmo, mesmo
+    sem sessão aberta. Mantém todos na mesma versão.
+  - **Só pelo painel**: o Reveza desliga a atualização automática do assistente (`DISABLE_AUTOUPDATER` no
+    `~/.claude/settings.json`) e a versão só muda pelo **Atualizar**. Serve para segurar todos numa versão que funciona.
+- **O que é seu fica:** um `DISABLE_AUTOUPDATER` (ou `DISABLE_UPDATES`) que você escreveu à mão não é tocado, e o painel
+  avisa que a atualização automática foi desligada à mão naquele computador. A desinstalação devolve o que o Reveza
+  desligou (`reveza assistente liberar`).
+- **Se a atualização falhar** (sem rede, ou instalação pelo apt, dnf ou apk, que precisa de root), o painel mostra o
+  erro na linha do computador.
+
 ## 0.7.1 · 15/10/2026
 
 Correção do alerta de segurança do GitHub sobre o pacote `braces` ([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)):

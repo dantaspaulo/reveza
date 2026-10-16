@@ -9,6 +9,11 @@ export type OrdemRodizio = "aleatoria" | "menor_uso"
  * hora em que ele acha a versão nova). No banco, as duas primeiras são false e true (o true de antes é de madrugada).
  */
 export type ModoAtualizar = "desligada" | "madrugada" | "assim_que_sair"
+/**
+ * O assistente de código de cada computador (0.8.0): o jeito dele (o Reveza não mexe), sempre a mais nova (cada agente
+ * atualiza o assistente de 6 em 6 horas) ou só pelo painel (o agente desliga a atualização automática do assistente).
+ */
+export type ModoAssistente = "padrao" | "sozinho" | "manual"
 /** "pendente": o código de acesso foi criado e o computador ainda não fez o primeiro contato (dá para revogar). */
 export type Sistema = "macos" | "linux" | "windows" | "pendente"
 export type TipoJanela = "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet"
@@ -97,6 +102,19 @@ export interface Diagnostico {
   precisaNuvem?: { para: string } | null
   /** O agente entende o "assim que sair" (0.2.1 em diante); os de antes só se atualizam sozinhos de madrugada. */
   assimQueSair?: boolean
+  /** O assistente de código deste computador (agente 0.8.0 em diante; null nos de antes). */
+  assistente?: AssistenteDoComputador | null
+}
+
+export interface AssistenteDoComputador {
+  /** A versão instalada (X.Y.Z); null: o programa não foi achado. */
+  versao: string | null
+  /** Quem desligou a atualização automática do assistente neste computador. */
+  autoDesligado: "reveza" | "pessoa" | null
+  /** O computador está rodando a atualização do assistente agora. */
+  atualizando: boolean
+  /** A última atualização que o agente rodou (a pedido do painel ou sozinho). */
+  ultima: { em: string; ok: boolean; de: string | null; para: string | null; sozinho: boolean; erro?: string } | null
 }
 
 export interface Atribuicao {
@@ -137,6 +155,8 @@ export interface ConfigTroca {
   exigirDuasEtapas: boolean
   /** Como cada computador se atualiza sozinho, um por vez. Desligada de fábrica. */
   atualizarSozinho: ModoAtualizar
+  /** O assistente de código dos computadores: o jeito dele (o padrão), sempre a mais nova ou só pelo painel. */
+  assistenteAtualizar: ModoAssistente
   /** Só leitura: de quem é a vez de atualizar sozinho agora (config `atualizacao_vez`, um computador por vez). */
   atualizacaoVez?: VezAtualizacao | null
   /** Só leitura: a nuvem e o painel (0.3.0): a versão da nuvem, o que está no ar e o andamento. */

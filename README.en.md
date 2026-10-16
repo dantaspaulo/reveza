@@ -278,6 +278,21 @@ a time. It all lives under **Computers → Updates**, in the dashboard.
 5 a.m.) or **As soon as it comes out**. If a step fails, the next ones stop, the dashboard shows why and an alert goes
 out (the "Automatic update stopped" event, on the channels you choose under Alerts).
 
+**The coding assistant** (Claude Code) shows up there too, in the **Coding assistant** card: each computer's version
+side by side, an **Update** for each one and **Update the ones behind**. And how it updates:
+
+- **The assistant's own way** (the default): Reveza does not touch it. The assistant updates when a session opens, and
+  an idle computer can fall behind.
+- **Always the newest**: each computer runs the assistant's update every 6 hours, at a calm moment, even with no session
+  open. Keeps them all on the same version.
+- **Only from the panel**: Reveza turns off the assistant's auto-update (`DISABLE_AUTOUPDATER` in
+  `~/.claude/settings.json`) and the version only changes through Update. Useful to hold every computer on a version
+  that works. A value you wrote in that file by hand is yours, and Reveza leaves it alone; uninstalling gives back what
+  it turned off.
+
+Open sessions keep the version they started with; the new one applies to the next ones. Installs through apt, dnf or apk
+need root to update, and the dashboard shows the error.
+
 <details>
 <summary><b>Full update: the tokens kept encrypted (optional, off by default)</b></summary>
 

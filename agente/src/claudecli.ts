@@ -7,7 +7,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sistemaAtual, type Sistema } from "./config.js";
 import { aspasSh } from "./navegador.js";
-import { envDaPasta, type Executor, type Processo } from "./util/executor.js";
+import { envDaPasta, type Executor, type Processo, type Resultado } from "./util/executor.js";
+import { ASSISTENTE_UPDATE_MS } from "./assistente.js";
 
 /** O "navegador" do login (abrir-login.js), compilado ao lado deste arquivo. */
 const ABRIR_LOGIN = fileURLToPath(new URL("./abrir-login.js", import.meta.url));
@@ -19,6 +20,8 @@ export interface Cli {
   renovar(pasta: string, tentativa: 0 | 1): Promise<void>;
   login(pasta: string, email: string | null): Processo;
   retomar(sessao: string, cwd: string, texto: string, saida: number): void;
+  /** `claude update`: o próprio assistente se atualiza (instalação nativa, npm ou Homebrew), sem terminal. */
+  atualizar(): Promise<Resultado>;
 }
 
 // No Windows, o "claude.cmd" do npm é um script de lote: rodá-lo exigiria o interpretador de comandos (e o Node novo
@@ -109,5 +112,14 @@ export class ClaudeCli implements Cli {
     const env = envDaPasta("", process.env);
     delete env.CLAUDE_CONFIG_DIR;
     this.exec.iniciar([this.bin, "--resume", sessao, "-p", texto], { cwd, env, solto: { saida } });
+  }
+
+  async atualizar(): Promise<Resultado> {
+    // a configuração padrão do usuário (sem CLAUDE_CONFIG_DIR), como na retomada; o npm de quem instalou pelo npm mora
+    // ao lado do Node que roda o agente, e o serviço nem sempre tem essa pasta no PATH
+    const env = envDaPasta("", process.env);
+    delete env.CLAUDE_CONFIG_DIR;
+    env.PATH = [path.dirname(process.execPath), env.PATH].filter(Boolean).join(path.delimiter);
+    return this.exec.rodar([this.bin, "update"], { env, timeoutMs: ASSISTENTE_UPDATE_MS });
   }
 }

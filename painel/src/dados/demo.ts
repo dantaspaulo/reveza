@@ -46,6 +46,9 @@ import type {
   WebhookSaida,
 } from "./tipos"
 
+/** A versão mais nova do assistente de código que a demonstração conhece (para onde o Atualizar leva). */
+const ASSISTENTE_MAIS_NOVO_DEMO = "2.1.301"
+
 const H = 3_600_000
 const MIN = 60_000
 const DIA = 24 * H
@@ -453,13 +456,15 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
 
   // ── computadores ──────────────────────────────────────────────────────
   // as mesmas conferências do `reveza doctor`; o Desktop tem problemas, dois com conserto automático (o Corrigir)
-  const diagnostico = (doComputador: string, atraso: number, comProblema: boolean): Diagnostico => ({
+  const diagnostico = (doComputador: string, atraso: number, comProblema: boolean, assistente: string): Diagnostico => ({
     em: iso(t0 - 4 * MIN),
     versao: doComputador,
     atrasoBuscaMs: atraso,
     // a mais nova publicada, que o agente leu no GitHub oficial (na demonstração, a versão do pacote)
     versaoNova: versao,
     assimQueSair: true,
+    // os dois computadores com versões diferentes do assistente de código (o caso que pediu o cartão, 15/10/2026)
+    assistente: { versao: assistente, autoDesligado: null, atualizando: false, ultima: null },
     itens: [
       { id: "agente", ok: true, detalhe: `versão ${doComputador}, Node 22.12.0` },
       { id: "servico", ok: true, detalhe: "rodando" },
@@ -481,7 +486,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
             fazer: "acerte a data e a hora do sistema (ligue o acerto automático pela internet); o Reveza não mexe nisso",
           }
         : { id: "relogio", ok: true, detalhe: "diferença de 0 s para o servidor" },
-      { id: "assistente", ok: true, detalhe: "versão 2.1.293" },
+      { id: "assistente", ok: true, detalhe: `versão ${assistente}` },
     ],
   })
   // o Desktop fica uma versão atrás (se houver anterior), para o aviso de atualização aparecer
@@ -495,7 +500,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
       vistoEm: iso(t0 - 3000),
       revogado: false,
       criadoEm: iso(t0 - 41 * DIA),
-      diagnostico: diagnostico(versao, 180, false),
+      diagnostico: diagnostico(versao, 180, false, "2.1.301"),
       atribuicao: { contaId: "conta-trabalho", motivo: "limite", decididoEm: iso(t0 - 2 * H - 4 * MIN) },
       contaPreferidaId: "conta-trabalho",
       enxugar: true,
@@ -508,7 +513,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
       vistoEm: iso(t0 - 4000),
       revogado: false,
       criadoEm: iso(t0 - 12 * DIA),
-      diagnostico: diagnostico(anterior ?? versao, 420, anterior !== null),
+      diagnostico: diagnostico(anterior ?? versao, 420, anterior !== null, "2.1.293"),
       atribuicao: { contaId: "conta-pessoal", motivo: "rodizio", decididoEm: iso(t0 - 6 * H - 11 * MIN) },
       contaPreferidaId: null,
       enxugar: false,
@@ -582,6 +587,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
     fuso: "America/Sao_Paulo",
     exigirDuasEtapas: false,
     atualizarSozinho: "desligada",
+    assistenteAtualizar: "padrao",
     atualizacaoVez: null,
     // a nuvem e o painel na versão da demonstração, com a atualização completa desligada (o padrão)
     nuvem: {
@@ -908,7 +914,35 @@ export class FonteDemo implements Fonte {
         this.d.config.atualizacaoVez = null
         this.rolarSozinho()
       }
+      // como os agentes: "só pelo painel" desliga a atualização automática do assistente; "sempre a mais nova" alinha já
+      if (campos.assistenteAtualizar !== undefined) {
+        for (const pc of this.d.computadores) {
+          if (pc.diagnostico?.assistente) pc.diagnostico.assistente.autoDesligado = campos.assistenteAtualizar === "manual" ? "reveza" : null
+        }
+        if (campos.assistenteAtualizar === "sozinho") {
+          for (const pc of this.d.computadores) this.atualizarAssistenteDemo(pc, true)
+        }
+      }
     })
+  }
+
+  /** Como o agente: o `claude update` leva uns segundos e o computador volta na mais nova que a demonstração conhece. */
+  private atualizarAssistenteDemo(pc: Computador, sozinho: boolean): string | null {
+    const a = pc.diagnostico?.assistente
+    if (!a || a.atualizando || pc.revogado) return null
+    const de = a.versao
+    const para = ASSISTENTE_MAIS_NOVO_DEMO
+    a.atualizando = true
+    setTimeout(() => {
+      a.atualizando = false
+      a.versao = para
+      a.ultima = { em: this.agora().toISOString(), ok: true, de, para, sozinho }
+      if (pc.diagnostico) {
+        pc.diagnostico.itens = pc.diagnostico.itens.map((i) => (i.id === "assistente" ? { ...i, detalhe: `versão ${para}` } : i))
+      }
+      this.emitir()
+    }, 3500)
+    return de
   }
 
   /**
@@ -1117,6 +1151,12 @@ export class FonteDemo implements Fonte {
           precisa_nuvem: false,
         }
         setTimeout(() => this.rolarSozinho(), 1500)
+      }
+      if (acao === "atualizar" && corpo.assistente === true) {
+        const de = this.atualizarAssistenteDemo(pc, false)
+        cmd.resposta = de === null && pc.diagnostico?.assistente?.atualizando
+          ? { ok: false, erro: "o assistente de código já está atualizando neste computador" }
+          : { ok: true, assistente: true, atualizando: true, de }
       }
       if (acao === "atualizar" && typeof corpo.versao === "string") {
         // como o agente: baixa a versão oficial mais nova e volta nela uns segundos depois

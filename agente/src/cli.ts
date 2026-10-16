@@ -18,7 +18,8 @@ import { doctor, textoDoctor, type DepsDoctor } from "./doctor.js";
 import { ambienteDoUsuario, consertar, instalarMod, pastaDoPrograma, resumoConserto } from "./conserto.js";
 import { GithubOficial } from "./atualizar.js";
 import { abrirTokens, avisoCompleta, cifrarTokens, conferirTokens, refDaNuvem, tokenValido, type Tokens } from "./completa.js";
-import { carregarEstado, type EstadoLocal } from "./estado.js";
+import { carregarEstado, salvarEstado, type EstadoLocal } from "./estado.js";
+import { aplicarAutoUpdater } from "./assistente.js";
 import { importar } from "./importar.js";
 import { iniciarCofre, lerChave, liberarComputadorNovo, pedirParaEntrar, publicarLigacao, receberLigacao, impressaoDaChave } from "./ligar.js";
 import { letreiro } from "./letreiro.js";
@@ -171,6 +172,8 @@ Uso: reveza <comando> [opções]
   ligar --mostrar-frase           emergência: 6 palavras para um computador já ligado que perdeu a chave do cofre
   ligar --frase "..."             emergência: recebe a chave do cofre pelas 6 palavras (só computador já ligado)
   servico instalar|remover|status [--sombra] [--json]
+  assistente liberar              devolve ao assistente de código a atualização automática que o agente desligou
+                                  (escolha "só pelo painel"); a desinstalação usa, com o agente parado
   importar --de <pasta>           copia contas, credenciais e histórico de outro gestor (nada é apagado)
   cofre iniciar                   cria a chave do cofre no primeiro computador
   nuvem entrar --url U --chave-publica K --email E    guarda a identidade deste computador (senha pelo stdin)
@@ -206,6 +209,8 @@ Usage: reveza <command> [options]
   ligar --mostrar-frase           emergency: 6 words for a computer already linked that lost the vault key
   ligar --frase "..."             emergency: receives the vault key through the 6 words (only a linked computer)
   servico instalar|remover|status [--sombra]
+  assistente liberar              gives the coding assistant back the auto-update the agent turned off
+                                  ("only from the panel" choice); the uninstall uses it, with the agent stopped
   importar --de <pasta>           copies accounts, credentials and history from another manager (nothing is erased)
   cofre iniciar                   creates the vault key on the first computer
   nuvem entrar --url U --chave-publica K --email E    stores this computer's identity (password from stdin)
@@ -836,6 +841,30 @@ function opcoesServico(amb: Ambiente, a: Args): servico.OpcoesServico {
   };
 }
 
+/**
+ * reveza assistente liberar: tira o DISABLE_AUTOUPDATER que o agente escreveu no settings.json (escolha "só pelo
+ * painel"), para o assistente voltar a se atualizar sozinho depois que o Reveza sai. Valor que a pessoa escreveu fica.
+ * Com o agente rodando, ele escreveria de novo na busca seguinte: a desinstalação chama depois de parar o serviço.
+ */
+function cmdAssistente(amb: Ambiente, a: Args): number {
+  if (a.pos[1] !== "liberar") {
+    amb.erro(t("uso: reveza assistente liberar", "usage: reveza assistente liberar"));
+    return 1;
+  }
+  const e = carregarEstado(amb.c.estado);
+  const r = aplicarAutoUpdater(path.join(amb.c.principalDir, "settings.json"), false, e.assistenteDesligouAuto === true);
+  if (e.assistenteDesligouAuto) {
+    e.assistenteDesligouAuto = false;
+    salvarEstado(amb.c.estado, e);
+  }
+  amb.saida(
+    r.mudou
+      ? t("a atualização automática do assistente de código voltou a ligar", "the coding assistant's auto-update is back on")
+      : t("nada a devolver: o agente não tinha desligado a atualização automática do assistente", "nothing to give back: the agent had not turned off the assistant's auto-update"),
+  );
+  return 0;
+}
+
 async function cmdServico(amb: Ambiente, a: Args): Promise<number> {
   const acao = a.pos[1];
   const o = opcoesServico(amb, a);
@@ -1000,6 +1029,8 @@ async function cmdRodar(amb: Ambiente, a: Args): Promise<number> {
       assimQueSair: true,
       // publicando agora as funções e o painel da versão da nuvem (atualização completa, 0.3.0)
       publicando: agente.publicando,
+      // o assistente de código deste computador (0.8.0): versão, a escolha da instalação e a última atualização
+      assistente: { versao: r.find((c) => c.id === "assistente")?.valor ?? null, ...agente.infoAssistente() },
     };
   };
   await agente.iniciar();
@@ -1181,6 +1212,8 @@ export async function executarCli(argv: string[], amb: Ambiente = ambienteReal()
         return await cmdLigar(amb, a);
       case "servico":
         return await cmdServico(amb, a);
+      case "assistente":
+        return cmdAssistente(amb, a);
       case "importar":
         return await cmdImportar(amb, a);
       case "cofre":

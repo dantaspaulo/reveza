@@ -592,3 +592,64 @@ describe("a caixa da tela quebrada", () => {
     expect(html).toContain("Copiar detalhes")
   })
 })
+
+describe("Computadores: o cartão do assistente de código (a versão de cada computador e a escolha de como ele se atualiza)", () => {
+  const segundos = (ms: number) => Math.floor((Date.now() - ms) / 1000)
+  /** O diagnóstico como o agente 0.8.0 manda: a versão do assistente num campo próprio. */
+  const comAssistente = (versao: string, extra: Record<string, unknown> = {}) => ({
+    em: segundos(60_000),
+    conferencias: [{ id: "assistente", nome: "Assistente de código", situacao: "ok", detalhe: `versão ${versao}`, valor: versao }],
+    assistente: { versao, modo: "padrao", autoDesligado: null, atualizando: false, ultima: null, ...extra },
+  })
+  async function desenharAssistente(diags: Record<string, unknown>, config: Record<string, unknown>[] = []) {
+    const antes = { config: linhas.tabelas.config, computadores: linhas.tabelas.computadores }
+    linhas.tabelas.config = [...linhas.tabelas.config.filter((c) => c.chave !== "assistente_atualizar"), ...config]
+    linhas.tabelas.computadores = linhas.tabelas.computadores.map((c) => (String(c.id) in diags ? { ...c, diagnostico: diags[String(c.id)] } : c))
+    try {
+      const lido = await fonte.carregar()
+      const { default: Tela } = await TELAS.computadores()
+      return { ...(await desenhar(Tela, fonte, { ...lido, contas: pintarPorWorkspace(lido.contas) })), lido }
+    } finally {
+      linhas.tabelas.config = antes.config
+      linhas.tabelas.computadores = antes.computadores
+    }
+  }
+  const marcado = (html: string, modo: string) =>
+    /aria-checked="true"/.test(html.match(new RegExp(`<button[^>]*id="assistente-${modo}"[^>]*>`))?.[0] ?? "")
+
+  it("dois computadores em versões diferentes: a mais nova, quem está atrás e o Atualizar os atrasados; de fábrica, o jeito do assistente", async () => {
+    const { html, erros, lido } = await desenharAssistente({ pc1: comAssistente("2.1.301"), pc2: comAssistente("2.1.293") })
+    expect(erros).toEqual([])
+    expect(lido.config.assistenteAtualizar).toBe("padrao")
+    expect(html).toContain("Assistente de código")
+    expect(html).toContain("Versões diferentes: a mais nova aqui é a 2.1.301")
+    expect(html).toContain("2.1.293")
+    expect(html).toContain("atrás")
+    expect(html).toMatch(/Atualizar os atrasados \(1\)/)
+    expect(marcado(html, "padrao")).toBe(true)
+    expect(marcado(html, "sozinho")).toBe(false)
+  })
+
+  it("todos na mesma versão: o resumo diz qual, sem o Atualizar os atrasados", async () => {
+    const { html } = await desenharAssistente({ pc1: comAssistente("2.1.301"), pc2: comAssistente("2.1.301") })
+    expect(html).toContain("Todos na versão 2.1.301")
+    expect(html).not.toMatch(/Atualizar os atrasados/)
+  })
+
+  it("agente de antes da 0.8.0: a versão vem do texto do diagnóstico, e o Atualizar fica desligado com o motivo", async () => {
+    const antigo = { em: segundos(60_000), conferencias: [{ id: "assistente", nome: "Assistente de código", situacao: "ok", detalhe: "versão 2.1.290" }] }
+    const { html } = await desenharAssistente({ pc1: comAssistente("2.1.301"), pc2: antigo })
+    expect(html).toContain("2.1.290")
+    expect(html).toContain("Atualize o agente deste computador para atualizar o assistente pelo painel.")
+    // um atrasado só, mas sem o agente novo: o Atualizar os atrasados não aparece para ele
+    expect(html).not.toMatch(/Atualizar os atrasados/)
+  })
+
+  it("a escolha gravada aparece marcada, e a falha da última atualização aparece com o erro", async () => {
+    const falhou = comAssistente("2.1.293", { ultima: { em: new Date().toISOString(), ok: false, de: "2.1.293", para: "2.1.293", sozinho: true, erro: "Error: Failed to install native update" } })
+    const { html, lido } = await desenharAssistente({ pc1: comAssistente("2.1.301"), pc2: falhou }, [{ chave: "assistente_atualizar", valor: "manual" }])
+    expect(lido.config.assistenteAtualizar).toBe("manual")
+    expect(marcado(html, "manual")).toBe(true)
+    expect(html).toContain("Não atualizou: Error: Failed to install native update")
+  })
+})

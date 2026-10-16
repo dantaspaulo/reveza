@@ -38,6 +38,8 @@ import type {
   LinhaUso,
   MotivoRecusaLigacao,
   Membro,
+  AssistenteDoComputador,
+  ModoAssistente,
   ModoAtualizar,
   NovoAlerta,
   Papel,
@@ -68,6 +70,7 @@ export const CONFIG_PADRAO: ConfigTroca = {
   fuso: "America/Sao_Paulo",
   exigirDuasEtapas: false,
   atualizarSozinho: "desligada",
+  assistenteAtualizar: "padrao",
   atualizacaoVez: null,
   nuvem: null,
   proximoRodizioEm: null,
@@ -83,6 +86,11 @@ export function modoAtualizar(valor: unknown): ModoAtualizar {
 }
 
 /** O que o painel grava: false e true para os jeitos de antes (os agentes anteriores à 0.2.1 entendem), o nome no novo. */
+/** A escolha do assistente gravada na nuvem; valor que não se conhece (ou nuvem de antes da 0.8.0) é o padrão. */
+export function modoAssistente(valor: unknown): ModoAssistente {
+  return valor === "sozinho" || valor === "manual" ? valor : "padrao"
+}
+
 export function valorDoModo(modo: ModoAtualizar): boolean | string {
   return modo === "madrugada" ? true : modo === "assim_que_sair" ? "assim_que_sair" : false
 }
@@ -148,6 +156,7 @@ export const CHAVES_CONFIG: Record<CampoGravavel, string> = {
   fuso: "fuso",
   exigirDuasEtapas: "exigir_duas_etapas",
   atualizarSozinho: "atualizar_sozinho",
+  assistenteAtualizar: "assistente_atualizar",
 }
 
 const CAMPOS_CONTA: Record<keyof CamposConta, string> = {
@@ -301,6 +310,27 @@ export function paraDiagnostico(bruto: unknown, versao: string): Computador["dia
       : null
   const pn = d.precisaNuvem as Record<string, unknown> | null | undefined
   const precisaNuvem = pn && typeof pn === "object" && semver(pn.para) ? { para: semver(pn.para)! } : null
+  const as = d.assistente as Record<string, unknown> | null | undefined
+  const ul = as && typeof as === "object" ? (as.ultima as Record<string, unknown> | null | undefined) : null
+  const assistente: AssistenteDoComputador | null =
+    as && typeof as === "object"
+      ? {
+          versao: semver(as.versao),
+          autoDesligado: as.autoDesligado === "reveza" || as.autoDesligado === "pessoa" ? as.autoDesligado : null,
+          atualizando: as.atualizando === true,
+          ultima:
+            ul && typeof ul === "object" && typeof ul.em === "string" && Number.isFinite(Date.parse(ul.em))
+              ? {
+                  em: new Date(Date.parse(ul.em)).toISOString(),
+                  ok: ul.ok === true,
+                  de: semver(ul.de),
+                  para: semver(ul.para),
+                  sozinho: ul.sozinho === true,
+                  ...(curto(ul.erro, 200) ? { erro: curto(ul.erro, 200) } : {}),
+                }
+              : null,
+        }
+      : null
   return {
     em,
     versao: typeof d.versao === "string" ? d.versao : versao,
@@ -310,6 +340,7 @@ export function paraDiagnostico(bruto: unknown, versao: string): Computador["dia
     atualizacao,
     precisaNuvem,
     assimQueSair: d.assimQueSair === true,
+    assistente,
   }
 }
 
@@ -499,6 +530,7 @@ export class FonteSupabase implements Fonte {
     const prox = porChave.get("proximo_rodizio_em")
     cfg.proximoRodizioEm = typeof prox === "string" ? prox : null
     cfg.atualizarSozinho = modoAtualizar(porChave.get("atualizar_sozinho"))
+    cfg.assistenteAtualizar = modoAssistente(porChave.get("assistente_atualizar"))
     cfg.atualizacaoVez = paraVez(porChave.get("atualizacao_vez"))
     cfg.nuvem = paraNuvem(porChave)
 

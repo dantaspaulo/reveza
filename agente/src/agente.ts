@@ -21,7 +21,8 @@ import { PRINCIPAL } from "./credenciais/tipos.js";
 import { CredenciaisSombra } from "./credenciais/sombra.js";
 import type { Credenciais } from "./credenciais/tipos.js";
 import { agendarRodizio, candidata, decidir, gatilhoDeTroca, pctEfetivo, sorteioReal } from "./decisao.js";
-import { carregarEstado, salvarEstado, type EstadoLocal, type Modo } from "./estado.js";
+import { carregarEstado, salvarEstado, type EstadoLocal, type Modo, type UltimaAtualizacaoAssistente } from "./estado.js";
+import { aplicarAutoUpdater, ASSISTENTE_CONFERIR_S, autoDesligado, erroDoUpdate, modoAssistente, type ModoAssistente } from "./assistente.js";
 import { conferirCodigo, entregarChave, impressaoDaChave, LIGACAO_DUPLA } from "./ligar.js";
 import { Logins, EMAIL_VALIDO, type Login } from "./logins.js";
 import { ErroNuvem, TIPOS_EVENTO_NUVEM, type Atribuicao, type ComandoNuvem, type JanelaNuvem, type Nuvem, type PedidoLigacao, type PontoNuvem } from "./nuvem/tipos.js";
@@ -212,6 +213,11 @@ export class Agente {
   private iniciadoEm = 0;
   /** A versão mais nova publicada (lida no máximo a cada 6 h) e quando foi lida. */
   versaoNova: string | null = null;
+  /** O `claude update` em andamento neste computador (o painel mostra "atualizando"). */
+  assistenteAtualizando = false;
+  /** A escolha do assistente aplicada no settings.json e quando (confere de novo a cada 10 minutos). */
+  private assistenteModoAplicado: ModoAssistente | null = null;
+  private assistenteAplicadoEm = 0;
   private versaoNovaLidaEm = 0;
   /** A configuração da instalação que veio no último agente_ola (atualizar_sozinho, fuso...). */
   private configNuvem: Record<string, unknown> = {};
@@ -657,6 +663,8 @@ export class Agente {
       await this.talvezPublicar();
       await this.talvezAtualizarSozinho();
       if (!this.d.sombra) this.aplicarConfig(r.config);
+      this.aplicarAssistente();
+      this.talvezAtualizarAssistente();
       await this.conferirImpressao(nuvem, r.config);
       this.estado.nuvem.atribuicaoConta = r.atribuicao?.conta_id ?? null;
       this.ultimaAtribuicao = r.atribuicao?.conta_id ? r.atribuicao : null;
@@ -685,6 +693,95 @@ export class Agente {
     } finally {
       this.emBusca = false;
     }
+  }
+
+  /** O settings.json do usuário no assistente: onde o agente escreve o resumo, o modelo e a atualização automática. */
+  arquivoSettings(): string {
+    return path.join(this.d.c.principalDir, "settings.json");
+  }
+
+  /**
+   * A escolha da instalação para o assistente de código (assistente.ts): "só pelo painel" desliga a atualização
+   * automática dele; as outras a devolvem (só o que o agente escreveu). Confere na hora em que a escolha muda e de 10 em
+   * 10 minutos (a pessoa pode ter mexido no arquivo). Em modo sombra não mexe em nada.
+   */
+  aplicarAssistente(): void {
+    if (this.d.sombra) return;
+    const modo = modoAssistente(this.configNuvem.assistente_atualizar);
+    const t = this.d.relogio.agora();
+    if (modo === this.assistenteModoAplicado && t - this.assistenteAplicadoEm < 600) return;
+    this.assistenteModoAplicado = modo;
+    this.assistenteAplicadoEm = t;
+    const antes = this.estado.assistenteDesligouAuto === true;
+    try {
+      const r = aplicarAutoUpdater(this.arquivoSettings(), modo === "manual", antes);
+      if (r.daPessoa && antes) this.d.log.info("assistente de código: o DISABLE_AUTOUPDATER foi mudado à mão; o agente não mexe mais nele");
+      if (r.mudou) {
+        this.d.log.info(
+          r.escrito
+            ? "assistente de código: atualização automática desligada (escolha do painel: só pelo painel)"
+            : "assistente de código: atualização automática devolvida ao assistente",
+        );
+      }
+      if (r.escrito !== antes) {
+        this.estado.assistenteDesligouAuto = r.escrito;
+        this.salvar();
+      }
+    } catch (e) {
+      this.d.log.erro(`assistente de código: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * Escolha "sempre a mais nova": o `claude update` de 6 em 6 horas, num momento calmo, fora de uma atualização ou
+   * publicação do próprio Reveza. Roda solto (pode levar minutos) e nunca dois ao mesmo tempo.
+   */
+  talvezAtualizarAssistente(): void {
+    if (this.d.sombra || this.assistenteAtualizando || this.publicando) return;
+    if (modoAssistente(this.configNuvem.assistente_atualizar) !== "sozinho") return;
+    const t = this.d.relogio.agora();
+    if (t - (this.estado.assistenteConferidoEm ?? 0) < ASSISTENTE_CONFERIR_S) return;
+    if (this.atualizacaoPendente() || !this.momentoCalmo()) return;
+    this.estado.assistenteConferidoEm = t;
+    this.salvar();
+    this.fundo(this.atualizarAssistente(true));
+  }
+
+  /** Roda o `claude update` e guarda o resultado, que vai ao painel no diagnóstico. Nunca dois ao mesmo tempo. */
+  async atualizarAssistente(sozinho: boolean): Promise<UltimaAtualizacaoAssistente | null> {
+    if (this.assistenteAtualizando) return null;
+    this.assistenteAtualizando = true;
+    try {
+      const de = await this.d.cli.versao().catch(() => null);
+      const r = await this.d.cli.atualizar().catch((e: Error) => ({ codigo: -1, saida: "", erro: e.message }));
+      const para = await this.d.cli.versao().catch(() => null);
+      const ok = r.codigo === 0 && para !== null;
+      const ultima: UltimaAtualizacaoAssistente = { em: this.d.relogio.agora(), ok, de, para, sozinho };
+      if (!ok) ultima.erro = erroDoUpdate(r.saida, r.erro, r.codigo);
+      this.estado.assistenteUltima = ultima;
+      this.salvar();
+      if (!ok) this.d.log.erro(`assistente de código: o claude update não deu (${ultima.erro})`);
+      else if (de !== para) this.d.log.info(`assistente de código: de ${de ?? "?"} para ${para}${sozinho ? " (sozinho)" : " (pedido do painel)"}`);
+      else if (!sozinho) this.d.log.info(`assistente de código: já estava na mais nova (${para})`);
+      // o painel vê a versão nova na busca seguinte, sem esperar a conferência de 10 em 10 minutos
+      if (this.d.diagnostico) this.diagnosticoParaMandar = await this.d.diagnostico().catch(() => null);
+      return ultima;
+    } finally {
+      this.assistenteAtualizando = false;
+    }
+  }
+
+  /** O que o painel mostra do assistente de código deste computador (vai no diagnóstico, ao lado da versão). */
+  infoAssistente(): Record<string, unknown> {
+    const u = this.estado.assistenteUltima;
+    return {
+      modo: modoAssistente(this.configNuvem.assistente_atualizar),
+      autoDesligado: autoDesligado(this.arquivoSettings(), this.estado.assistenteDesligouAuto === true),
+      atualizando: this.assistenteAtualizando,
+      ultima: u
+        ? { em: new Date(u.em * 1000).toISOString(), ok: u.ok, de: u.de, para: u.para, sozinho: u.sozinho, ...(u.erro ? { erro: u.erro } : {}) }
+        : null,
+    };
   }
 
   aplicarConfig(cfg: Record<string, unknown>): void {
@@ -1581,6 +1678,14 @@ export class Agente {
         if (Object.keys(corpo).length) {
           const p = lerPedido(corpo);
           if (!p.ok) return recusa(400, p.erro);
+          if ("assistente" in p) {
+            if (this.d.sombra) return recusa(409, "em modo sombra o agente não mexe no assistente de código");
+            if (this.assistenteAtualizando) return recusa(409, "o assistente de código já está atualizando neste computador");
+            const de = await this.d.cli.versao().catch(() => null);
+            // o `claude update` pode levar minutos (baixa o programa): responde já, e o painel vê o fim no diagnóstico
+            this.fundo(this.atualizarAssistente(false));
+            return { status: 200, corpo: { ok: true, assistente: true, atualizando: true, de } };
+          }
           if ("conferir" in p) {
             const c = await this.conferirAgora();
             return c.ok ? { status: 200, corpo: c.corpo } : recusa(c.status, c.erro);

@@ -779,6 +779,10 @@ async function desinstalar(ctx) {
     if (existsSync(ctx.cli)) {
       const r = reveza(ctx, ["servico", "remover"]);
       r.ok ? ok(r.saida.trim()) : nao(r.erro.trim());
+      // com a escolha "só pelo painel", o agente desligou a atualização automática do assistente: ela volta (o agente de
+      // antes da 0.8.0 não tem o comando e nunca desligou nada)
+      const a = reveza(ctx, ["assistente", "liberar"]);
+      if (a.ok && /voltou|is back/.test(a.saida)) ok(a.saida.trim());
     }
   }
   removerMod() ? ok(t("mod removido", "mod removed")) : nao(t("o mod não estava instalado", "the mod was not installed"));

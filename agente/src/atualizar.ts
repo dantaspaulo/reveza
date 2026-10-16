@@ -84,10 +84,14 @@ export function urlDoPacote(versao: string): string {
  */
 export function lerPedido(
   corpo: Record<string, unknown>,
-): { ok: true; versao: string } | { ok: true; conferir: true } | { ok: false; erro: string } {
+): { ok: true; versao: string } | { ok: true; conferir: true } | { ok: true; assistente: true } | { ok: false; erro: string } {
   const chaves = Object.keys(corpo);
   if (chaves.length === 1 && chaves[0] === "conferir") {
     return corpo.conferir === true ? { ok: true, conferir: true } : { ok: false, erro: "pedido de conferir inválido" };
+  }
+  // o assistente de código (0.8.0): `claude update` neste computador; agente de antes recusa ("só leva a versão")
+  if (chaves.length === 1 && chaves[0] === "assistente") {
+    return corpo.assistente === true ? { ok: true, assistente: true } : { ok: false, erro: "pedido do assistente inválido" };
   }
   if (chaves.some((k) => k !== "versao")) return { ok: false, erro: "o pedido de atualização só leva a versão" };
   const v = corpo.versao;

@@ -101,6 +101,22 @@ export interface EstadoLocal {
   modelos?: Record<string, string | null>;
   /** Saída enxuta ligada neste computador (o painel liga; o mod lê pela ponte). */
   enxugar?: boolean;
+  /** O DISABLE_AUTOUPDATER do `env` do settings.json é do agente (escolha "só pelo painel" do assistente). */
+  assistenteDesligouAuto?: boolean;
+  /** Quando o agente rodou o `claude update` sozinho pela última vez (epoch em segundos). */
+  assistenteConferidoEm?: number;
+  /** A última atualização do assistente de código feita pelo agente (a pedido do painel ou sozinho). */
+  assistenteUltima?: UltimaAtualizacaoAssistente | null;
+}
+
+export interface UltimaAtualizacaoAssistente {
+  /** epoch em segundos */
+  em: number;
+  ok: boolean;
+  de: string | null;
+  para: string | null;
+  sozinho: boolean;
+  erro?: string;
 }
 
 export const CONFIG_INICIAL: ConfigLocal = {

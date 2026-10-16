@@ -32,6 +32,8 @@ export interface Conferencia {
   fazer?: string;
   /** Depois de um conserto (`reveza doctor`, ou o Corrigir do painel): o que aconteceu com este problema. */
   consertado?: { resultado: "corrigido" | "nao_deu"; texto: string };
+  /** O valor medido, para quem lê não depender do texto (hoje só a versão do assistente de código, X.Y.Z). */
+  valor?: string;
 }
 
 export interface DepsDoctor {
@@ -128,8 +130,9 @@ export function acharMod(home: string): string | null {
 
 export async function doctor(d: DepsDoctor): Promise<Conferencia[]> {
   const r: Conferencia[] = [];
-  const add = (id: string, nome: string, situacao: Situacao, detalhe: string, extra: { conserto?: IdConserto; fazer?: string } = {}) => {
+  const add = (id: string, nome: string, situacao: Situacao, detalhe: string, extra: { conserto?: IdConserto; fazer?: string; valor?: string } = {}) => {
     const c: Conferencia = { id, nome, situacao, detalhe };
+    if (extra.valor) c.valor = extra.valor;
     // ok não precisa de conserto nem de explicação
     if (situacao !== "ok") {
       if (extra.conserto) c.conserto = extra.conserto;
@@ -411,6 +414,7 @@ export async function doctor(d: DepsDoctor): Promise<Conferencia[]> {
       fazer: v
         ? t(`atualize o assistente de código: claude update (ou ${INSTALAR_ASSISTENTE})`, `update the coding assistant: claude update (or ${instalarAssistenteEn()})`)
         : t(`instale o assistente de código: ${INSTALAR_ASSISTENTE}`, `install the coding assistant: ${instalarAssistenteEn()}`),
+      ...(v ? { valor: v } : {}),
     },
   );
   return r;

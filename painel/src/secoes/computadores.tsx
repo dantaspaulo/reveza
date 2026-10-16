@@ -17,6 +17,7 @@ import {
 
 import { BarraUso, NomeConta, SeloEstado } from "@/components/painel/conta"
 import { BotaoAtualizar, CartaoAtualizacoes, LinhaAtualizacao, useAtualizar } from "@/components/painel/atualizar"
+import { CartaoAssistente } from "@/components/painel/assistente"
 import { BotaoCorrigir, ResultadoConserto, useCorrigir, useDiagnostico } from "@/components/painel/conserto"
 import { Codigo } from "@/components/painel/copiar"
 import { Confirmar } from "@/components/painel/confirmar"
@@ -75,6 +76,7 @@ export default function Computadores() {
     >
       <AvisoPermissao />
       {ativos.length ? <CartaoAtualizacoes /> : null}
+      {ativos.length ? <CartaoAssistente /> : null}
       {ativos.length === 0 ? (
         <Empty className="border">
           <EmptyHeader>

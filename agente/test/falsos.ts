@@ -155,11 +155,30 @@ export class CliFalsa implements Cli {
   aoRenovar: ((pasta: string, tentativa: number) => void) | null = null;
   logins: { pasta: string; email: string | null; proc: ProcessoFalso }[] = [];
   retomadas: { sessao: string; cwd: string }[] = [];
+  /** A versão que o `--version` responde (null: programa não achado). */
+  versaoAtual: string | null = "2.1.293";
+  /** Cada `claude update`: o que ele responde e para qual versão o programa vai. */
+  atualizacoes: number = 0;
+  aoAtualizar: () => { codigo: number; saida: string; erro: string; para?: string } = () => ({
+    codigo: 0,
+    saida: "Successfully updated from 2.1.293 to version 2.1.301",
+    erro: "",
+    para: "2.1.301",
+  });
+  /** O `claude update` só termina quando isto resolver (para os testes verem o "atualizando"). */
+  segurarAtualizacao: Promise<void> | null = null;
   binario() {
     return "/falso/assistente";
   }
   async versao() {
-    return "2.1.293";
+    return this.versaoAtual;
+  }
+  async atualizar() {
+    this.atualizacoes++;
+    if (this.segurarAtualizacao) await this.segurarAtualizacao;
+    const { para, ...r } = this.aoAtualizar();
+    if (para) this.versaoAtual = para;
+    return r;
   }
   async renovar(pasta: string, tentativa: 0 | 1) {
     this.renovacoes.push(pasta);
