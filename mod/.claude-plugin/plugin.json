@@ -1,6 +1,6 @@
 {
   "name": "reveza",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Reveza AI nas sessões: conta em uso e janela de 5 h na linha de status, uso de cada resposta para o agente local, aviso de limite e retomada da sessão quando a conta troca. Comando /reveza.",
   "author": {
     "name": "Reveza AI"
