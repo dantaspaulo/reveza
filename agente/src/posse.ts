@@ -21,7 +21,7 @@ import type { Trocador } from "./troca.js";
 import type { Log } from "./util/log.js";
 import { epochParaIso, type Relogio } from "./util/tempo.js";
 import type { ClaudeJson } from "./claudejson.js";
-import { POSSE_S } from "./config.js";
+import { POSSE_CURTA_S, POSSE_S } from "./config.js";
 
 export function nivelDoTier(tier: string | null | undefined): string | null {
   const m = /(\d+x)\b/i.exec(tier ?? "");
@@ -196,7 +196,7 @@ export class PosseCofre {
   ): Promise<T | null> {
     const jaTinha = this.posses.has(id);
     if (!jaTinha) {
-      const r = await this.pegar(id, motivo, 90);
+      const r = await this.pegar(id, motivo, POSSE_CURTA_S);
       if (!r.ok) return null;
       if (opcoes.sincronizar !== false) await this.sincronizar(id, r.cofre);
     }

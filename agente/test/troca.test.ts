@@ -348,16 +348,64 @@ describe("leitura de uso", () => {
     assert.equal(e().contas[b]!.janelas[0]!.pct, 33);
   });
 
-  test("se o auth status não renova, tenta o -p curto; se nada renova, pede login", async () => {
+  test("se o auth status não renova, tenta o -p curto; se nada renova e o assistente diz que o login morreu, pede login", async () => {
     m = await montar();
     await ativaEm(m, "A", 10);
     const b = contaEstacionada(m, "B");
     m.cred.d.set(pasta(b), blob("B1", true, 30));
     const tentativas: number[] = [];
-    m.cli.aoRenovar = (_p, t) => void tentativas.push(t);
+    m.cli.aoRenovar = (_p, t) => {
+      tentativas.push(t);
+      return { codigo: 1, saida: "", erro: "OAuth token has expired · Please run /login" };
+    };
     await tr().lerUso(b, true);
     assert.deepEqual(tentativas, [0, 1]);
     assert.equal(e().contas[b]!.precisaLogin, true);
+  });
+
+  test("a renovação tropeça sem o assistente dizer que o login morreu: não pede login, tenta de novo em 30 min; 3 h assim, pede", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 10);
+    const b = contaEstacionada(m, "B");
+    m.cred.d.set(pasta(b), blob("B1", true, 30));
+    m.cli.aoRenovar = () => ({ codigo: 1, saida: "", erro: "API Error: Request rejected (429) · this may be a temporary capacity issue." });
+    await tr().lerUso(b, true);
+    assert.equal(e().contas[b]!.precisaLogin, false);
+    assert.match(String(e().contas[b]!.erro), /não renovou agora/);
+    assert.equal(tr().ultimaLeitura[b], m.relogio.agora() + 1800 - 300, "a próxima leitura só daqui a 30 min");
+    assert.ok(!e().eventos.some((x) => /entre de novo/.test(x.texto)), "sem aviso de entrar de novo");
+    await m.relogio.avancar(2 * 3600 * 1000);
+    await tr().lerUso(b, true);
+    assert.equal(e().contas[b]!.precisaLogin, false, "2 h tropeçando ainda não pede");
+    await m.relogio.avancar(3600 * 1000 + 1000);
+    await tr().lerUso(b, true);
+    assert.equal(e().contas[b]!.precisaLogin, true, "3 h tropeçando, pede login");
+    assert.ok(e().eventos.some((x) => /entre de novo/.test(x.texto)));
+  });
+
+  test("o auth status diz que não há login (loggedIn false): pede login na hora", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 10);
+    const b = contaEstacionada(m, "B");
+    m.cred.d.set(pasta(b), blob("B1", true, 30));
+    m.cli.aoRenovar = (_p, t) => (t === 0 ? { codigo: 0, saida: '{"loggedIn": false}', erro: "" } : undefined);
+    await tr().lerUso(b, true);
+    assert.equal(e().contas[b]!.precisaLogin, true);
+  });
+
+  test("tropeçou e depois renovou: zera a contagem, e a próxima falha começa do zero", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 10);
+    const b = contaEstacionada(m, "B");
+    m.cred.d.set(pasta(b), blob("B1", true, 30));
+    m.cli.aoRenovar = () => ({ codigo: 1, saida: "", erro: "rede fora" });
+    await tr().lerUso(b, true);
+    assert.ok(tr().tropecoDesde[b]);
+    m.cli.aoRenovar = (p) => void m!.cred.d.set(p, blob("B2", true, 3600, m!.relogio.agora()));
+    await m.relogio.avancar(1800 * 1000);
+    await tr().lerUso(b, true);
+    assert.equal(tr().tropecoDesde[b], undefined);
+    assert.equal(e().contas[b]!.precisaLogin, false);
   });
 
   test("429 recua 10 minutos", async () => {

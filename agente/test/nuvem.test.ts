@@ -331,7 +331,9 @@ describe("leitura e renovação com posse", () => {
     m.cred.d.set(pasta(b), blob("B1", true, 30, m.relogio.agora()));
     m.cli.aoRenovar = (p) => m.cred.d.set(p, blob("B2", true, 7200, m.relogio.agora()));
     await m.agente.lerUsoConta(b);
-    assert.equal(fns("pegarPosse").find((x) => x.args[0] === bId)!.args[1], "renovacao");
+    const posse = fns("pegarPosse").find((x) => x.args[0] === bId)!;
+    assert.equal(posse.args[1], "renovacao");
+    assert.ok((posse.args[2] as number) >= 2 * 120, "a posse cobre os dois passos da renovação");
     assert.equal(m.cli.renovacoes.length, 1);
     assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B2");
     assert.equal(banco.contas.get(bId)!.cofre!.versao, 3);

@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sistemaAtual, type Sistema } from "./config.js";
+import { RENOVAR_PASSO_S, sistemaAtual, type Sistema } from "./config.js";
 import { aspasSh } from "./navegador.js";
 import { envDaPasta, type Executor, type Processo, type Resultado } from "./util/executor.js";
 import { ASSISTENTE_UPDATE_MS } from "./assistente.js";
@@ -16,8 +16,11 @@ const ABRIR_LOGIN = fileURLToPath(new URL("./abrir-login.js", import.meta.url));
 export interface Cli {
   binario(): string;
   versao(): Promise<string | null>;
-  /** Tenta renovar o login da pasta: `auth status` e, se precisar, um `-p` curto. Quem confere se renovou é quem chama. */
-  renovar(pasta: string, tentativa: 0 | 1): Promise<void>;
+  /**
+   * Tenta renovar o login da pasta: `auth status` e, se precisar, um `-p` curto. Quem confere se renovou é quem chama;
+   * a saída serve para saber se o assistente disse que o login morreu (e não que a renovação tropeçou).
+   */
+  renovar(pasta: string, tentativa: 0 | 1): Promise<Resultado | void>;
   login(pasta: string, email: string | null): Processo;
   retomar(sessao: string, cwd: string, texto: string, saida: number): void;
   /** `claude update`: o próprio assistente se atualiza (instalação nativa, npm ou Homebrew), sem terminal. */
@@ -80,12 +83,12 @@ export class ClaudeCli implements Cli {
     return r.codigo === 0 && m ? m[1]! : null;
   }
 
-  async renovar(pasta: string, tentativa: 0 | 1): Promise<void> {
+  async renovar(pasta: string, tentativa: 0 | 1): Promise<Resultado> {
     const argv =
       tentativa === 0
         ? [this.bin, "auth", "status", "--json"]
         : [this.bin, "-p", "--model", "haiku", "--max-turns", "1", "--strict-mcp-config", "--output-format", "json", "Responda apenas: ok"];
-    await this.exec.rodar(argv, { cwd: pasta, env: envDaPasta(pasta), timeoutMs: 120_000 });
+    return this.exec.rodar(argv, { cwd: pasta, env: envDaPasta(pasta), timeoutMs: RENOVAR_PASSO_S * 1000 });
   }
 
   /**

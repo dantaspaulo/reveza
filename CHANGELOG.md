@@ -7,6 +7,23 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.10.1 · 22/10/2026
+
+Conta marcada como "precisa entrar de novo" sem precisar. Relato do Paulo: um computador mostrava "precisam entrar de
+novo" numa conta que seguia funcionando, inclusive nos outros computadores, que usam o mesmo login. A causa: uma única
+renovação que tropeçou (a conta estava parada, o login venceu, e a renovação não deu certo naquela vez) já marcava a
+conta. Precisa dos computadores na 0.10.1 (no painel, **Computadores → Atualizar**); a nuvem não muda.
+
+- **Tropeço não é login vencido:** quando a renovação falha sem o assistente dizer que o login acabou (rede, limite de
+  pedidos, demora), o computador tenta de novo em 30 minutos e só pede para entrar de novo se passar 3 horas assim.
+- **Login que acabou de verdade** (o assistente pede `/login`, diz que não há login, ou o acesso foi revogado) continua
+  sendo marcado na hora, como antes.
+- **A renovação não perde a vez no meio:** o computador segurava a conta por 90 segundos para renovar, e a renovação pode
+  levar até 4 minutos. Foi o que aconteceu no dia 21: a renovação terminou depois da hora, e o cofre recusou o login
+  novo. Agora a conta fica com o computador por 5 minutos (e é solta assim que termina), e outro computador não renova o
+  mesmo login ao mesmo tempo.
+- Uma leitura que dá certo zera a contagem, e a marca de quem já estava assim some na próxima leitura boa.
+
 ## 0.10.0 · 22/10/2026
 
 Renomear os computadores no painel. Pedido de um usuário: o nome que o sistema manda vira coisa como "BOOK 124183127"

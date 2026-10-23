@@ -152,7 +152,8 @@ export class ProcessoFalso implements Processo {
 
 export class CliFalsa implements Cli {
   renovacoes: string[] = [];
-  aoRenovar: ((pasta: string, tentativa: number) => void) | null = null;
+  /** O que cada renovação faz e responde (a saída do assistente diz se o login morreu); sem resposta, nada claro. */
+  aoRenovar: ((pasta: string, tentativa: number) => unknown) | null = null;
   logins: { pasta: string; email: string | null; proc: ProcessoFalso }[] = [];
   retomadas: { sessao: string; cwd: string }[] = [];
   /** A versão que o `--version` responde (null: programa não achado). */
@@ -182,7 +183,8 @@ export class CliFalsa implements Cli {
   }
   async renovar(pasta: string, tentativa: 0 | 1) {
     this.renovacoes.push(pasta);
-    this.aoRenovar?.(pasta, tentativa);
+    const r = this.aoRenovar?.(pasta, tentativa);
+    return r && typeof r === "object" && "codigo" in r ? (r as { codigo: number; saida: string; erro: string }) : undefined;
   }
   login(pasta: string, email: string | null) {
     const proc = new ProcessoFalso();

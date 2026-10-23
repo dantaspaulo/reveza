@@ -912,7 +912,7 @@ export class Agente {
     }
     let id = destino;
     if (!id) {
-      id = await this.posse!.materializar(a.conta_id, a.email, r.cofre, (pasta) => this.d.cli.renovar(pasta, 0));
+      id = await this.posse!.materializar(a.conta_id, a.email, r.cofre, async (pasta) => void (await this.d.cli.renovar(pasta, 0)));
       if (!id) {
         await nuvem.soltarPosse(a.conta_id).catch(() => undefined);
         return this.falhouAtribuir(a, principalSemConta, this.chave

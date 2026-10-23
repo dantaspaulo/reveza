@@ -84,6 +84,13 @@ export const CONFERIR_TROCA_MS = 5000;
 export const RENOVAR_ANTES_S = 300;
 export const VENCIDO_EM_S = 120;
 export const POSSE_S = 120;
+/** Cada passo da renovação de uma conta parada (o `auth status` e o `-p` curto) espera até isto. */
+export const RENOVAR_PASSO_S = 120;
+/**
+ * Posse curta (leitura ou renovação de conta parada): cobre os dois passos da renovação, para ela não vencer no meio e
+ * outro computador renovar o mesmo login ao mesmo tempo (21/10/2026: com 90 s, o cofre recusou o login renovado).
+ */
+export const POSSE_CURTA_S = 2 * RENOVAR_PASSO_S + 60;
 export const COMANDO_VALIDO_S = 120;
 export const HISTORICO_PASSO_S = 300;
 export const HISTORICO_JANELA_S = 24 * 3600;

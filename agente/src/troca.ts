@@ -20,12 +20,14 @@ import {
   HISTORICO_PASSO_S,
   IGNORAR_MEDIDA_APOS_TROCA_S,
   LEITURA_VALIDA_S,
+  LER_ESTACIONADA_S,
   RECUO_429_S,
   RENOVAR_ANTES_S,
   RITMO_JANELA_S,
   VENCIDO_EM_S,
   type Caminhos,
 } from "./config.js";
+import type { Resultado } from "./util/executor.js";
 import { comLogin, expiraEm, hashToken, oauth, soLogin, temRenovacao, type Blob } from "./credenciais/blob.js";
 import { PRINCIPAL, type Credenciais } from "./credenciais/tipos.js";
 import { estadoDaConta, gatilhoDeTroca, pctEfetivo } from "./decisao.js";
@@ -48,7 +50,18 @@ export interface Ganchos {
   aoRenovarPrincipal?(id: string): void;
 }
 
-export type ResultadoRenovar = true | false | "bloqueado";
+/**
+ * `false`: o assistente disse que o login não vale mais (pede /login, token revogado). `"momentaneo"`: não renovou, mas
+ * sem o assistente dizer isso (rede, serviço fora, limite): a conta não é marcada na hora (relato do Paulo, 22/10/2026:
+ * o MacBook marcou "precisa entrar de novo" numa conta que funcionava pelo cofre, depois de uma renovação que tropeçou).
+ */
+export type ResultadoRenovar = true | false | "bloqueado" | "momentaneo";
+/** O que o assistente diz quando o login morreu de fato. */
+export const LOGIN_MORTO = /\/login\b|invalid_grant|revoked|not logged in|"loggedIn"\s*:\s*false|invalid authentication|authentication_error/i;
+/** Depois de uma renovação que tropeçou, a próxima tentativa. */
+export const RECUO_RENOVAR_S = 1800;
+/** Tropeçando sem parar por este tempo, a conta passa a pedir login. */
+export const PEDIR_LOGIN_APOS_S = 3 * 3600;
 
 /** Quanto tempo a conta fica fora da escolha deste computador depois de não rodar o modelo de uma sessão. */
 export const SEM_MODELO_S = 6 * 3600;
@@ -60,6 +73,8 @@ export class Trocador {
   ultimaPrincipal: [string, Blob] | null = null;
   recuo: Record<string, number> = {};
   ultimaLeitura: Record<string, number> = {};
+  /** Desde quando a renovação de cada conta tropeça sem o assistente dizer que o login morreu (epoch em segundos). */
+  tropecoDesde: Record<string, number> = {};
   sombra = false;
   private ultimoFaria = "";
   /** A principal já foi lida desde que o agente subiu? */
@@ -418,15 +433,36 @@ export class Trocador {
     }
     if (!this.ganchos.podeRenovar(id)) return "bloqueado";
     const antes = expiraEm(await this.cred.ler(c.pasta));
+    let morto = false;
     for (const tentativa of [0, 1] as const) {
+      let r: Resultado | void;
       try {
-        await this.cli.renovar(c.pasta, tentativa);
+        r = await this.cli.renovar(c.pasta, tentativa);
       } catch {
         continue;
       }
       const depois = expiraEm(await this.cred.ler(c.pasta));
-      if (depois > antes && depois > this.agora() + RENOVAR_ANTES_S) return true;
+      if (depois > antes && depois > this.agora() + RENOVAR_ANTES_S) {
+        delete this.tropecoDesde[id];
+        return true;
+      }
+      if (r && LOGIN_MORTO.test(`${r.saida}\n${r.erro}`)) morto = true;
     }
+    return morto ? false : "momentaneo";
+  }
+
+  /**
+   * A renovação tropeçou (sem o assistente dizer que o login morreu): tenta de novo em 30 minutos e só pede login depois
+   * de 3 horas tropeçando. Devolve true quando chegou a hora de pedir.
+   */
+  private tropecou(id: string, c: ContaLocal, t: number): boolean {
+    const desde = (this.tropecoDesde[id] ??= t);
+    if (t - desde >= PEDIR_LOGIN_APOS_S) {
+      delete this.tropecoDesde[id];
+      return true;
+    }
+    this.ultimaLeitura[id] = t + RECUO_RENOVAR_S - LER_ESTACIONADA_S;
+    c.erro = "o login não renovou agora (sem o assistente dizer que ele venceu); tento de novo em 30 min";
     return false;
   }
 
@@ -458,7 +494,8 @@ export class Trocador {
         c.erro = this.sombra ? "modo sombra: o login precisaria ser renovado" : "o login venceu; renova quem tiver a posse";
         return;
       }
-      if (!r) {
+      if (r === "momentaneo" && !this.tropecou(id, c, t)) return;
+      if (r !== true) {
         c.precisaLogin = true;
         c.erro = "não consegui renovar o login";
         this.evento("erro", `${c.email}: o login venceu e não renovou; entre de novo pelo painel.`, { conta: id });
@@ -472,6 +509,7 @@ export class Trocador {
     this.ultimaLeitura[id] = t;
     if (id === this.estado.ativa && !ativa) return; // virou a ativa durante a leitura; o número é de antes da troca
     if (status === 200 && janelas) {
+      delete this.tropecoDesde[id];
       Object.assign(c, { janelas, lidoEm: t, fonte: "api", erro: null, precisaLogin: false, tokenExpiraEm: exp || null });
     } else if (status === 429) {
       this.recuo[id] = t + RECUO_429_S;
@@ -483,6 +521,7 @@ export class Trocador {
         c.erro = `login recusado (${status}); renova quem tiver a posse`;
         return;
       }
+      if (r === "momentaneo" && !this.tropecou(id, c, t)) return;
       c.precisaLogin = true;
       c.erro = `login recusado (${status})`;
     } else {
