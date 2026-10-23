@@ -7,6 +7,29 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.10.2 · 22/10/2026
+
+O painel que não acompanha a nuvem passa a dizer isso em toda tela, e o que fazer. Relato de um usuário: ele atualizou a
+nuvem pelo botão e o painel ficou na 0.7, procurando um botão que levasse o painel junto. A nuvem (o banco) se atualiza
+sem token nenhum; as funções e o painel precisam dos tokens do Supabase e da Vercel, e só vão sozinhos com a
+**atualização completa** ligada. O aviso da 0.10.0 dizia que o painel ia junto com a nuvem: só vai com ela.
+
+- **No menu, em toda tela:** com o painel atrás da instalação, o rodapé do menu mostra "Painel vX · a instalação já está
+  na vY" e leva ao cartão de Atualizações. Antes, o painel só comparava com a versão dos computadores; agora compara
+  também com a da nuvem.
+- **No cartão de Atualizações:** o passo manual diz o que ficou para trás e mostra os dois caminhos, com o botão de
+  copiar: ligar a atualização completa uma vez, em qualquer computador da instalação (`reveza atualizacao-completa
+  ligar`; o que falta vai ao ar em alguns minutos, e as próximas versões também), ou, só desta vez, o instalador no
+  computador que criou a instalação. A dica do **Atualizar a nuvem** diz que funções e painel só vão junto com a
+  atualização completa. A tela Saúde mostra o mesmo.
+- **No terminal:** `reveza atualizacao-completa ligar` avisa que o que já está faltando vai ao ar em alguns minutos, e o
+  `--atualizar` num computador ligado diz o comando da atualização completa.
+- **Para quem mantém o projeto:** `node scripts/versao.mjs para-atualizar` monta o "Para atualizar" do aviso de cada
+  versão pelas partes que mudaram (nuvem, funções, painel, computadores), e o `lancar` imprime no fim.
+
+Estas telas novas só aparecem depois que o painel novo for ao ar: quem está com o painel parado precisa de um dos dois
+caminhos acima uma vez.
+
 ## 0.10.1 · 22/10/2026
 
 Conta marcada como "precisa entrar de novo" sem precisar. Relato do Paulo: um computador mostrava "precisam entrar de

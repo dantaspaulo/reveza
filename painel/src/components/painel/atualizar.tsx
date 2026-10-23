@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { Codigo } from "@/components/painel/copiar"
 import { useComando } from "@/components/painel/dialogo-login"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -63,6 +64,24 @@ import { cn } from "@/lib/utils"
 export const COMANDO_ATUALIZAR_PAINEL = "npx github:dantaspaulo/reveza --atualizar"
 /** O comando que liga a atualização completa (num computador da instalação: só ele tem a chave do cofre). */
 export const COMANDO_COMPLETA = "reveza atualizacao-completa ligar"
+
+/**
+ * Como levar funções e painel novos sem a atualização completa: ligá-la (uma vez, em qualquer computador, e as próximas
+ * vão sozinhas) ou, só desta vez, o instalador no computador que criou a instalação. A ligada vem primeiro: um usuário
+ * (22/10/2026) atualizou a nuvem pelo painel e procurou o botão que levasse o painel junto.
+ */
+export function PassosDoPainel({ className }: { className?: string }) {
+  const { t } = useT()
+  const k = "computadores.atualizacao.nuvem.passo"
+  return (
+    <div className={cn("flex flex-col gap-1.5 text-xs text-muted-foreground", className)}>
+      <span>{t(`${k}.completa`)}</span>
+      <Codigo texto={COMANDO_COMPLETA} />
+      <span className="mt-1">{t(`${k}.umaVez`)}</span>
+      <Codigo texto={COMANDO_ATUALIZAR_PAINEL} />
+    </div>
+  )
+}
 
 export function useAtualizar(pc: Computador) {
   const { t } = useT()
@@ -267,8 +286,9 @@ export function LinhaNuvem() {
         {Icone ? <Icone className="mt-px size-3.5 shrink-0" aria-hidden /> : ocupado ? <Spinner className="mt-px size-3 shrink-0" /> : null}
         <span>{texto}</span>
       </p>
-      {f.fase === "passo_manual" || f.fase === "desconhecida" ? <code className={codigo}>{COMANDO_ATUALIZAR_PAINEL}</code> : null}
-      {n?.versao ? (
+      {f.fase === "desconhecida" ? <code className={codigo}>{COMANDO_ATUALIZAR_PAINEL}</code> : null}
+      {f.fase === "passo_manual" ? <PassosDoPainel /> : null}
+      {n?.versao && (n.completa || f.fase !== "passo_manual") ? (
         <div className="flex flex-col gap-1 text-xs text-muted-foreground">
           {n.completa ? (
             <span>

@@ -1033,8 +1033,8 @@ async function main() {
     } else if (ctx.importar) info(t("Troca: fica a configuração importada (ajuste no painel).", "Switching: the imported settings stay (adjust in the panel)."));
     ctx.troca = trocaInicial(ctx);
     if (ctx.soEsteComputador) {
-      info(t("Computador ligado a uma instalação: atualizo só o programa deste computador. A nuvem se atualiza pelo painel (Atualizar a nuvem); funções e painel, pela atualização completa ou no computador que criou a instalação.",
-        "Computer joined to an installation: only this computer's program is updated. The cloud updates from the panel (Update the cloud); functions and panel, through the full update or on the computer that created the installation."));
+      info(t("Computador ligado a uma instalação: atualizo só o programa deste computador. A nuvem se atualiza pelo painel (Atualizar a nuvem). Funções e painel não vão junto com a nuvem: vão sozinhos com a atualização completa (reveza atualizacao-completa ligar, uma vez, em qualquer computador da instalação) ou com este mesmo comando no computador que criou a instalação.",
+        "Computer joined to an installation: only this computer's program is updated. The cloud updates from the panel (Update the cloud). Functions and panel do not go along with the cloud: they go by themselves with the full update (reveza atualizacao-completa ligar, once, on any computer of the installation) or with this same command on the computer that created the installation."));
       if (ctx.dominioPedido !== undefined) nao(t("--dominio vale no computador que criou a instalação (ele tem os dados do projeto e pede os tokens)", "--dominio applies on the computer that created the installation (it has the project data and asks for the tokens)"));
     } else if (!ctx.semNuvem && !ctx.ligar) {
       ctx.manterNuvem = false;

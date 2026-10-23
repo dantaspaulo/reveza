@@ -335,4 +335,13 @@ describe("a nuvem e o painel (0.3.0)", () => {
     expect(painelAtras("0.3.0", [pc("0.3.1")], nuvem())).toBe("0.3.1")
     expect(painelAtras("0.3.0", [pc("0.3.1")], null)).toBe("0.3.1")
   })
+
+  it("o painel atrás da nuvem: a nuvem subiu e os computadores ainda não, e o painel não foi junto", () => {
+    // a nuvem na 0.3.1 com o painel por publicar, os computadores na versão do painel: o painel está atrás da nuvem
+    expect(painelAtras("0.3.0", [pc("0.3.0")], nuvem())).toBe("0.3.1")
+    // o painel desta aba já é o da nuvem: nada a dizer
+    expect(painelAtras("0.3.1", [pc("0.3.0")], nuvem())).toBeNull()
+    // computador na frente da nuvem (não acontece pela trava, mas a mais nova vence)
+    expect(painelAtras("0.3.0", [pc("0.3.2")], nuvem())).toBe("0.3.2")
+  })
 })

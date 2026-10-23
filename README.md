@@ -261,10 +261,11 @@ Tudo fica em **Computadores → Atualizações**, no painel.
 - **A nuvem (o banco)** se atualiza sozinha, **sem token nenhum**: o botão **Atualizar a nuvem** pede, e a própria nuvem
   baixa a versão oficial mais nova publicada, aplica só as migrações que faltam (cada uma inteira ou nada, numa
   transação) e registra. Ela só aceita versão oficial do repositório e mais nova que a dela.
-- **As funções da nuvem e o painel** precisam dos tokens do Supabase e da Vercel. Sem a atualização completa, quando uma
-  versão mexe neles o painel mostra o passo manual: rodar `npx github:dantaspaulo/reveza --atualizar` no computador que
-  criou a instalação. Com a **atualização completa** ligada, um computador da instalação (o primeiro ligado e calmo, de
-  qualquer sistema) publica sozinho; o painel antigo continua no ar até o novo publicar.
+- **As funções da nuvem e o painel não vão junto com a nuvem** por si: publicar pede os tokens do Supabase e da Vercel.
+  Com a **atualização completa** ligada (`reveza atualizacao-completa ligar`, uma vez, em qualquer computador da
+  instalação), um computador da instalação (o primeiro ligado e calmo, de qualquer sistema) publica sozinho, e o painel
+  antigo continua no ar até o novo publicar. Sem ela, o painel avisa no menu ("Painel vX · a instalação já está na vY")
+  e mostra o passo manual: rodar `npx github:dantaspaulo/reveza --atualizar` no computador que criou a instalação.
 - **Os computadores** se atualizam pelos botões (**Verificar atualização**, **Atualizar**, **Atualizar todos**) ou
   sozinhos, e um computador só sobe para uma versão nova quando a nuvem já está nela.
 

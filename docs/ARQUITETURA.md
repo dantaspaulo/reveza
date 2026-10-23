@@ -260,7 +260,11 @@ pessoal do Supabase (alcança a conta inteira) e publicar o painel, o token da V
 
 **3. No painel**, a linha "Nuvem e painel" no topo do cartão de Atualizações: as versões, **Atualizar a nuvem**
 (administrador; também destrava a publicação parada) e o estado (em dia, atualizando, publicando, passo manual,
-esperando a publicação, falhou com o motivo, nuvem de antes da 0.3.0).
+esperando a publicação, falhou com o motivo, nuvem de antes da 0.3.0). No passo manual, os dois caminhos com o comando
+para copiar: ligar a atualização completa (primeiro: vale para as próximas) ou o instalador no computador que criou a
+instalação. Com o painel atrás da instalação (`painelAtras`: a versão da nuvem com o painel por publicar, ou a dos
+computadores), o rodapé do menu diz isso em toda tela e leva ao cartão (0.10.2: um usuário atualizou a nuvem pelo
+botão e procurou o que levasse o painel junto).
 
 ## 8. Autenticação e acesso
 

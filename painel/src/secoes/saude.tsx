@@ -4,7 +4,7 @@
 import * as React from "react"
 import { ActivityIcon, PlayIcon } from "lucide-react"
 
-import { BotaoAtualizar, COMANDO_ATUALIZAR_PAINEL, LinhaAtualizacao, useAtualizar } from "@/components/painel/atualizar"
+import { BotaoAtualizar, LinhaAtualizacao, PassosDoPainel, useAtualizar } from "@/components/painel/atualizar"
 import { BotaoCorrigir, nomeDoItem, ResultadoConserto, useCorrigir, useDiagnostico } from "@/components/painel/conserto"
 import { painelAtras } from "@/lib/atualizar"
 import { Pagina } from "@/components/painel/pagina"
@@ -216,10 +216,13 @@ function Painel() {
           ))}
         </dl>
         {atras ? (
-          <p className="mt-3 text-xs break-words text-atencao">
-            {t("computadores.atualizacao.painelAtras", { painel: __VERSAO_PAINEL__, computadores: atras })}{" "}
-            <code className="font-mono">{COMANDO_ATUALIZAR_PAINEL}</code>
-          </p>
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="text-xs break-words text-atencao">
+              {t("computadores.atualizacao.painelAtras", { painel: __VERSAO_PAINEL__, versao: atras })}
+            </p>
+            {/* com a atualização completa ligada, um computador publica sozinho: o cartão de Atualizações mostra o andamento */}
+            {estado.config.nuvem?.completa ? null : <PassosDoPainel />}
+          </div>
         ) : null}
       </CardContent>
     </Card>

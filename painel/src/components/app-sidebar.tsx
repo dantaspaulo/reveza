@@ -17,17 +17,21 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { useEstado } from "@/dados/contexto"
 import { useT } from "@/i18n"
+import { painelAtras } from "@/lib/atualizar"
 import { comDemo, emDemo } from "@/lib/demo"
 import { Link } from "@/lib/rota"
 
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { t } = useT()
-  const { eu } = useEstado()
+  const { eu, computadores, config } = useEstado()
   const demo = emDemo()
+  const { isMobile, setOpenMobile } = useSidebar()
+  const atras = demo ? null : painelAtras(__VERSAO_PAINEL__, computadores, config.nuvem)
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -55,9 +59,21 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarFooter>
         <NavUser eu={eu} />
         {/* a versão do painel fica à vista embaixo (some com a barra recolhida, onde só há ícones) */}
-        <p className="truncate px-2 pb-1 text-[11px] text-muted-foreground tabular-nums group-data-[collapsible=icon]:hidden">
-          {t("app.versaoPainel", { versao: __VERSAO_PAINEL__ })}
-        </p>
+        {atras ? (
+          // o painel atrás da nuvem fica à vista em toda tela, e leva ao cartão que diz como trazer o novo
+          <Link
+            href={comDemo("/computadores")}
+            title={t("app.versaoPainelAtrasDica")}
+            onClick={() => isMobile && setOpenMobile(false)}
+            className="px-2 pb-1 text-[11px] leading-snug break-words text-atencao tabular-nums underline-offset-2 hover:underline group-data-[collapsible=icon]:hidden"
+          >
+            {t("app.versaoPainelAtras", { versao: __VERSAO_PAINEL__, nova: atras })}
+          </Link>
+        ) : (
+          <p className="truncate px-2 pb-1 text-[11px] text-muted-foreground tabular-nums group-data-[collapsible=icon]:hidden">
+            {t("app.versaoPainel", { versao: __VERSAO_PAINEL__ })}
+          </p>
+        )}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

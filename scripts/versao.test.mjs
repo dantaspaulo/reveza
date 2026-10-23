@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { conferir, maior, precisaVersao, primeiraDoChangelog, secaoDoChangelog, soArquivosDaVersao, versoes, workflowsVermelhos } from "./versao.mjs";
+import { conferir, maior, paraAtualizar, partesDaVersao, precisaVersao, primeiraDoChangelog, secaoDoChangelog, soArquivosDaVersao, versoes, workflowsVermelhos } from "./versao.mjs";
 
 const CHANGELOG = `# Versões
 
@@ -73,4 +73,24 @@ test("o ensaio da árvore de antes só vale para o commit de versão (só os arq
   assert.equal(soArquivosDaVersao(["package.json", "scripts/ensaio.mjs"]), false, "commit a mais depois do ensaio");
   assert.equal(soArquivosDaVersao(["agente/src/agente.ts"]), false);
   assert.equal(soArquivosDaVersao([]), false);
+});
+
+test("as partes de uma versão: migração é nuvem, funções e painel pelo resumo da nuvem, agente/mod/instalador são os computadores", () => {
+  assert.deepEqual(partesDaVersao(["nuvem/migracoes/0029_x.sql", "nuvem/testes/x.test.mjs"]), { nuvem: true, funcoes: false, painel: false, computadores: false });
+  assert.deepEqual(partesDaVersao(["painel/src/lib/atualizar.test.ts", "agente/test/troca.test.ts"]), { nuvem: false, funcoes: false, painel: false, computadores: false });
+  assert.deepEqual(partesDaVersao(["instalador/lib/painel.mjs"]), { nuvem: false, funcoes: false, painel: true, computadores: true });
+  assert.deepEqual(partesDaVersao(["nuvem/provisionar.mjs", "mod/hooks/register.ts"]), { nuvem: false, funcoes: true, painel: false, computadores: true });
+  assert.deepEqual(partesDaVersao(["README.md", "docs/ARQUITETURA.md"]), { nuvem: false, funcoes: false, painel: false, computadores: false });
+});
+
+test("o Para atualizar nunca diz que o painel vai junto com a nuvem sem a atualização completa", () => {
+  const tudo = paraAtualizar({ nuvem: true, funcoes: true, painel: true, computadores: true });
+  assert.match(tudo, /Nuvem:\* se atualiza sozinha/);
+  assert.match(tudo, /Funções e painel:\* vão ao ar sozinhos só com a atualização completa ligada/);
+  assert.match(tudo, /no computador que criou a instalação/);
+  // a ordem: nuvem, funções e painel, computadores
+  assert.ok(tudo.indexOf("Nuvem:") < tudo.indexOf("Funções e painel:") && tudo.indexOf("Funções e painel:") < tudo.indexOf("Computadores:"));
+  assert.match(paraAtualizar({ nuvem: false, funcoes: false, painel: true, computadores: false }), /Painel:\* vai ao ar sozinho/);
+  assert.doesNotMatch(paraAtualizar({ nuvem: false, funcoes: false, painel: false, computadores: true }), /Painel|Nuvem/);
+  assert.match(paraAtualizar({ nuvem: false, funcoes: false, painel: false, computadores: false }), /nada a fazer/);
 });

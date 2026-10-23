@@ -267,10 +267,12 @@ a time. It all lives under **Computers → Updates**, in the dashboard.
   cloud downloads the newest official published version, applies only the missing migrations (each one whole or
   nothing, in a transaction) and records them. It only accepts an official version of the repository, newer than its
   own.
-- **The cloud functions and the dashboard** need the Supabase and Vercel tokens. Without the full update, when a version
-  changes them the dashboard shows the manual step: run `npx github:dantaspaulo/reveza --atualizar` on the computer that
-  created the installation. With the **full update** on, a computer of the installation (the first one that is on and
-  calm, on any system) publishes them by itself; the old dashboard stays online until the new one is published.
+- **The cloud functions and the dashboard do not follow the cloud** by themselves: publishing needs the Supabase and
+  Vercel tokens. With the **full update** on (`reveza atualizacao-completa ligar`, once, on any computer of the
+  installation), a computer of the installation (the first one that is on and calm, on any system) publishes them by
+  itself, and the old dashboard stays online until the new one is published. Without it, the dashboard warns in the menu
+  ("Panel vX · the installation is already on vY") and shows the manual step: run
+  `npx github:dantaspaulo/reveza --atualizar` on the computer that created the installation.
 - **The computers** update through the buttons (**Check for updates**, **Update**, **Update all**) or by themselves, and
   a computer only moves to a new version once the cloud is on it.
 

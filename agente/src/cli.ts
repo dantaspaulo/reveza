@@ -1165,8 +1165,8 @@ async function cmdCompleta(amb: Ambiente, a: Args): Promise<number> {
   amb.saida(t("Atualização completa ligada: os tokens estão na nuvem cifrados com a chave do cofre.", "Full update on: the tokens are in the cloud, encrypted with the vault key."));
   amb.saida(
     t(
-      "Quando a nuvem chegar a uma versão nova, um computador ligado e calmo publica as funções e o painel dela; depois, os computadores.",
-      "When the cloud reaches a new version, a computer that is on and idle publishes its functions and panel; then the computers.",
+      "Se a nuvem já está numa versão que as funções ou o painel ainda não têm, um computador ligado e calmo publica o que falta em alguns minutos (acompanhe em Computadores, Atualizações, no painel). Nas próximas versões, o mesmo logo depois da nuvem; por último, os computadores.",
+      "If the cloud is already on a version the functions or the panel do not have yet, a computer that is on and idle publishes what is missing in a few minutes (follow it in Computers, Updates, in the panel). On the next versions, the same right after the cloud; the computers come last.",
     ),
   );
   amb.saida(t("Para desligar: reveza atualizacao-completa desligar (ou Desligar, no painel).", "To turn it off: reveza atualizacao-completa desligar (or Turn off, in the panel)."));

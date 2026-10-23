@@ -102,11 +102,15 @@ export function andamentoDaAtualizacao(pc: Computador, cmd: Comando | null, even
   return null
 }
 
-/** A versão dos computadores quando ela está na frente da do painel (o painel é atualizado no computador principal). */
+/**
+ * A versão da instalação quando ela está na frente da do painel: a da nuvem (com o painel dela ainda por publicar) ou a
+ * dos computadores. Sem a atualização completa, o painel não acompanha a nuvem (22/10/2026, relato de um usuário: a
+ * nuvem foi para a 0.10 e o painel ficou na 0.7, sem nada dizendo isso fora do cartão de Atualizações).
+ */
 export function painelAtras(versaoPainel: string, computadores: Computador[], nuvem?: EstadoNuvem | null): string | null {
   // a nuvem sabe que o painel que está no ar é o da versão dela (ou que a versão nova não mexeu no painel): em dia
   if (nuvem?.versao && !pendenteDaPublicacao(nuvem).painel) return null
-  let maisNova: string | null = null
+  let maisNova: string | null = nuvem?.versao && SEMVER.test(nuvem.versao) ? nuvem.versao : null
   for (const pc of computadores) if (!pc.revogado && SEMVER.test(pc.versao)) maisNova = maior(maisNova, pc.versao)
   return maisNova && SEMVER.test(versaoPainel) && compararVersao(maisNova, versaoPainel) > 0 ? maisNova : null
 }

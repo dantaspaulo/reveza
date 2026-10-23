@@ -76,12 +76,12 @@ export default secao({
           },
           salvo: "Atualizar sozinho: {modo}",
         },
-        painelAtras: "O painel está na {painel}; os computadores já estão na {computadores}.",
+        painelAtras: "O painel está na {painel} e a instalação já está na {versao}: as telas novas só aparecem com o painel novo.",
         nuvem: {
           titulo: "Nuvem e painel",
           versoes: "Nuvem {nuvem} · funções {funcoes} · painel {painel}",
           botao: "Atualizar a nuvem",
-          dica: "A nuvem confere a versão oficial mais nova e aplica sozinha as migrações que faltam, sem token nenhum. Também tenta de novo a publicação que tinha parado.",
+          dica: "A nuvem confere a versão oficial mais nova e aplica sozinha as migrações que faltam, sem token nenhum. As funções e o painel vão junto só com a atualização completa ligada. Também tenta de novo a publicação que tinha parado.",
           fase: {
             desconhecida:
               "A nuvem ainda não sabe a versão dela (instalação de antes da 0.3.0): rode uma vez a atualização pelo instalador, no computador que criou a instalação.",
@@ -92,14 +92,19 @@ export default secao({
             publicando: "Publicando as funções e o painel da {versao} em {computador}…",
             publicacaoFalhou: "A publicação das funções e do painel da {versao} parou: {motivo}. O painel de antes continua no ar; Atualizar a nuvem tenta de novo.",
             passoManual:
-              "A nuvem está na {versao}, que mexe {partes}: rode a atualização pelo instalador no computador que criou a instalação (ele pede os tokens), ou ligue a atualização completa.",
+              "A nuvem já está na {versao}, mas {partes} ainda não: sem a atualização completa, funções e painel não vão junto com a nuvem, porque publicar pede os tokens do Supabase e da Vercel.",
             esperandoPublicacao: "Funções e painel da {versao}: um computador ligado publica em instantes.",
             atualizada: "Nuvem e painel em dia na {versao}.",
           },
           partes: {
-            funcoes: "nas funções da nuvem",
-            painel: "no painel",
-            ambas: "nas funções da nuvem e no painel",
+            funcoes: "as funções da nuvem",
+            painel: "o painel",
+            ambas: "as funções da nuvem e o painel",
+          },
+          passo: {
+            completa:
+              "Para ser sozinho daqui em diante, ligue uma vez a atualização completa, em qualquer computador da instalação (ele pede os dois tokens). O que falta vai ao ar em alguns minutos:",
+            umaVez: "Ou só desta vez, no computador que criou a instalação (ele também pede os tokens):",
           },
           computadorDesconhecido: "um computador",
           completa: {
@@ -346,12 +351,12 @@ export default secao({
           },
           salvo: "Update by itself: {modo}",
         },
-        painelAtras: "The panel is on {painel}; the computers are already on {computadores}.",
+        painelAtras: "The panel is on {painel} and the installation is already on {versao}: the new screens only show with the new panel.",
         nuvem: {
           titulo: "Cloud and panel",
           versoes: "Cloud {nuvem} · functions {funcoes} · panel {painel}",
           botao: "Update the cloud",
-          dica: "The cloud checks the newest official version and applies the missing migrations by itself, with no token at all. It also retries a publication that had stopped.",
+          dica: "The cloud checks the newest official version and applies the missing migrations by itself, with no token at all. The functions and the panel only go along with the full update on. It also retries a publication that had stopped.",
           fase: {
             desconhecida:
               "The cloud does not know its version yet (installation from before 0.3.0): run the update once with the installer, on the computer that created the installation.",
@@ -362,7 +367,7 @@ export default secao({
             publicando: "Publishing the functions and the panel of {versao} on {computador}…",
             publicacaoFalhou: "Publishing the functions and the panel of {versao} stopped: {motivo}. The previous panel stays online; Update the cloud tries again.",
             passoManual:
-              "The cloud is on {versao}, which changes {partes}: run the update with the installer on the computer that created the installation (it asks for the tokens), or turn on the full update.",
+              "The cloud is already on {versao}, but {partes} not yet: without the full update, functions and panel do not go along with the cloud, because publishing needs the Supabase and Vercel tokens.",
             esperandoPublicacao: "Functions and panel of {versao}: a computer that is on publishes them shortly.",
             atualizada: "Cloud and panel up to date on {versao}.",
           },
@@ -370,6 +375,11 @@ export default secao({
             funcoes: "the cloud functions",
             painel: "the panel",
             ambas: "the cloud functions and the panel",
+          },
+          passo: {
+            completa:
+              "To make it automatic from now on, turn on the full update once, on any computer of the installation (it asks for both tokens). What is missing goes online in a few minutes:",
+            umaVez: "Or just this once, on the computer that created the installation (it also asks for the tokens):",
           },
           computadorDesconhecido: "a computer",
           completa: {

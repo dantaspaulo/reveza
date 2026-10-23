@@ -9,6 +9,9 @@
 //                                             roda o comando de `git config reveza.posLancamento`, se houver
 //   node scripts/versao.mjs pre-push          (hook .githooks/pre-push) recusa empurrar para a main código mudado desde
 //                                             a última versão sem subir a versão
+//   node scripts/versao.mjs para-atualizar [vA] [vB]
+//                                             o "Para atualizar" do aviso da versão (da tag anterior até a última), pelas
+//                                             partes que mudaram; o `lancar` também imprime no fim
 
 import { execFileSync, execSync } from "node:child_process";
 import { chamadoDireto, ensaioVale, lerEnsaio, repositorioDoOrigin, soDocumentacao } from "./ensaio.mjs";
@@ -33,6 +36,55 @@ const ler = (f) => readFileSync(path.join(RAIZ, f), "utf8");
 const git = (...a) => execFileSync("git", a, { cwd: RAIZ, encoding: "utf8" }).trim();
 
 export const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+
+/**
+ * O que uma versão muda, pelos arquivos entre duas tags: a nuvem (migrações), as funções e o painel (as mesmas regras
+ * do resumo que a função atualizar-nuvem calcula: sem testes nem arquivos ocultos) e o programa dos computadores.
+ */
+export function partesDaVersao(mudados) {
+  const fora = /(^|\/)(\.[^/]*|node_modules|dist|capturas|testes|test)(\/|$)|\.test\.[a-z]+$/;
+  const vale = mudados.filter((f) => !fora.test(f));
+  const tem = (pastas, arquivos = []) => vale.some((f) => pastas.some((p) => f.startsWith(p)) || arquivos.includes(f));
+  return {
+    nuvem: tem(["nuvem/migracoes/"]),
+    funcoes: tem(["nuvem/funcoes/"], ["nuvem/provisionar.mjs"]),
+    painel: tem(["painel/"], ["instalador/lib/painel.mjs", "instalador/lib/vercel.mjs"]),
+    computadores: tem(["agente/", "mod/", "instalador/"]),
+  };
+}
+
+/**
+ * O "Para atualizar" do aviso da versão. Funções e painel NÃO acompanham a nuvem sem a atualização completa: o aviso da
+ * 0.10.0 disse que o painel ia junto, e um usuário (22/10/2026) atualizou a nuvem e ficou com o painel da 0.7.
+ */
+export function paraAtualizar(p) {
+  const passos = [];
+  if (p.nuvem) passos.push("*Nuvem:* se atualiza sozinha (ou pelo *Atualizar a nuvem*, em Computadores).");
+  if (p.funcoes || p.painel) {
+    const [o, vai] = p.funcoes && p.painel ? ["Funções e painel", "vão ao ar sozinhos"] : p.funcoes ? ["Funções da nuvem", "vão ao ar sozinhas"] : ["Painel", "vai ao ar sozinho"];
+    passos.push(
+      `*${o}:* ${vai} só com a atualização completa ligada (\`reveza atualizacao-completa ligar\`, uma vez, em qualquer computador da instalação). Sem ela, \`npx github:dantaspaulo/reveza --atualizar\` no computador que criou a instalação.`,
+    );
+  }
+  if (p.computadores) passos.push("*Computadores:* no painel, Computadores → Atualizar (ou `npx github:dantaspaulo/reveza --atualizar` no terminal de cada um).");
+  if (!passos.length) return "*Para atualizar:* nada a fazer.";
+  return `*Para atualizar*, nesta ordem:\n${passos.map((x) => `• ${x}`).join("\n")}`;
+}
+
+function imprimirParaAtualizar(de, ate) {
+  // o commit de versão do `lancar` (só o número nos package.json, travas e badges) não conta como mudança no painel
+  // nem nos computadores: a comparação vai até o commit de antes dele
+  let fim = ate;
+  try {
+    if (soArquivosDaVersao(git("diff", "--name-only", `${ate}~1..${ate}`).split("\n").filter(Boolean))) fim = `${ate}~1`;
+  } catch {
+    // sem pai
+  }
+  const mudados = git("diff", "--name-only", `${de}..${fim}`).split("\n").filter(Boolean);
+  const p = partesDaVersao(mudados);
+  console.log(`\npartes que mudaram de ${de} a ${ate}: ${Object.entries(p).filter(([, v]) => v).map(([k]) => k).join(", ") || "nenhuma"}`);
+  console.log(`para o aviso da versão:\n${paraAtualizar(p)}`);
+}
 
 /** Os arquivos que o commit de versão do `lancar` muda (e só eles). */
 export const ARQUIVOS_DA_VERSAO = [...PACOTES, ...TRAVAS, CONFIG, ...BADGES.map(([f]) => f)];
@@ -185,6 +237,11 @@ function lancar(nova) {
     stdio: "inherit",
   });
   console.log(`ok: versão ${nova} no repositório, com tag e release`);
+  try {
+    imprimirParaAtualizar(`v${atual}`, `v${nova}`);
+  } catch (e) {
+    console.error(`aviso: não montei o "Para atualizar" (${e.message}); rode node scripts/versao.mjs para-atualizar`);
+  }
   posLancamento(nova);
 }
 
@@ -272,7 +329,12 @@ if (chamadoDireto(import.meta.url)) {
     if (cmd === "conferir") console.log(`ok: tudo na versão ${conferir()}`);
     else if (cmd === "lancar") lancar(process.argv[3]);
     else if (cmd === "pre-push") prePush();
-    else throw new Error("uso: node scripts/versao.mjs conferir | lancar X.Y.Z | pre-push");
+    else if (cmd === "para-atualizar") {
+      const tags = git("tag", "--list", "v*", "--sort=-v:refname").split("\n").filter(Boolean);
+      // sem nada: da penúltima tag à última; com uma: dela até o HEAD; com duas: entre elas
+      const [de, ate] = process.argv[3] ? [process.argv[3], process.argv[4] ?? "HEAD"] : [tags[1], tags[0]];
+      imprimirParaAtualizar(de, ate);
+    } else throw new Error("uso: node scripts/versao.mjs conferir | lancar X.Y.Z | pre-push | para-atualizar [vA] [vB]");
   } catch (e) {
     console.error(e.message);
     process.exit(1);

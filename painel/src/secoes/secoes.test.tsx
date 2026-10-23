@@ -514,7 +514,12 @@ describe("Computadores: o cartão de atualizações (Verificar, a escolha de com
       { chave: "impressoes", valor: { "0.3.0": { funcoes: "f1", painel: "p1" }, "0.3.1": { funcoes: "f1", painel: "p2" } } },
     ])
     expect(erros).toEqual([])
-    expect(linhaNuvem(html)).toContain("A nuvem está na 0.3.1, que mexe no painel: rode a atualização pelo instalador")
+    expect(linhaNuvem(html)).toContain("A nuvem já está na 0.3.1, mas o painel ainda não: sem a atualização completa, funções e painel não vão junto com a nuvem")
+    // os dois caminhos, com o de ligar a atualização completa primeiro (vale para as próximas versões), uma vez cada
+    const completa = html.indexOf("reveza atualizacao-completa ligar")
+    expect(completa).toBeGreaterThan(-1)
+    expect(completa).toBeLessThan(html.indexOf("npx github:dantaspaulo/reveza --atualizar"))
+    expect(html.match(/reveza atualizacao-completa ligar/g)).toHaveLength(1)
   })
 
   it("a atualização da nuvem parou: o motivo, e o botão tenta de novo", async () => {
