@@ -7,6 +7,24 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.10.3 · 23/10/2026
+
+Duas correções de um relato de usuário (Windows, duas contas Pro, o app de desktop aberto junto com o terminal).
+Precisa dos computadores na 0.10.3 (no painel, **Computadores → Atualizar**) e de sessões abertas depois da atualização
+(o mod novo); a nuvem não muda.
+
+- **O uso de outra conta não vai mais para a conta em uso.** O app de desktop tem login próprio e ficava sempre na conta
+  A; as sessões dele carregavam o mod, e o uso da conta A era gravado na conta B, a em uso (o painel mostrava 48% numa
+  conta que estava em 1%, e a troca automática decidia com esse número). Agora o mod lê a conta da sessão com a
+  credencial dela (o segredo fica no assistente; vai ao agente só o identificador da conta) e o agente só usa o número
+  da sessão que está na conta em uso. Sessão noutra conta mostra isso na linha de status, e o limite dela não troca a
+  conta em uso nem enche a conta errada. Sessão sem como dizer a conta segue como antes.
+- **Desligamento brusco não apaga mais a lista de contas.** Uma queda de energia deixou o `estado.json` com bytes nulos,
+  e o agente subiu só com a conta em uso, sem avisar. Agora a gravação vai ao disco antes de trocar o arquivo; se ele
+  ainda assim voltar ilegível, fica guardado (`estado.json.estragado-<data>`), volta a cópia boa (`estado.json.bom`) e
+  sai um aviso nos eventos do painel. Uma conta que sumiu da lista volta pela pasta dela mesmo com o login vencido, e a
+  pasta de uma conta sem login não é mais apagada.
+
 ## 0.10.2 · 22/10/2026
 
 O painel que não acompanha a nuvem passa a dizer isso em toda tela, e o que fazer. Relato de um usuário: ele atualizou a

@@ -77,6 +77,8 @@ export const LER_ESTACIONADA_AVISO_S = 120;
 export const FATOR_LEITURA_SOMBRA = 5;
 export const MEDIDA_FRESCA_S = 180;
 export const IGNORAR_MEDIDA_APOS_TROCA_S = 30;
+/** Até quanto depois de uma troca uma sessão ainda pode estar na conta que saiu (antes de reler o login). */
+export const SAIU_HA_POUCO_S = 120;
 export const ESPERA_ENTRE_TROCAS_S = 90;
 export const LEITURA_VALIDA_S = 900;
 export const RECUO_429_S = 600;

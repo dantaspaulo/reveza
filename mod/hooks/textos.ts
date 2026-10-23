@@ -60,6 +60,7 @@ export type Textos = {
   semContas: string
   agenteForaDoAr: string
   contaEmUso: (nome: string, cinco: string) => string
+  contaOutra: string
   contaMudou: (email: string) => string
   descricao: string
   retomada: string
@@ -71,6 +72,7 @@ export type Textos = {
     troca: string
     semModelo: (modelo: string) => string
     modeloPadrao: (modelo: string) => string
+    outraConta: string
   }
 }
 
@@ -105,6 +107,7 @@ export function textos(i: Idioma = atual): Textos {
     semContas: o('Nenhuma conta conectada. No terminal: reveza contas conectar <email>', 'No account connected. In the terminal: reveza contas conectar <email>'),
     agenteForaDoAr: o('Reveza: agente fora do ar', 'Reveza: agent is down'),
     contaEmUso: (nome: string, cinco: string) => o(`conta ${nome}${cinco ? ` · ${cinco}` : ''}`, `account ${nome}${cinco ? ` · ${cinco}` : ''}`),
+    contaOutra: o('Reveza: esta sessão está noutra conta (fora da troca)', 'Reveza: this session is on another account (outside the switching)'),
     contaMudou: (email: string) => o(`Reveza: agora na conta ${email}`, `Reveza: now on account ${email}`),
     descricao: o('Reveza AI: a conta em uso, o uso de cada conta e o estado do agente', "Reveza AI: the account in use, each account's usage and the agent's state"),
     retomada: o(
@@ -142,6 +145,10 @@ export function textos(i: Idioma = atual): Textos {
           `Nenhuma conta livre roda o ${modelo} agora: a sessão segue no modelo padrão.`,
           `No free account can run ${modelo} right now: the session goes on with the default model.`,
         ),
+      outraConta: o(
+        'Esta sessão usa outra conta, não a que o Reveza põe em uso (por exemplo, a do app de desktop, que tem login próprio). O Reveza não troca a conta dela: espere a janela renovar ou continue no terminal.',
+        "This session uses another account, not the one Reveza puts in use (for example, the desktop app's, which has its own sign-in). Reveza does not switch its account: wait for the window to reset or carry on in the terminal.",
+      ),
     },
   }
 }

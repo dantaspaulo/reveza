@@ -12,12 +12,24 @@ export function lerJson<T>(caminho: string): T | null {
   }
 }
 
-export function gravarAtomico(caminho: string, conteudo: string | Buffer, modo = 0o600): void {
+/**
+ * `duravel` (o padrão): o conteúdo vai ao disco antes da troca de nome, e a pasta depois dela. Sem isso, uma queda de
+ * energia logo depois da gravação deixava o arquivo novo vazio ou com bytes nulos (relato de um usuário, Windows,
+ * 22/10/2026: o estado.json voltou ilegível e o agente subiu sem a lista de contas). Custa uns 8 ms por gravação do
+ * estado (medido no Mac mini, 200 KB); quem grava muito e se refaz sozinho (o registro de uso) pede `duravel: false`.
+ */
+export function gravarAtomico(caminho: string, conteudo: string | Buffer, modo = 0o600, { duravel = true }: { duravel?: boolean } = {}): void {
   fs.mkdirSync(path.dirname(caminho), { recursive: true, mode: 0o700 });
   // nome imprevisível e criação exclusiva ("wx"): nunca segue um link deixado no lugar do temporário
   const tmp = `${caminho}.tmp.${process.pid}.${randomBytes(8).toString("hex")}`;
   try {
-    fs.writeFileSync(tmp, conteudo, { mode: modo, flag: "wx" });
+    const fd = fs.openSync(tmp, "wx", modo);
+    try {
+      fs.writeFileSync(fd, conteudo);
+      if (duravel) fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     try {
       fs.chmodSync(tmp, modo);
     } catch {
@@ -29,6 +41,20 @@ export function gravarAtomico(caminho: string, conteudo: string | Buffer, modo =
     apagarSemErro(tmp);
     throw e;
   }
+  if (duravel) sincronizarPasta(path.dirname(caminho));
+}
+
+/** A troca de nome no disco (POSIX). O Windows não abre pasta para isso; lá o NTFS registra a troca no diário dele. */
+function sincronizarPasta(pasta: string): void {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(pasta, "r");
+    fs.fsyncSync(fd);
+  } catch {
+    // sem suporte: o conteúdo já foi ao disco, que é o que evita o arquivo vazio
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
 }
 
 export function apagarSemErro(caminho: string): void {
@@ -39,8 +65,8 @@ export function apagarSemErro(caminho: string): void {
   }
 }
 
-export function gravarJson(caminho: string, dados: unknown, modo = 0o600): void {
-  gravarAtomico(caminho, JSON.stringify(dados, null, 1), modo);
+export function gravarJson(caminho: string, dados: unknown, modo = 0o600, opcoes: { duravel?: boolean } = {}): void {
+  gravarAtomico(caminho, JSON.stringify(dados, null, 1), modo, opcoes);
 }
 
 export function garantirPasta(caminho: string): void {

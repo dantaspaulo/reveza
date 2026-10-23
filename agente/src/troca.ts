@@ -19,6 +19,7 @@ import {
   HISTORICO_JANELA_S,
   HISTORICO_PASSO_S,
   IGNORAR_MEDIDA_APOS_TROCA_S,
+  SAIU_HA_POUCO_S,
   LEITURA_VALIDA_S,
   LER_ESTACIONADA_S,
   RECUO_429_S,
@@ -34,6 +35,7 @@ import { estadoDaConta, gatilhoDeTroca, pctEfetivo } from "./decisao.js";
 import { novaConta, type ContaLocal, type EstadoLocal, type TipoEvento } from "./estado.js";
 import type { Log } from "./util/log.js";
 import type { Relogio } from "./util/tempo.js";
+import { lerJson } from "./util/arquivos.js";
 import { isoParaEpoch } from "./util/tempo.js";
 import { Trava, Travas } from "./util/trava.js";
 
@@ -75,6 +77,8 @@ export class Trocador {
   ultimaLeitura: Record<string, number> = {};
   /** Desde quando a renovação de cada conta tropeça sem o assistente dizer que o login morreu (epoch em segundos). */
   tropecoDesde: Record<string, number> = {};
+  /** Pastas de conta sem login e fora da lista, já avisadas nesta partida do agente. */
+  private pastasSemLogin = new Set<string>();
   sombra = false;
   private ultimoFaria = "";
   /** A principal já foi lida desde que o agente subiu? */
@@ -138,6 +142,21 @@ export class Trocador {
       if (c.accountUuid === perfil.accountUuid && c.orgUuid === perfil.orgUuid) return id;
     }
     return null;
+  }
+
+  /** Quem é a conta de uma pasta, pelo `oauthAccount` do .claude.json dela (sem rede e sem token). */
+  perfilDaPasta(pasta: string): Perfil | null {
+    const o = lerJson<{ oauthAccount?: Record<string, unknown> }>(path.join(pasta, ".claude.json"))?.oauthAccount;
+    const texto = (v: unknown) => (typeof v === "string" && v ? v : null);
+    if (!o || !texto(o.accountUuid) || !texto(o.organizationUuid)) return null;
+    return {
+      accountUuid: texto(o.accountUuid),
+      email: texto(o.emailAddress)?.toLowerCase() ?? null,
+      orgUuid: texto(o.organizationUuid),
+      org: texto(o.organizationName),
+      orgTipo: texto(o.organizationType),
+      tier: texto(o.organizationRateLimitTier),
+    };
   }
 
   contaPorEmail(email: string): string | null {
@@ -529,11 +548,48 @@ export class Trocador {
     }
   }
 
+  /**
+   * De quem é a sessão que mandou a medida ou o limite, pela conta que o mod leu com a credencial da própria sessão:
+   * `ativa`, `outra` ou `desconhecida` (mod antigo, perfil fora do ar). Relato de um usuário (22/10/2026): o app de
+   * desktop, com login próprio numa conta A, carregava o mod e o uso dele era gravado na conta B, a em uso. Sessão que
+   * não usa o login que o Reveza troca (o app, um token no ambiente) é `outra`; desconhecida segue como antes.
+   */
+  contaDaSessao(corpo: Record<string, unknown>): "ativa" | "outra" | "desconhecida" {
+    const c = corpo.conta;
+    if (!c || typeof c !== "object") return "desconhecida";
+    const d = c as Record<string, unknown>;
+    if (d.fora === true) return "outra";
+    const conta = typeof d.accountUuid === "string" ? d.accountUuid : null;
+    const org = typeof d.orgUuid === "string" ? d.orgUuid : null;
+    const a = this.estado.ativa ? this.estado.contas[this.estado.ativa] : null;
+    if (!conta || !org || !a?.accountUuid || !a.orgUuid) return "desconhecida";
+    return a.accountUuid === conta && a.orgUuid === org ? "ativa" : "outra";
+  }
+
+  /** A sessão está noutra conta de verdade (não só atrasada na troca): é o que o mod mostra a ela. */
+  sessaoDeOutraConta(corpo: Record<string, unknown>): boolean {
+    return this.contaDaSessao(corpo) === "outra" && !this.daContaQueSaiu(corpo);
+  }
+
+  /**
+   * A sessão ainda estava na conta que acabou de sair (a troca tem menos de 2 minutos e a sessão não releu o login): o
+   * limite foi dela, e a troca já aconteceu. Ela entra na fila e volta na conta nova, como sempre.
+   */
+  private daContaQueSaiu(corpo: Record<string, unknown>): boolean {
+    if (this.agora() - (this.estado.trocadaEm || 0) > SAIU_HA_POUCO_S) return false;
+    const linha = this.estado.linhaContas;
+    const anterior = linha.length >= 2 ? this.estado.contas[linha[linha.length - 2]![1]] : null;
+    const d = corpo.conta as Record<string, unknown> | undefined;
+    return !!anterior?.accountUuid && anterior.accountUuid === d?.accountUuid && anterior.orgUuid === d?.orgUuid;
+  }
+
   /** Uso que uma sessão mandou (de graça, ao vivo). Devolve true quando entrou. */
   medidaDaSessao(corpo: Record<string, unknown>): boolean {
     const t = this.agora();
     const ativa = this.estado.ativa;
     if (!ativa || !this.estado.contas[ativa] || t - (this.estado.trocadaEm || 0) < IGNORAR_MEDIDA_APOS_TROCA_S) return false;
+    // o número é de outra conta: na conta em uso ele mentiria para o painel e para a decisão da troca
+    if (this.contaDaSessao(corpo) === "outra") return false;
     const versao = corpo.versao;
     if (versao !== null && versao !== undefined && versao !== this.estado.versao) return false;
     const janelas: Janela[] = [];
@@ -558,10 +614,13 @@ export class Trocador {
    * Não marca a janela como cheia (para quem usa outro modelo a conta segue boa): marca a conta fora da escolha deste
    * computador por 6 horas e põe a sessão na fila, como no limite. Devolve a versão e se a troca já tinha acontecido.
    */
-  modeloDaSessao(corpo: Record<string, unknown>): { ok: true; trocou: boolean; versao: number; anotado: boolean; modelo: string } {
+  modeloDaSessao(corpo: Record<string, unknown>): { ok: true; trocou: boolean; versao: number; anotado: boolean; modelo: string; outraConta?: true } {
     const sessao = String(corpo.sessao ?? "").slice(0, 80);
     const modelo = String(corpo.modelo ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60) || "?";
     const ativa = this.estado.ativa;
+    // a sessão roda noutra conta: trocar a em uso não a ajuda, e a conta em uso não fica marcada sem o modelo
+    const outra = this.contaDaSessao(corpo) === "outra";
+    if (outra && !this.daContaQueSaiu(corpo)) return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, modelo, outraConta: true };
     if (sessao && !this.estado.fila.some((f) => f.sessao === sessao && f.estado === "aguardando")) {
       this.estado.fila.unshift({
         sessao,
@@ -574,7 +633,7 @@ export class Trocador {
       this.estado.fila.splice(50);
     }
     const v = corpo.versao;
-    if (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao) {
+    if (outra || (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao)) {
       return { ok: true, trocou: true, versao: this.estado.versao, anotado: false, modelo };
     }
     if (ativa && this.estado.contas[ativa]) {
@@ -589,9 +648,12 @@ export class Trocador {
   }
 
   /** Uma sessão bateu o limite. Devolve a versão do momento e se a troca já tinha acontecido. */
-  limiteDaSessao(corpo: Record<string, unknown>): { ok: true; trocou: boolean; versao: number; anotado: boolean } {
+  limiteDaSessao(corpo: Record<string, unknown>): { ok: true; trocou: boolean; versao: number; anotado: boolean; outraConta?: true } {
     const sessao = String(corpo.sessao ?? "").slice(0, 80);
     const ativa = this.estado.ativa;
+    // o limite é de outra conta: a em uso não fica cheia, a sessão não entra na fila (trocar não a faria voltar)
+    const outra = this.contaDaSessao(corpo) === "outra";
+    if (outra && !this.daContaQueSaiu(corpo)) return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true };
     if (sessao && !this.estado.fila.some((f) => f.sessao === sessao && f.estado === "aguardando")) {
       this.estado.fila.unshift({
         sessao,
@@ -604,8 +666,8 @@ export class Trocador {
       this.estado.fila.splice(50);
     }
     const v = corpo.versao;
-    if (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao) {
-      // A troca já aconteceu depois que a sessão mandou o pedido: o limite foi da conta que saiu.
+    if (outra || (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao)) {
+      // A troca já aconteceu depois que a sessão mandou o pedido (ou antes de ela reler o login): o limite foi da conta que saiu.
       return { ok: true, trocou: true, versao: this.estado.versao, anotado: false };
     }
     if (ativa && this.estado.contas[ativa]) {
@@ -638,20 +700,37 @@ export class Trocador {
       if (!st.isDirectory()) continue;
       const blob = await this.cred.ler(pasta);
       if (!blob) {
+        // login terminado de uma conta que não está na lista (o estado estragou e a credencial também): a pasta fica,
+        // é a única pista dela neste computador. Pasta de login largado (nunca terminou) segue saindo depois de 1 hora.
+        const sem = this.perfilDaPasta(pasta);
+        if (sem && !this.contaDoPerfil(sem)) {
+          if (!this.pastasSemLogin.has(pasta)) {
+            this.pastasSemLogin.add(pasta);
+            this.evento("erro", `Achei a pasta de ${sem.email ?? "uma conta"} sem o login dela (${nome}): entre de novo nessa conta para ela voltar.`, { pasta: nome });
+          }
+          continue;
+        }
         if (this.relogio.agoraMs() - st.mtimeMs > 3600_000) {
           if (this.sombra) this.log.faria(`apagar a pasta largada ${pasta}`);
           else fs.rmSync(pasta, { recursive: true, force: true });
         }
         continue;
       }
-      const perfil = await this.identidade(blob);
+      // sem resposta do perfil (token vencido depois de horas parado, rede fora), quem é a conta sai do .claude.json da
+      // pasta, que o próprio assistente grava no login: sem isso, a conta perdida do estado não voltava nunca
+      const perfil = (await this.identidade(blob)) ?? this.perfilDaPasta(pasta);
       if (!perfil) continue;
       const existente = this.contaDoPerfil(perfil);
       if (!existente) {
         const id = this.registrar(perfil, pasta, blob, nome);
         this.evento("conexao", `${perfil.email} (${perfil.org ?? "sem organização"}) conectada.`, { conta: id });
         this.ganchos.aoConectar?.(id);
-      } else if (this.estado.contas[existente]!.precisaLogin && existente !== this.estado.ativa) {
+      } else if (
+        existente !== this.estado.ativa &&
+        // a pasta que a lista guarda ficou sem login (pedia para entrar de novo, ou a lista voltou de uma cópia de antes
+        // de um login refeito noutra pasta): a pasta achada, com login, passa a ser a dela, em vez de ir embora
+        (this.estado.contas[existente]!.precisaLogin || !(await this.cred.ler(this.estado.contas[existente]!.pasta).catch(() => null)))
+      ) {
         const c = this.estado.contas[existente]!;
         if (this.sombra) {
           this.log.faria(`trocar a pasta de ${c.email} pela do login novo`);

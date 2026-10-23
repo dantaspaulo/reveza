@@ -121,7 +121,8 @@ export class Contador {
     }
     this.e.pendentesHoras = [...this.pendH];
     this.e.pendentesSessoes = [...this.pendS];
-    gravarJson(path.join(this.dir, "estado.json"), this.e);
+    // a cada 2 s numa varredura, e se refaz sozinho (os ids seguram a repetição): sem esperar o disco
+    gravarJson(path.join(this.dir, "estado.json"), this.e, 0o600, { duravel: false });
   }
 
   // ------------------------------------------------------------------------------------------------ leitura

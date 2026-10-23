@@ -702,9 +702,12 @@ export async function montar(
     versoes?: import("../src/atualizar.js").FonteVersoes;
     /** O projeto do Supabase (do endereço da nuvem): sem ele, o agente não publica funções e painel. */
     refNuvem?: string | null;
+    /** Mexe nos arquivos antes de o agente nascer (um estado.json estragado, uma cópia boa). */
+    antes?: (c: Caminhos) => void;
   } = {},
 ): Promise<Montado> {
   const tmp = pastaTemporaria();
+  opcoes.antes?.(tmp.c);
   const cred = opcoes.cred ?? new CredenciaisFalsas();
   const api = new ApiFalsa();
   const cli = new CliFalsa();

@@ -153,6 +153,27 @@ aprende. Outro usuário do mesmo computador, que alcança 127.0.0.1, não lê e-
 retomada de sessão só acontece na pasta registrada na transcrição da própria sessão (nunca na que chega pela ponte),
 e o texto que o mod põe no prompt é fixo.
 
+**A conta da sessão (0.10.3).** O uso ao vivo (`/api/medida`) e o limite (`/api/limite`) só valem para a conta em uso
+quando a sessão está nela. Relato de um usuário (22/10/2026): o app de desktop, com login próprio numa conta A, carregava
+o mod, e o uso dele era gravado na conta B, a em uso (o painel e a troca decidiam com o número errado). O mod lê a conta
+da sessão com `$.session.authorize()` (a credencial fica no Claude Code; o mod recebe um apelido que só vale para o
+endereço oficial) e `GET /api/oauth/profile`, uma vez por sessão e de novo quando a conta em uso muda (30 min de
+validade; 2 min sem resposta ou com o agente dizendo outra conta), e manda ao agente só `{ accountUuid, orgUuid }`, ou
+`{ fora: true }` para sessão sem o login que o Reveza troca (chave de API, token só de uso no ambiente, que o perfil
+recusa pelo escopo). O agente compara com a conta em uso: outra conta não mexe no número, não enche a conta, não marca
+"sem o modelo" e não entra na fila (o mod avisa a sessão e mostra na linha de status); sem a conta (mod antigo, perfil
+fora do ar, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) segue como antes. Sessão ainda na conta que acabou de sair
+(troca de menos de 2 minutos) conta como "a troca já aconteceu": entra na fila e volta na conta nova.
+
+**O estado no disco (0.10.3).** Relato de um usuário (Windows, desligamento brusco em 22/10/2026): o `estado.json`
+voltou com bytes nulos e o agente subiu só com a conta em uso, sem aviso. A gravação atômica manda o conteúdo ao disco
+antes da troca de nome (e a pasta depois, onde o sistema deixa; uns 8 ms por gravação do estado, de 15 em 15 s; o
+registro de uso, que se refaz sozinho, não espera). Na partida, um estado ilegível é guardado como
+`estado.json.estragado-<data>` (nunca apagado), volta a cópia boa `estado.json.bom` (feita na partida, quando a lista de
+contas muda e de hora em hora) e sai um evento de erro, que vai ao painel. Uma pasta de conta fora da lista volta pelo
+`.claude.json` dela quando o perfil não responde (token vencido depois de horas parado), e a pasta sem login de uma conta
+fora da lista não é apagada (é a única pista dela; o evento pede para entrar de novo).
+
 ## 7c. Atualização do banco
 
 `reveza_migracoes(nome, hash)`: migração nova entra; arquivo marcado `-- reaplicável` (só funções, políticas e

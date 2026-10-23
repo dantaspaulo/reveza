@@ -1,6 +1,7 @@
 // O registro local do agente (~/.reveza/estado.json). Só e-mail, organização, números e caminhos: segredo nunca
 // entra aqui (fica nas credenciais do sistema).
 
+import * as fs from "node:fs";
 import { gravarJson, lerJson, clonar } from "./util/arquivos.js";
 import type { Janela, Perfil } from "./anthropic.js";
 
@@ -157,15 +158,72 @@ export function estadoInicial(): EstadoLocal {
 }
 
 export function carregarEstado(caminho: string): EstadoLocal {
+  return comBase(lerJson<Partial<EstadoLocal>>(caminho));
+}
+
+function comBase(lido: Partial<EstadoLocal> | null): EstadoLocal {
   const base = estadoInicial();
-  const lido = lerJson<Partial<EstadoLocal>>(caminho);
-  if (!lido || typeof lido !== "object") return base;
+  if (!lido || typeof lido !== "object" || Array.isArray(lido)) return base;
   return {
     ...base,
     ...lido,
     config: { ...base.config, ...(lido.config ?? {}) },
     nuvem: { ...base.nuvem, ...(lido.nuvem ?? {}) },
   };
+}
+
+/** A cópia boa do estado, ao lado dele: a do último estado lido inteiro, refeita quando a lista de contas muda. */
+export function copiaBoaDo(caminho: string): string {
+  return `${caminho}.bom`;
+}
+
+export interface Recuperacao {
+  /** Onde ficou o arquivo ilegível (guardado como prova, nunca apagado). */
+  estragado: string | null;
+  /** De quando é a cópia boa que voltou (null: não havia cópia legível). */
+  copiaDe: number | null;
+}
+
+/**
+ * O estado na partida do agente. Ilegível (vazio ou com bytes nulos depois de uma queda de energia, relato de um usuário
+ * de 22/10/2026), ele não vira um estado em branco calado: o arquivo estragado fica guardado ao lado e volta a cópia boa.
+ * Sem cópia, começa em branco e as contas voltam pelas pastas. Só o agente chama isto (a linha de comando só lê).
+ */
+export function carregarEstadoDoAgente(caminho: string, agoraMs = Date.now()): { estado: EstadoLocal; recuperacao: Recuperacao | null } {
+  if (!fs.existsSync(caminho)) return { estado: estadoInicial(), recuperacao: null };
+  const lido = lerJson<Partial<EstadoLocal>>(caminho);
+  if (lido && typeof lido === "object" && !Array.isArray(lido)) {
+    const estado = comBase(lido);
+    try {
+      salvarCopiaBoa(caminho, estado);
+    } catch {
+      // sem a cópia nova, a de antes continua valendo
+    }
+    return { estado, recuperacao: null };
+  }
+  const carimbo = new Date(agoraMs).toISOString().replace(/[:.]/g, "-");
+  let estragado: string | null = `${caminho}.estragado-${carimbo}`;
+  try {
+    fs.renameSync(caminho, estragado);
+  } catch {
+    estragado = null;
+  }
+  const bom = copiaBoaDo(caminho);
+  const copia = lerJson<Partial<EstadoLocal>>(bom);
+  if (copia && typeof copia === "object" && !Array.isArray(copia)) {
+    let copiaDe = agoraMs;
+    try {
+      copiaDe = fs.statSync(bom).mtimeMs;
+    } catch {
+      // fica a hora de agora
+    }
+    return { estado: comBase(copia), recuperacao: { estragado, copiaDe } };
+  }
+  return { estado: estadoInicial(), recuperacao: { estragado, copiaDe: null } };
+}
+
+export function salvarCopiaBoa(caminho: string, estado: EstadoLocal): void {
+  gravarJson(copiaBoaDo(caminho), estado);
 }
 
 export function salvarEstado(caminho: string, estado: EstadoLocal): void {

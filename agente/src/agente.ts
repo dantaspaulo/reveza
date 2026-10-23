@@ -21,7 +21,8 @@ import { PRINCIPAL } from "./credenciais/tipos.js";
 import { CredenciaisSombra } from "./credenciais/sombra.js";
 import type { Credenciais } from "./credenciais/tipos.js";
 import { agendarRodizio, candidata, decidir, gatilhoDeTroca, pctEfetivo, sorteioReal } from "./decisao.js";
-import { carregarEstado, salvarEstado, type EstadoLocal, type Modo, type UltimaAtualizacaoAssistente } from "./estado.js";
+import { carregarEstadoDoAgente, salvarCopiaBoa, salvarEstado, type EstadoLocal, type Modo, type Recuperacao, type UltimaAtualizacaoAssistente } from "./estado.js";
+import { idiomaAtual, t } from "./i18n.js";
 import { aplicarAutoUpdater, ASSISTENTE_CONFERIR_S, autoDesligado, erroDoUpdate, modoAssistente, type ModoAssistente } from "./assistente.js";
 import { conferirCodigo, entregarChave, impressaoDaChave, LIGACAO_DUPLA } from "./ligar.js";
 import { Logins, EMAIL_VALIDO, type Login } from "./logins.js";
@@ -243,8 +244,18 @@ export class Agente {
   private errosDoLog = new Map<string, number>();
   private errosDoLogNaHora: number[] = [];
 
+  /** O estado voltou da cópia boa (ou começou em branco) na partida: o evento sai no iniciar, com a nuvem já de pé. */
+  private recuperacao: Recuperacao | null = null;
+  /** As contas da última cópia boa e quando ela foi feita: a lista mudou (ou passou 1 hora), a cópia é refeita. */
+  private contasDaCopia = "";
+  private copiaEm = 0;
+
   constructor(private d: Dependencias) {
-    this.estado = carregarEstado(d.c.estado);
+    const carregado = carregarEstadoDoAgente(d.c.estado, d.relogio.agoraMs());
+    this.estado = carregado.estado;
+    this.recuperacao = carregado.recuperacao;
+    this.contasDaCopia = Object.keys(this.estado.contas).sort().join(",");
+    this.copiaEm = d.relogio.agora();
     this.cred = d.sombra ? new CredenciaisSombra(d.cred, d.log) : d.cred;
     this.cj = new ClaudeJson(d.relogio, d.sombra, d.log);
     this.trocador = new Trocador(this.estado, this.cred, d.api, d.cli, this.cj, d.c, d.relogio, d.log, {
@@ -372,6 +383,13 @@ export class Agente {
   salvar(): void {
     try {
       salvarEstado(this.d.c.estado, this.estado);
+      const contas = Object.keys(this.estado.contas).sort().join(",");
+      const agora = this.d.relogio.agora();
+      if (contas !== this.contasDaCopia || agora - this.copiaEm >= 3600) {
+        salvarCopiaBoa(this.d.c.estado, this.estado);
+        this.contasDaCopia = contas;
+        this.copiaEm = agora;
+      }
     } catch (e) {
       this.d.log.erro(`não consegui salvar o estado: ${(e as Error).message}`);
     }
@@ -386,6 +404,7 @@ export class Agente {
     this.chave = k ? Buffer.from(k, "base64") : null;
     if (this.chave && this.chave.length !== 32) this.chave = null;
     this.d.log.info(`agente ${VERSAO} ${this.d.sombra ? "em modo sombra " : ""}${this.comNuvem ? "com nuvem" : "sem nuvem"}`);
+    this.avisarRecuperacao();
     if (opcoes.ponte !== false) await this.abrirPonte();
     this.aplicarResumo();
     this.aplicarModelo(false);
@@ -393,6 +412,44 @@ export class Agente {
     this.laco(() => this.ciclo(), CICLO_S * 1000);
     if (this.comNuvem) this.laco(() => this.busca(), () => Math.max(2, Math.min(60, this.estado.config.intervaloS || 5)) * 1000);
     this.laco(() => this.registro(), 60_000);
+  }
+
+  /** Sessões que medem outra conta, já anotadas no log (uma linha por sessão, não uma por medida). */
+  private sessoesDeOutraConta = new Set<string>();
+
+  private avisarSessaoDeOutraConta(sessao: string): void {
+    if (!sessao || this.sessoesDeOutraConta.has(sessao)) return;
+    if (this.sessoesDeOutraConta.size > 200) this.sessoesDeOutraConta.clear();
+    this.sessoesDeOutraConta.add(sessao);
+    this.d.log.info(`a sessão ${sessao.slice(0, 8)} usa outra conta, não a em uso: o uso dela fica fora do painel e da troca`);
+  }
+
+  /** O estado estava ilegível na partida: diz o que voltou (no painel, nos eventos e alertas) e onde ficou o estragado. */
+  private avisarRecuperacao(): void {
+    const r = this.recuperacao;
+    if (!r) return;
+    this.recuperacao = null;
+    const guardado = r.estragado ? path.basename(r.estragado) : null;
+    const onde = guardado ? t(` O arquivo estragado ficou guardado como ${guardado}.`, ` The damaged file was kept as ${guardado}.`) : "";
+    if (r.copiaDe !== null) {
+      const quando = new Date(r.copiaDe).toLocaleString(idiomaAtual());
+      this.trocador.evento(
+        "erro",
+        t(
+          `O estado deste computador estava ilegível (desligamento brusco?) e voltou da cópia de ${quando}: as contas e a configuração de então.${onde}`,
+          `This computer's state was unreadable (sudden shutdown?) and came back from the copy of ${quando}: the accounts and settings of that time.${onde}`,
+        ),
+      );
+    } else {
+      this.trocador.evento(
+        "erro",
+        t(
+          `O estado deste computador estava ilegível (desligamento brusco?) e não havia cópia: as contas voltam pelas pastas em até 1 minuto; confira em Contas.${onde}`,
+          `This computer's state was unreadable (sudden shutdown?) and there was no copy: the accounts come back from their folders within 1 minute; check Accounts.${onde}`,
+        ),
+      );
+    }
+    this.salvar();
   }
 
   parar(): void {
@@ -1860,23 +1917,28 @@ export class Agente {
       medida: (corpo: Record<string, unknown>): Resposta => {
         const entrou = this.trocador.medidaDaSessao(corpo);
         if (entrou) this.fundo(this.comNuvem ? this.relatarUso() : this.agir());
-        return { status: 200, corpo: { ok: true } };
+        // a sessão mede outra conta (o app de desktop com login próprio, um token no ambiente): o mod diz isso a ela
+        const outraConta = this.trocador.sessaoDeOutraConta(corpo);
+        if (outraConta) this.avisarSessaoDeOutraConta(String(corpo.sessao ?? "").slice(0, 80));
+        return { status: 200, corpo: { ok: true, outraConta } };
       },
       limite: (corpo: Record<string, unknown>): Resposta => {
         const sessao = String(corpo.sessao ?? "").slice(0, 80);
         // a conta não roda o modelo da sessão (sem créditos de uso): marca a conta fora deste computador e troca
         if (corpo.erro === "modelo") {
           const r = this.trocador.modeloDaSessao(corpo);
+          if (r.outraConta) return { status: 200, corpo: { ok: true, versao: r.versao, outraConta: true } };
           if (sessao) this.contador.marcarParada(sessao);
           this.salvar();
           if (r.anotado) this.fundo(this.semModeloDepois(sessao, r.modelo));
-          return { status: 200, corpo: { ok: true, versao: r.versao } };
+          return { status: 200, corpo: { ok: true, versao: r.versao, trocou: r.trocou } };
         }
         const r = this.trocador.limiteDaSessao(corpo);
+        if (r.outraConta) return { status: 200, corpo: { ok: true, versao: r.versao, outraConta: true } };
         if (sessao) this.contador.marcarParada(sessao);
         this.salvar();
         if (r.anotado) this.fundo(this.limiteDepois(sessao));
-        return { status: 200, corpo: { ok: true, versao: r.versao } };
+        return { status: 200, corpo: { ok: true, versao: r.versao, trocou: r.trocou } };
       },
       fila: (sessao: string, acao: string): Resposta => {
         for (const f of this.estado.fila) {

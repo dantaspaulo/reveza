@@ -11,15 +11,32 @@ function agente(on: On, instalacao?: string) {
   on('session.cwd', () => ({ value: '/tmp/projeto' }))
   on('session.surfaces', () => ({ value: ['terminal' as const] }))
   on('command.register', () => ({ value: undefined }) as never)
-  on('ui.status', () => ({ value: undefined }))
+  const status: (string | undefined)[] = []
+  on('ui.status', ($, e) => (status.push((e as { text?: string }).text), { value: undefined }))
   const avisos: string[] = []
   on('ui.toast', ($, e) => (avisos.push(JSON.stringify(e)), { value: undefined }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('classic.StopFailure', () => ({}) as never)
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   const recebidos: { url: string; corpo: Record<string, unknown> | null; metodo: string; cabecalhos: Record<string, string> }[] = []
-  const estado = { versao: 3, email: 'a@exemplo.com', foraDoAr: false, impostor: false, enxugar: false }
+  const estado = {
+    versao: 3,
+    email: 'a@exemplo.com',
+    foraDoAr: false,
+    impostor: false,
+    enxugar: false,
+    // o perfil oficial que a sessão lê com a credencial dela (null: sem resposta)
+    perfil: null as { status: number; corpo: unknown } | null,
+    // o agente diz que a sessão está noutra conta
+    outraConta: false,
+  }
+  const perfis: { auth: string | undefined; cabecalhos: Record<string, string> }[] = []
   on('http.fetch', async ($, e) => {
+    if (e.url === 'https://api.anthropic.com/api/oauth/profile') {
+      perfis.push({ auth: e.init?.auth, cabecalhos: (e.init?.headers ?? {}) as Record<string, string> })
+      if (!estado.perfil) throw new Error('sem rede')
+      return { value: { status: estado.perfil.status, ok: estado.perfil.status === 200, headers: {}, text: JSON.stringify(estado.perfil.corpo) } }
+    }
     if (estado.foraDoAr) throw new Error('ECONNREFUSED')
     const corpo = e.init?.body ? (JSON.parse(e.init.body) as Record<string, unknown>) : null
     recebidos.push({
@@ -30,7 +47,8 @@ function agente(on: On, instalacao?: string) {
     })
     let resposta: unknown = { ok: true }
     if (e.url.endsWith('/api/ativa')) resposta = { slug: 'a', email: estado.email, versao: estado.versao, trocadaEm: 0, enxugar: estado.enxugar }
-    if (e.url.endsWith('/api/limite')) resposta = { ok: true, versao: estado.versao }
+    if (e.url.endsWith('/api/limite')) resposta = { ok: true, versao: estado.versao, ...(estado.outraConta ? { outraConta: true } : {}) }
+    if (e.url.endsWith('/api/medida')) resposta = { ok: true, outraConta: estado.outraConta }
     if (e.url.endsWith('/api/estado'))
       resposta = {
         auto: true,
@@ -52,7 +70,7 @@ function agente(on: On, instalacao?: string) {
     if (instalacao && e.path === '/home/teste/.reveza/instalacao.json') return { value: instalacao }
     throw new Error('ENOENT')
   })
-  return { recebidos, estado, avisos }
+  return { recebidos, estado, avisos, status, perfis }
 }
 
 test('no limite, avisa o agente e continua sozinha quando a conta troca', async ($, on) => {
@@ -463,4 +481,77 @@ test('parou de novo pelo modelo logo depois: não pede outra troca, vai direto p
   await andar(relogio, 10_000)
   expect(comandos).toEqual(['/model default'])
   expect(enviados).toHaveLength(2)
+})
+
+// A conta da sessão (relato de um usuário, 22/10/2026): o app de desktop, com login próprio, carregava o mod e o uso
+// dele ia para a conta em uso. O mod lê a conta com a credencial da sessão (o segredo fica no Claude Code) e manda ao
+// agente; quem decide é o agente.
+const MEDIDA = { context: { window: 200000 } as never, rateLimits: [{ kind: 'five_hour', percentUsed: 48 }], changed: ['rateLimits'] as never }
+const PERFIL_A = { status: 200, corpo: { account: { uuid: 'acc-A', email: 'a@exemplo.com' }, organization: { uuid: 'org-A' } } }
+
+test('a medida leva a conta da sessão, lida pelo perfil com a credencial dela (uma leitura, não uma por medida)', async ($, on) => {
+  const { recebidos, estado, perfis } = agente(on)
+  on('session.authorize', () => ({ value: { handle: 'apelido-1', kind: 'bearer' as const } }))
+  estado.perfil = PERFIL_A
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.session.measure(MEDIDA)
+  await $.session.measure({ ...MEDIDA, rateLimits: [{ kind: 'five_hour', percentUsed: 49 }] })
+  const medidas = recebidos.filter(r => r.url.endsWith('/api/medida'))
+  expect(medidas).toHaveLength(2)
+  expect(medidas[0]?.corpo).toMatchObject({ conta: { accountUuid: 'acc-A', orgUuid: 'org-A' } })
+  // só os dois identificadores vão ao agente: nem e-mail, nem o apelido da credencial
+  expect(JSON.stringify(medidas[0]?.corpo)).not.toContain('a@exemplo.com')
+  expect(JSON.stringify(recebidos)).not.toContain('apelido-1')
+  expect(perfis).toHaveLength(1)
+  expect(perfis[0]).toMatchObject({ auth: 'apelido-1', cabecalhos: { 'anthropic-beta': 'oauth-2025-04-20' } })
+})
+
+test('o agente diz que a sessão está noutra conta: a linha de status diz isso', async ($, on) => {
+  const { estado, status } = agente(on)
+  on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
+  estado.perfil = PERFIL_A
+  estado.outraConta = true
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.session.measure(MEDIDA)
+  expect(status.at(-1)).toContain('noutra conta')
+})
+
+test('token só de uso no ambiente (o perfil recusa pelo escopo): a sessão vai como fora do login trocado', async ($, on) => {
+  const { recebidos, estado } = agente(on)
+  on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
+  estado.perfil = { status: 403, corpo: { error: { message: 'OAuth token does not meet scope requirement user:profile' } } }
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.session.measure(MEDIDA)
+  expect(recebidos.find(r => r.url.endsWith('/api/medida'))?.corpo).toMatchObject({ conta: { fora: true } })
+})
+
+test('Claude Code sem o authorize, ou perfil sem resposta: a medida vai sem a conta, como antes', async ($, on) => {
+  const { recebidos, estado } = agente(on)
+  estado.perfil = null
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.session.measure(MEDIDA)
+  const medida = recebidos.find(r => r.url.endsWith('/api/medida'))
+  expect(medida?.corpo).toMatchObject({ janelas: [{ tipo: 'five_hour', pct: 48 }] })
+  expect(medida?.corpo?.conta).toBeUndefined()
+})
+
+test('limite numa sessão de outra conta: avisa, não espera troca nem manda continuar', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado, avisos } = agente(on)
+  on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
+  const enviados: string[] = []
+  on('prompt.submit', ($, e) => {
+    enviados.push(e.text)
+    return { text: e.text }
+  })
+  estado.perfil = PERFIL_A
+  estado.outraConta = true
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 10_000)
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  expect(avisos.some(a => a.includes('O Reveza não troca a conta dela'))).toBe(true)
+  estado.versao = 4
+  estado.email = 'b@exemplo.com'
+  await andar(relogio, 15_000)
+  expect(enviados).toHaveLength(0)
 })

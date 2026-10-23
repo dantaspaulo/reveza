@@ -43,6 +43,45 @@ export const ESPERA_MODELO_MS = 2 * 60 * 1000
 /** Parou de novo pelo modelo dentro deste tempo (a conta nova também não roda): vai direto para o modelo padrão. */
 const REPETIU_MODELO_MS = 10 * 60 * 1000
 const LEITURA_MS = 30_000
+/** A conta da sessão lida vale isto; sem resposta, ou com o agente dizendo que é outra conta, ela é relida mais cedo. */
+const CONTA_VALE_MS = 30 * 60 * 1000
+const CONTA_RECONFERE_MS = 2 * 60 * 1000
+const PERFIL = 'https://api.anthropic.com/api/oauth/profile'
+
+/**
+ * A conta da sessão: `{ accountUuid, orgUuid }`, ou `{ fora: true }` quando a sessão não usa um login que o Reveza troca
+ * (chave de API, ou um token só de uso posto no ambiente, sem leitura do perfil). Null quando não deu para saber
+ * (Claude Code sem o `authorize`, rede fora, tráfego não essencial desligado): o agente segue como antes.
+ *
+ * Relato de um usuário (22/10/2026): o app de desktop, com login próprio numa conta A, carregava o mod, e o uso dele ia
+ * para a conta B, a em uso. A credencial fica no Claude Code: o mod só recebe um apelido dela, que vale só para o
+ * endereço oficial do serviço, e manda ao agente os dois identificadores, nada mais.
+ */
+export type ContaSessao = { accountUuid: string; orgUuid: string } | { fora: true }
+
+export async function lerContaDaSessao(
+  autorizar: () => Promise<{ handle: string; kind: string } | null>,
+  buscar: (url: string, init: HttpInit) => Promise<{ status: number; ok: boolean; text: string }>,
+): Promise<ContaSessao | null> {
+  let a: { handle: string; kind: string } | null
+  try {
+    a = await autorizar()
+  } catch {
+    return null
+  }
+  if (!a || a.kind !== 'bearer') return { fora: true }
+  try {
+    const r = await buscar(PERFIL, { method: 'GET', auth: a.handle, headers: { 'anthropic-beta': 'oauth-2025-04-20' } })
+    if (r.status === 403 && /scope/i.test(r.text)) return { fora: true }
+    if (!r.ok) return null
+    const j = JSON.parse(r.text) as { account?: { uuid?: unknown }; organization?: { uuid?: unknown } }
+    const conta = j.account?.uuid
+    const org = j.organization?.uuid
+    return typeof conta === 'string' && conta && typeof org === 'string' && org ? { accountUuid: conta, orgUuid: org } : null
+  } catch {
+    return null
+  }
+}
 
 export type Ativa = { slug: string | null; email: string | null; versao: number; trocadaEm: number; enxugar?: boolean }
 type Janela = { tipo: string; rotulo?: string; pct: number | null; resetEm: number | null }
@@ -175,10 +214,23 @@ export const register: Register = (on, options) => {
   let semModeloEm = -Infinity
   // O idioma da instalação, lido uma vez por sessão (o arquivo não muda no meio dela); null até a primeira leitura.
   let idioma: Idioma | null = null
+  // a conta desta sessão (lerContaDaSessao) e até quando vale; refeita quando a conta em uso muda
+  let contaLida: { valor: ContaSessao | null; versao: number | null; ate: number } | null = null
+  // o agente disse que esta sessão está noutra conta: a linha de status diz isso, e o limite dela não pede troca
+  let outraConta = false
+
+  async function contaAtual(agora: number, ler: () => Promise<ContaSessao | null>): Promise<ContaSessao | null> {
+    if (!contaLida || contaLida.versao !== versao || agora >= contaLida.ate) {
+      const valor = await ler()
+      contaLida = { valor, versao, ate: agora + (valor ? CONTA_VALE_MS : CONTA_RECONFERE_MS) }
+    }
+    return contaLida.valor
+  }
 
   function textoStatus(): string | undefined {
     const x = textos()
     if (foraDoAr) return x.agenteForaDoAr
+    if (outraConta) return x.contaOutra
     if (!email) return undefined
     return x.contaEmUso(email.split('@')[0]!, cinco)
   }
@@ -225,7 +277,8 @@ export const register: Register = (on, options) => {
           foraDoAr = true
         }
         const aviso = ativa ? aplicarAtiva(ativa) : null
-        if (aviso) $.ui.toast(aviso)
+        // sessão noutra conta (o app de desktop): a troca da conta em uso não muda a dela, então não avisa
+        if (aviso && !outraConta) $.ui.toast(aviso)
         $.ui.status(textoStatus())
 
         // conta sem o modelo da sessão e nenhuma troca em 2 minutos: não fica preso, segue no modelo padrão
@@ -265,9 +318,24 @@ export const register: Register = (on, options) => {
       cinco = cincoHoras ? `5h ${Math.round(cincoHoras.percentUsed)}%` : ''
       $.ui.status(textoStatus())
       if (janelas.length > 0) {
-        await $.http
-          .fetch(`${BASE}/api/medida`, (await pedido('POST', '/api/medida', { sessao, versao, janelas })).init)
-          .catch(() => undefined)
+        // o relógio do sistema: a validade da conta lida não precisa do relógio da sessão (que nem todo host tem aqui)
+        const agora = Date.now()
+        const conta = await contaAtual(agora, () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)))
+        try {
+          const p = await pedido('POST', '/api/medida', { sessao, versao, janelas, ...(conta ? { conta } : {}) })
+          const r = await $.http.fetch(`${BASE}/api/medida`, p.init)
+          if (await doAgente(r, p.nonce)) {
+            const dito = lerJson<{ outraConta?: boolean }>(r)?.outraConta === true
+            // noutra conta pode ser só a sessão atrasada na troca: relê a conta dela daqui a pouco
+            if (dito && contaLida) contaLida.ate = Math.min(contaLida.ate, agora + CONTA_RECONFERE_MS)
+            if (dito !== outraConta) {
+              outraConta = dito
+              $.ui.status(textoStatus())
+            }
+          }
+        } catch {
+          // o agente fora do ar aparece na leitura de 5 em 5 s
+        }
       }
     }
     return next(e)
@@ -304,18 +372,38 @@ export const register: Register = (on, options) => {
       semModeloEm = agora
       const antesModelo = versao
       let respondeu = false
+      let dito: { versao: number; trocou?: boolean; outraConta?: boolean } | null = null
       if (!repetiu) {
         try {
-          const p = await pedido('POST', '/api/limite', { sessao, cwd: await $.session.cwd(), tipo: tipoModelo, erro: 'modelo', modelo, versao: antesModelo })
+          const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)))
+          const p = await pedido('POST', '/api/limite', {
+            sessao,
+            cwd: await $.session.cwd(),
+            tipo: tipoModelo,
+            erro: 'modelo',
+            modelo,
+            versao: antesModelo,
+            ...(conta ? { conta } : {}),
+          })
           const r = await $.http.fetch(`${BASE}/api/limite`, p.init)
-          respondeu = (await doAgente(r, p.nonce)) && !!lerJson(r)
+          dito = (await doAgente(r, p.nonce)) ? lerJson(r) : null
+          respondeu = !!dito
         } catch {
           respondeu = false
         }
       }
+      if (dito?.outraConta) {
+        // a sessão está noutra conta (o app de desktop, por exemplo): o Reveza não troca a conta dela
+        outraConta = true
+        $.ui.status(textoStatus())
+        $.ui.toast(x.toasts.outraConta)
+        return next(e)
+      }
       if (tipoModelo === 'interativa') {
-        // a volta para o modelo padrão sai na próxima conferência de 5 s (dentro deste hook o comando é recusado)
-        espera = { referencia: antesModelo ?? -1, desde: respondeu ? agora : agora - ESPERA_MODELO_MS - 1, modelo }
+        // a volta para o modelo padrão sai na próxima conferência de 5 s (dentro deste hook o comando é recusado); a troca
+        // que já aconteceu antes de a sessão reler o login conta como feita
+        const referencia = dito?.trocou ? dito.versao - 1 : (antesModelo ?? -1)
+        espera = { referencia, desde: respondeu ? agora : agora - ESPERA_MODELO_MS - 1, modelo }
         if (respondeu) $.ui.toast(x.toasts.semModelo(modelo))
       }
       return next(e)
@@ -324,9 +412,10 @@ export const register: Register = (on, options) => {
     const superficies = await $.session.surfaces().catch(() => [])
     const tipo = interativa || superficies.length > 0 ? 'interativa' : 'headless'
     const antes = versao
-    let resposta: { ok: boolean; versao: number } | null = null
+    let resposta: { ok: boolean; versao: number; trocou?: boolean; outraConta?: boolean } | null = null
     try {
-      const p = await pedido('POST', '/api/limite', { sessao, cwd: await $.session.cwd(), tipo, erro: 'rate_limit', versao: antes })
+      const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)))
+      const p = await pedido('POST', '/api/limite', { sessao, cwd: await $.session.cwd(), tipo, erro: 'rate_limit', versao: antes, ...(conta ? { conta } : {}) })
       const r = await $.http.fetch(`${BASE}/api/limite`, p.init)
       resposta = (await doAgente(r, p.nonce)) ? lerJson(r) : null
     } catch {
@@ -334,8 +423,14 @@ export const register: Register = (on, options) => {
     }
     if (!resposta) {
       $.ui.toast(x.toasts.semAgente)
+    } else if (resposta.outraConta) {
+      // o limite é de outra conta (o app de desktop, por exemplo): trocar a conta em uso não faz esta sessão voltar
+      outraConta = true
+      $.ui.status(textoStatus())
+      $.ui.toast(x.toasts.outraConta)
     } else if (tipo === 'interativa') {
-      espera = { referencia: antes ?? resposta.versao, desde: Date.now() }
+      // a troca que já aconteceu antes de a sessão reler o login conta como feita: volta na próxima leitura
+      espera = { referencia: resposta.trocou ? resposta.versao - 1 : (antes ?? resposta.versao), desde: Date.now() }
       $.ui.toast(x.toasts.troca)
     }
     return next(e)
