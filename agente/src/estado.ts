@@ -107,6 +107,11 @@ export interface EstadoLocal {
   assistenteConferidoEm?: number;
   /** A última atualização do assistente de código feita pelo agente (a pedido do painel ou sozinho). */
   assistenteUltima?: UltimaAtualizacaoAssistente | null;
+  /**
+   * Conta que não roda o modelo das sessões deste computador (sem créditos de uso), pelo id local: fora da escolha
+   * até `ate` (epoch em segundos). Sem nuvem é esta a marca; com nuvem, a da nuvem (contas_sem_modelo) decide.
+   */
+  semModelo?: Record<string, { modelo: string; ate: number }>;
 }
 
 export interface UltimaAtualizacaoAssistente {

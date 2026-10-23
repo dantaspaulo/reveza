@@ -87,7 +87,14 @@ aviso de limite. Para cada computador ligado:
   75% e 125%, conta livre sorteada ou a menos usada), com o limiar valendo de rede;
 - respeita ordem de preferência, conta de reserva (só sem nenhuma outra), agenda por horário, teto semanal e plano
   da semana (cota da semana dividida pelos dias restantes);
-- janela cheia = maior entre 5 h, semana e semana por família de modelo; reset que já passou conta como zero;
+- janela cheia = maior entre 5 h, semana e semana por família de modelo; reset que já passou conta como zero. A
+  semana de um modelo que a API manda na lista nova (`limits`, `weekly_scoped`; hoje só a do Fable, gravada como
+  `seven_day_fable`, 0.9.0) aparece no painel, mas fica fora desse máximo: quem usa outro modelo não troca por ela;
+- conta que não roda o modelo das sessões de um computador (sem créditos de uso, como o Fable numa conta Team, 0.9.0):
+  o mod reconhece "requires usage credits" e "<modelo> limit reached · continuing on ... uses usage credits", o agente
+  chama `agente_sem_modelo(conta, modelo, sessao)` e a conta fica fora das candidatas daquele computador por 6 horas
+  (`contas_sem_modelo`, 0028). Com outra livre, troca na hora e a sessão continua no mesmo modelo; sem troca em 2
+  minutos (ou parando de novo logo), o mod passa a sessão para o modelo padrão (`/model default`) e ela continua;
 - espera mínima de 90 s entre trocas do mesmo computador, menos quando a sessão bateu o limite;
 - conta preferida de cada computador (uma conta é preferida de um computador só): para ele vem antes das outras
   candidatas; com a troca automática ligada, ele volta para ela quando ela fica livre, depois da espera, menos se a

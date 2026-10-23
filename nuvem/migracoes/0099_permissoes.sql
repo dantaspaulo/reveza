@@ -19,6 +19,7 @@ grant execute on function
   public.agente_pegar_posse(uuid, text, integer), public.agente_devolver_cofre(uuid, text, text, bigint, timestamptz),
   public.agente_soltar_posse(uuid), public.agente_registrar_conta(text, text, text, text, text, text, timestamptz),
   public.agente_relatar_uso(jsonb, jsonb), public.agente_relatar_tokens(jsonb, jsonb), public.agente_limite(uuid, text),
+  public.agente_sem_modelo(uuid, text, text),
   public.agente_reservar_comando(bigint), public.agente_responder_comando(bigint, integer, jsonb),
   public.agente_evento(text, text, jsonb), public.agente_ligacao_publicar(text, text), public.agente_ligacao_buscar(),
   public.agente_marcar_login(uuid, boolean), public.agente_cofre_impressao(text),

@@ -171,6 +171,7 @@ const CAMPOS_CONTA: Record<keyof CamposConta, string> = {
 
 // "posse" fica de fora: ela é renovada a cada busca dos computadores e vem junto na releitura.
 const TABELAS_AO_VIVO = ["contas", "uso_janelas", "computadores", "atribuicao", "config", "eventos", "comandos"]
+// contas_sem_modelo (0028) fica fora do tempo real: a marca nasce junto com a troca (atribuicao), que já recarrega
 
 /** O que o canal do tempo real conta (SUBSCRIBED a cada entrada e reentrada) no estado que o painel mostra. */
 export function estadoDoCanal(status: string): EstadoTempoReal | null {
@@ -344,7 +345,7 @@ export function paraDiagnostico(bruto: unknown, versao: string): Computador["dia
   }
 }
 
-function paraConta(l: Linha, janelas: Linha[], posse: Linha | undefined, validade: string | null = null): Conta {
+function paraConta(l: Linha, janelas: Linha[], posse: Linha | undefined, validade: string | null = null, semModelo: Linha[] = []): Conta {
   const lidoEm =
     janelas
       .map((j) => String(j.lido_em))
@@ -375,6 +376,9 @@ function paraConta(l: Linha, janelas: Linha[], posse: Linha | undefined, validad
     fonte,
     // só a data de validade do login (painel_validade_logins); o login continua cifrado no cofre
     loginExpiraEm: validade,
+    semModelo: semModelo
+      .filter((s) => typeof s.ate === "string" && Date.parse(s.ate) > Date.now())
+      .map((s) => ({ computadorId: String(s.computador_id), modelo: String(s.modelo).slice(0, 60), ate: String(s.ate) })),
     posse:
       posse && new Date(String(posse.expira_em)).getTime() > Date.now()
         ? {
@@ -520,6 +524,12 @@ export class FonteSupabase implements Fonte {
       extra<{ user_id: string; email: string }>("painel_membros", admin && eu.aal === "aal2"),
     ])
     const validadeDe = new Map(validades.map((v) => [String(v.conta_id), v.expira_em ? String(v.expira_em) : null]))
+    // a conta que não roda o modelo de um computador (0028): nuvem de antes da 0.9.0 não tem a tabela, e segue sem
+    const { data: dadosSemModelo, error: erroSemModelo } = await sb
+      .from("contas_sem_modelo")
+      .select("conta_id,computador_id,modelo,ate")
+      .gt("ate", new Date().toISOString())
+    const semModelo = erroSemModelo || !Array.isArray(dadosSemModelo) ? [] : (dadosSemModelo as Linha[])
     const emailDe = new Map(membrosComEmail.map((m) => [String(m.user_id), String(m.email)]))
 
     const cfg: ConfigTroca = { ...CONFIG_PADRAO }
@@ -542,7 +552,8 @@ export class FonteSupabase implements Fonte {
           c,
           janelas.filter((j) => j.conta_id === c.id),
           posses.find((p) => p.conta_id === c.id),
-          validadeDe.get(String(c.id)) ?? null
+          validadeDe.get(String(c.id)) ?? null,
+          semModelo.filter((s) => s.conta_id === c.id)
         )
       ),
       computadores: computadores.map((c): Computador => {

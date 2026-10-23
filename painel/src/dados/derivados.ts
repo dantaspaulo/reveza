@@ -34,9 +34,22 @@ export function p7(c: Conta, agora: Date) {
   return pctJanela(c, "seven_day", agora)
 }
 
-/** A maior entre as janelas (5 horas, semana e semana por família de modelo). */
+/** "claude-fable-5-1" vira "Fable 5.1"; nome que não segue esse formato fica como veio. */
+export function nomeDoModelo(modelo: string): string {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/i.exec(modelo.trim())
+  if (!m) return modelo
+  return `${m[1]!.charAt(0).toUpperCase()}${m[1]!.slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ""}`
+}
+
+/** As janelas que decidem a troca (a semana de um modelo, como a do Fable, fica de fora, como na nuvem desde a 0028). */
+export const JANELAS_DA_CONTA: readonly TipoJanela[] = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"]
+
+/** A maior entre as janelas da conta toda (5 horas, semana e semana por família de modelo). */
 export function cheia(c: Conta, agora: Date): number | null {
-  const valores = c.janelas.map((j) => pctJanela(c, j.tipo, agora)).filter((v): v is number => v !== null)
+  const valores = c.janelas
+    .filter((j) => JANELAS_DA_CONTA.includes(j.tipo))
+    .map((j) => pctJanela(c, j.tipo, agora))
+    .filter((v): v is number => v !== null)
   return valores.length ? Math.max(...valores) : null
 }
 

@@ -11,7 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomBytes } from "node:crypto";
-import { ROTULOS, TIPOS_JANELA, type ApiContas, type Janela, type Perfil, type TipoJanela } from "./anthropic.js";
+import { ROTULOS, janelaDaConta, type ApiContas, type Janela, type Perfil, type TipoJanela } from "./anthropic.js";
 import type { Cli } from "./claudecli.js";
 import type { ClaudeJson } from "./claudejson.js";
 import {
@@ -49,6 +49,9 @@ export interface Ganchos {
 }
 
 export type ResultadoRenovar = true | false | "bloqueado";
+
+/** Quanto tempo a conta fica fora da escolha deste computador depois de não rodar o modelo de uma sessão. */
+export const SEM_MODELO_S = 6 * 3600;
 
 export class Trocador {
   readonly geral = new Trava();
@@ -496,9 +499,9 @@ export class Trocador {
     if (versao !== null && versao !== undefined && versao !== this.estado.versao) return false;
     const janelas: Janela[] = [];
     for (const j of Array.isArray(corpo.janelas) ? corpo.janelas : []) {
-      const tipo = (j as Record<string, unknown>)?.tipo as TipoJanela;
+      const tipo = (j as Record<string, unknown>)?.tipo;
       const pct = (j as Record<string, unknown>)?.pct;
-      if (TIPOS_JANELA.includes(tipo) && typeof pct === "number" && Number.isFinite(pct)) {
+      if (janelaDaConta(tipo) && typeof pct === "number" && Number.isFinite(pct)) {
         janelas.push({ tipo, pct: Math.round(pct * 10) / 10, resetEm: isoParaEpoch((j as Record<string, unknown>).resetEm) });
       }
     }
@@ -509,6 +512,41 @@ export class Trocador {
     Object.assign(c, { janelas: [...antigas.values()], lidoEm: t, fonte: "sessao", erro: null });
     this.ultimaLeitura[ativa] = t;
     return true;
+  }
+
+  /**
+   * Uma sessão parou porque a conta em uso não roda o modelo dela sem créditos de uso (o Fable 5.1 numa conta Team, 22/10/2026).
+   * Não marca a janela como cheia (para quem usa outro modelo a conta segue boa): marca a conta fora da escolha deste
+   * computador por 6 horas e põe a sessão na fila, como no limite. Devolve a versão e se a troca já tinha acontecido.
+   */
+  modeloDaSessao(corpo: Record<string, unknown>): { ok: true; trocou: boolean; versao: number; anotado: boolean; modelo: string } {
+    const sessao = String(corpo.sessao ?? "").slice(0, 80);
+    const modelo = String(corpo.modelo ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60) || "?";
+    const ativa = this.estado.ativa;
+    if (sessao && !this.estado.fila.some((f) => f.sessao === sessao && f.estado === "aguardando")) {
+      this.estado.fila.unshift({
+        sessao,
+        cwd: String(corpo.cwd ?? "").slice(0, 500),
+        tipo: corpo.tipo === "headless" ? "headless" : "interativa",
+        em: this.agora(),
+        estado: "aguardando",
+        conta: ativa,
+      });
+      this.estado.fila.splice(50);
+    }
+    const v = corpo.versao;
+    if (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao) {
+      return { ok: true, trocou: true, versao: this.estado.versao, anotado: false, modelo };
+    }
+    if (ativa && this.estado.contas[ativa]) {
+      (this.estado.semModelo ??= {})[ativa] = { modelo, ate: this.agora() + SEM_MODELO_S };
+      this.evento("limite", `Uma sessão parou: ${this.estado.contas[ativa]!.email} não roda o ${modelo} sem créditos de uso.`, {
+        conta: ativa,
+        sessao,
+        modelo,
+      });
+    }
+    return { ok: true, trocou: false, versao: this.estado.versao, anotado: true, modelo };
   }
 
   /** Uma sessão bateu o limite. Devolve a versão do momento e se a troca já tinha acontecido. */

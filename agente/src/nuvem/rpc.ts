@@ -182,6 +182,11 @@ export class NuvemRpc implements Nuvem {
     return { ok: r.ok === true, trocou: r.trocou === true, versao: numero(r.versao) };
   }
 
+  async semModelo(contaId: string, modelo: string, sessao: string | null) {
+    const r = await this.chamar("agente_sem_modelo", { p_conta: contaId, p_modelo: modelo, p_sessao: sessao });
+    return { ok: r.ok === true, trocou: r.trocou === true, versao: numero(r.versao) };
+  }
+
   async reservarComando(id: number) {
     const r = await this.chamar("agente_reservar_comando", { p_id: id });
     return { ok: r.ok === true, comando: comandoDe(r.comando) };

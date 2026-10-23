@@ -170,6 +170,8 @@ export interface Nuvem {
   relatarUso(janelas: JanelaNuvem[], historico: PontoNuvem[]): Promise<{ ok: boolean }>;
   relatarTokens(linhas: LinhaTokens[], sessoes: SessaoNuvem[]): Promise<{ ok: boolean }>;
   limite(contaId: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
+  /** A conta em uso não roda o modelo da sessão (0028): fora da escolha deste computador por 6 horas, e decide na hora. */
+  semModelo(contaId: string, modelo: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
   reservarComando(id: number): Promise<{ ok: boolean; comando: ComandoNuvem | null }>;
   responderComando(id: number, http: number, resposta: Record<string, unknown>): Promise<{ ok: boolean }>;
   evento(tipo: string, texto: string, dados: Record<string, unknown>): Promise<{ ok: boolean }>;

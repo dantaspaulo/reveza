@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest"
 
 import { FonteDemo } from "./demo"
 import {
+  nomeDoModelo,
+  cheia,
   FOLGA_DO_RELOGIO_MS,
   LEITURA_VELHA_MS,
   estadoComputador,
@@ -101,5 +103,25 @@ describe("situacaoDoPainel", () => {
   it("sem rede vem antes de tudo", () => {
     expect(situacaoDoPainel({ ...base, online: false, agora: depois(1_000) })).toBe("sem_rede")
     expect(situacaoDoPainel({ ...base, online: false, erro: new Error("x"), agora: depois(10 * 60_000) })).toBe("sem_rede")
+  })
+})
+
+describe("a semana de um modelo e o nome do modelo", () => {
+  it("a semana do Fable não entra no quanto a conta está cheia (como na nuvem)", () => {
+    const agora = new Date("2026-10-22T21:00:00Z")
+    const conta = {
+      janelas: [
+        { tipo: "five_hour", pct: 12, resetEm: null },
+        { tipo: "seven_day_fable", pct: 99, resetEm: null },
+      ],
+    } as unknown as Parameters<typeof cheia>[0]
+    expect(cheia(conta, agora)).toBe(12)
+  })
+
+  it("claude-fable-5-1 vira Fable 5.1; o que não segue o formato fica como veio", () => {
+    expect(nomeDoModelo("claude-fable-5-1")).toBe("Fable 5.1")
+    expect(nomeDoModelo("claude-opus-5-5")).toBe("Opus 5.5")
+    expect(nomeDoModelo("claude-opus-4")).toBe("Opus 4")
+    expect(nomeDoModelo("Fable 5.1")).toBe("Fable 5.1")
   })
 })

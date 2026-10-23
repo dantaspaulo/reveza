@@ -14,25 +14,34 @@ import { idiomaDaInstalacao, textos, usarIdioma } from './textos'
 export const PORTA_PADRAO = 7788
 
 /**
- * Entre os erros que o Claude Code chama de `rate_limit`, só o limite de USO da conta se resolve trocando de conta. Caem
+ * Entre os erros que o Claude Code chama de `rate_limit`, o limite de USO da conta se resolve trocando de conta. Caem
  * em `rate_limit` também (Claude Code 2.1.29x): "Usage credits required for 1M context" (a conversa passou de 200 mil
- * tokens numa conta sem uso extra; trocar não resolve e a retomada bate no mesmo erro, relato do Paulo de 13/10/2026),
- * "model requires usage credits" e "Request rejected (429) · this may be a temporary capacity issue" (momentâneo).
+ * tokens numa conta sem uso extra; trocar não resolve e a retomada bate no mesmo erro, relato do Paulo de 13/10/2026)
+ * e "Request rejected (429) · this may be a temporary capacity issue" (momentâneo).
+ * `modelo`: a conta não roda o modelo da sessão sem créditos de uso ("Fable 5.1 requires usage credits", ou "Fable
+ * limit reached · continuing on Fable 5.1 uses usage credits"; o Fable numa conta Team, relato do Paulo de 22/10/2026).
+ * Trocar para outra conta resolve; sem outra, a sessão vai para o modelo padrão.
  * Sem texto nenhum (versão antiga do Claude Code), segue valendo como limite de uso, como antes.
  */
-export type TipoDoLimite = 'uso' | 'contexto_longo' | 'outro'
+export type TipoDoLimite = 'uso' | 'contexto_longo' | 'modelo' | 'outro'
 const CONTEXTO_LONGO = /long context|1M context|context window/i
-const OUTRO_429 = /usage credits|requires? usage credits|temporary capacity|Request rejected \(429\)|overloaded/i
+const MODELO_SEM_CREDITO = /requires? usage credits|limit reached · continuing on [^·\n]+ uses usage credits/i
+const OUTRO_429 = /usage credits|temporary capacity|Request rejected \(429\)|overloaded/i
 const LIMITE_DE_USO = /hit your [^.·\n]*limit|usage limit|limit reached|out of (extra )?usage|resets? (at |in )?\d/i
 
 export function tipoDoLimite(detalhe: string | undefined, mensagem: string | undefined): TipoDoLimite {
   const texto = `${detalhe ?? ''} ${mensagem ?? ''}`.trim()
   if (!texto) return 'uso'
   if (CONTEXTO_LONGO.test(texto)) return 'contexto_longo'
+  if (MODELO_SEM_CREDITO.test(texto)) return 'modelo'
   if (OUTRO_429.test(texto)) return 'outro'
   return LIMITE_DE_USO.test(texto) ? 'uso' : 'outro'
 }
 const ESPERA_MAXIMA_MS = 2 * 60 * 60 * 1000
+/** Conta sem o modelo da sessão: a espera pela troca (sem ela, a sessão vai para o modelo padrão, pedido do Paulo). */
+export const ESPERA_MODELO_MS = 2 * 60 * 1000
+/** Parou de novo pelo modelo dentro deste tempo (a conta nova também não roda): vai direto para o modelo padrão. */
+const REPETIU_MODELO_MS = 10 * 60 * 1000
 const LEITURA_MS = 30_000
 
 export type Ativa = { slug: string | null; email: string | null; versao: number; trocadaEm: number; enxugar?: boolean }
@@ -158,9 +167,12 @@ export const register: Register = (on, options) => {
   let cinco = ''
   let foraDoAr = false
   let ultimaLeitura = -Infinity
-  let espera: { referencia: number; desde: number } | null = null
+  // `desde`: Date.now() na espera do limite; no caso do modelo, o relógio da sessão ($.clock.now(), o que o teste move)
+  let espera: { referencia: number; desde: number; modelo?: string } | null = null
   let retomando = false
   let enxugar = false
+  // a última vez que esta sessão parou porque a conta não roda o modelo dela
+  let semModeloEm = -Infinity
   // O idioma da instalação, lido uma vez por sessão (o arquivo não muda no meio dela); null até a primeira leitura.
   let idioma: Idioma | null = null
 
@@ -216,7 +228,17 @@ export const register: Register = (on, options) => {
         if (aviso) $.ui.toast(aviso)
         $.ui.status(textoStatus())
 
-        if (espera && Date.now() - espera.desde > ESPERA_MAXIMA_MS) espera = null
+        // conta sem o modelo da sessão e nenhuma troca em 2 minutos: não fica preso, segue no modelo padrão
+        if (espera?.modelo && agora - espera.desde > ESPERA_MODELO_MS && !(ativa && ativa.versao > espera.referencia)) {
+          const modelo = espera.modelo
+          espera = null
+          retomando = true
+          $.ui.toast(textos().toasts.modeloPadrao(modelo))
+          await $.command.run({ command: 'model', args: 'default' }).catch(() => undefined)
+          await $.prompt.submit({ text: textos().retomada })
+          return
+        }
+        if (espera && !espera.modelo && Date.now() - espera.desde > ESPERA_MAXIMA_MS) espera = null
         if (!espera || !ativa || ativa.versao <= espera.referencia) return
         espera = null
         retomando = true
@@ -270,6 +292,32 @@ export const register: Register = (on, options) => {
     const tipoLimite = tipoDoLimite(e.error_details, e.last_assistant_message)
     if (tipoLimite === 'contexto_longo') {
       $.ui.toast(x.toasts.contexto)
+      return next(e)
+    }
+    if (tipoLimite === 'modelo') {
+      const modelo = (await $.session.model().catch(() => '')) || 'modelo'
+      const superficiesModelo = await $.session.surfaces().catch(() => [])
+      const tipoModelo = interativa || superficiesModelo.length > 0 ? 'interativa' : 'headless'
+      const agora = await $.clock.now()
+      // a conta para onde trocou também não roda (ou parou de novo logo): direto para o modelo padrão
+      const repetiu = agora - semModeloEm < REPETIU_MODELO_MS
+      semModeloEm = agora
+      const antesModelo = versao
+      let respondeu = false
+      if (!repetiu) {
+        try {
+          const p = await pedido('POST', '/api/limite', { sessao, cwd: await $.session.cwd(), tipo: tipoModelo, erro: 'modelo', modelo, versao: antesModelo })
+          const r = await $.http.fetch(`${BASE}/api/limite`, p.init)
+          respondeu = (await doAgente(r, p.nonce)) && !!lerJson(r)
+        } catch {
+          respondeu = false
+        }
+      }
+      if (tipoModelo === 'interativa') {
+        // a volta para o modelo padrão sai na próxima conferência de 5 s (dentro deste hook o comando é recusado)
+        espera = { referencia: antesModelo ?? -1, desde: respondeu ? agora : agora - ESPERA_MODELO_MS - 1, modelo }
+        if (respondeu) $.ui.toast(x.toasts.semModelo(modelo))
+      }
       return next(e)
     }
     if (tipoLimite !== 'uso') return next(e)

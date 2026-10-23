@@ -16,7 +16,10 @@ export type ModoAtualizar = "desligada" | "madrugada" | "assim_que_sair"
 export type ModoAssistente = "padrao" | "sozinho" | "manual"
 /** "pendente": o código de acesso foi criado e o computador ainda não fez o primeiro contato (dá para revogar). */
 export type Sistema = "macos" | "linux" | "windows" | "pendente"
-export type TipoJanela = "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet"
+/** As janelas da conta toda (decidem a troca). */
+export type TipoJanelaConta = "five_hour" | "seven_day" | "seven_day_opus" | "seven_day_sonnet"
+/** Mais a semana de um modelo (a API manda desde outubro de 2026): aparece, mas não decide a troca de quem usa outro. */
+export type TipoJanela = TipoJanelaConta | "seven_day_fable"
 
 export interface Janela {
   tipo: TipoJanela
@@ -72,6 +75,11 @@ export interface Conta {
   fonte: "sessao" | "api" | null
   loginExpiraEm: string | null
   posse: Posse | null
+  /**
+   * A conta não roda o modelo das sessões destes computadores (sem créditos de uso), até a hora marcada (0028): nesse
+   * tempo ela não é escolhida para eles. Nuvem de antes da 0.9.0: lista vazia.
+   */
+  semModelo: { computadorId: string; modelo: string; ate: string }[]
 }
 
 export interface ItemDiagnostico {

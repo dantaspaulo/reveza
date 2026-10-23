@@ -3,6 +3,8 @@
 
 import * as React from "react"
 import {
+  SparklesIcon,
+  BanIcon,
   BrainCircuitIcon,
   CalendarClockIcon,
   KeyRoundIcon,
@@ -51,6 +53,7 @@ import {
   estadoConta,
   FORMATO_MODELO,
   MODELOS_PRONTOS,
+  nomeDoModelo,
   nomePlano,
   normalizarModelo,
   p5,
@@ -61,7 +64,7 @@ import type { CamposConta } from "@/dados/fonte"
 import type { Conta, Instantaneo } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import { N_CORES, corConta, indiceCor } from "@/lib/cores"
-import { fmtFuturo, fmtPct, fmtRelativo } from "@/lib/formato"
+import { fmtFuturo, fmtHora, fmtPct, fmtRelativo } from "@/lib/formato"
 import { cn } from "@/lib/utils"
 import { useDialogo } from "@/hooks/use-dialogo"
 
@@ -134,7 +137,7 @@ export default function Contas() {
                       <Janela conta={c} tipo="seven_day" estado={estado} agora={agora} />
                     </TableCell>
                     <TableCell>
-                      <Regras conta={c} />
+                      <Regras conta={c} estado={estado} />
                     </TableCell>
                     <TableCell className="pr-4 text-right">
                       <MenuConta conta={c} aoEditar={() => editar.abrir(c)} aoEntrar={() => login.abrir(c)} />
@@ -155,7 +158,7 @@ export default function Contas() {
                   <SeloEstado estado={estadoConta(c, estado.config, agora)} className="self-start" />
                   <Janela conta={c} tipo="five_hour" estado={estado} agora={agora} comRotulo />
                   <Janela conta={c} tipo="seven_day" estado={estado} agora={agora} comRotulo />
-                  <Regras conta={c} />
+                  <Regras conta={c} estado={estado} />
                 </CardContent>
               </Card>
             ))}
@@ -227,10 +230,20 @@ function Janela({
   )
 }
 
-function Regras({ conta }: { conta: Conta }) {
+function Regras({ conta, estado }: { conta: Conta; estado: Instantaneo }) {
   const { t, idioma } = useT()
   const { curtos } = useDias()
   const itens: { icone: typeof LifeBuoyIcon; texto: string }[] = []
+  // a conta não roda o modelo das sessões de um computador (sem créditos de uso): fora dele até a hora marcada
+  for (const s of conta.semModelo) {
+    const pc = estado.computadores.find((x) => x.id === s.computadorId)
+    itens.push({
+      icone: BanIcon,
+      texto: t("contas.semModelo", { modelo: nomeDoModelo(s.modelo), computador: pc?.nome ?? "?", hora: fmtHora(s.ate, idioma) }),
+    })
+  }
+  const fable = conta.janelas.find((j) => j.tipo === "seven_day_fable")
+  if (fable && fable.pct !== null) itens.push({ icone: SparklesIcon, texto: t("contas.semanaFable", { pct: fmtPct(fable.pct, idioma) }) })
   if (conta.reserva) itens.push({ icone: LifeBuoyIcon, texto: t("contas.reservaRegra") })
   if (conta.pausada) itens.push({ icone: PauseIcon, texto: t("estadoConta.pausada") })
   if (conta.tetoSemana != null)

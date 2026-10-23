@@ -149,6 +149,7 @@ export default secao({
       seven_day: "Semana",
       seven_day_opus: "Semana, modelo maior",
       seven_day_sonnet: "Semana, modelo médio",
+      seven_day_fable: "Semana, Fable",
     },
     sistema: { macos: "macOS", linux: "Linux", windows: "Windows", pendente: "aguardando o primeiro contato" },
     modo: {
@@ -433,6 +434,7 @@ export default secao({
       seven_day: "Week",
       seven_day_opus: "Week, larger model",
       seven_day_sonnet: "Week, medium model",
+      seven_day_fable: "Week, Fable",
     },
     sistema: { macos: "macOS", linux: "Linux", windows: "Windows", pendente: "waiting for first contact" },
     modo: {

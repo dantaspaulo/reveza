@@ -653,3 +653,49 @@ describe("Computadores: o cartão do assistente de código (a versão de cada co
     expect(html).toContain("Não atualizou: Error: Failed to install native update")
   })
 })
+
+describe("Contas e Plano: a conta sem o modelo de um computador e a semana do Fable (relato de 22/10/2026)", () => {
+  const H = 3_600_000
+  const daqui = (ms: number) => new Date(Date.now() + ms).toISOString()
+  async function desenharCom(tela: "contas" | "plano") {
+    const antes = { janelas: linhas.tabelas.uso_janelas, semModelo: linhas.tabelas.contas_sem_modelo }
+    linhas.tabelas.contas_sem_modelo = [
+      { conta_id: "c2", computador_id: "pc1", modelo: "claude-fable-5-1", ate: daqui(3 * H) },
+      // a que já venceu não aparece
+      { conta_id: "c4", computador_id: "pc1", modelo: "claude-fable-5-1", ate: daqui(-H) },
+    ]
+    // c3: a Anthropic só manda a semana do Fable; c4: só a janela de 5 horas
+    linhas.tabelas.uso_janelas = [
+      ...antes.janelas.filter((j) => !((j.conta_id === "c3" || j.conta_id === "c4") && j.tipo === "seven_day")),
+      { conta_id: "c3", tipo: "seven_day_fable", pct: 21, reset_em: daqui(60 * H), lido_em: daqui(-60_000), fonte: "api" },
+    ]
+    try {
+      const lido = await fonte.carregar()
+      const { default: Tela } = await TELAS[tela]()
+      return { ...(await desenhar(Tela, fonte, { ...lido, contas: pintarPorWorkspace(lido.contas) })), lido }
+    } finally {
+      linhas.tabelas.uso_janelas = antes.janelas
+      if (antes.semModelo) linhas.tabelas.contas_sem_modelo = antes.semModelo
+      else delete linhas.tabelas.contas_sem_modelo
+    }
+  }
+
+  it("Contas: a marca que vale aparece na conta, com o computador e a hora; a vencida não; e a semana do Fable", async () => {
+    const { html, erros, lido } = await desenharCom("contas")
+    expect(erros).toEqual([])
+    expect(lido.contas.find((c) => c.id === "c2")!.semModelo).toHaveLength(1)
+    expect(lido.contas.find((c) => c.id === "c4")!.semModelo).toHaveLength(0)
+    expect(html).toMatch(/sem o Fable 5\.1 em Mac mini até \d{2}:\d{2}/)
+    expect(html.match(/sem o Fable 5\.1/g)).toHaveLength(2) // a tabela e o cartão do celular, da mesma conta
+    expect(html).toContain("semana do Fable: 21%")
+  })
+
+  it("Plano: sem a semana geral, mostra a do Fable com o aviso; sem nenhuma semana, diz que a conta não informa", async () => {
+    const { html, erros } = await desenharCom("plano")
+    expect(erros).toEqual([])
+    expect(html).toContain("Esta é a semana do Fable, que só conta para as sessões no Fable.")
+    expect(html).toContain("Esta conta não informa cota semanal agora: só a janela de 5 horas.")
+    // a conta sem leitura nenhuma (c6) segue com o aviso de antes
+    expect(html).toContain("Esta conta ainda não tem leitura da semana.")
+  })
+})

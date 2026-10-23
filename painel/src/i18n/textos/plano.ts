@@ -23,6 +23,10 @@ export default secao({
       diasGrafico: "Uso de cada dia da semana",
       cotaLinha: "cota do dia",
       semLeitura: "Esta conta ainda não tem leitura da semana.",
+      semSemana: "Esta conta não informa cota semanal agora: só a janela de 5 horas.",
+      semSemanaSelo: "Sem semana",
+      soFable:
+        "Esta conta não informa a semana geral agora. Esta é a semana do Fable, que só conta para as sessões no Fable.",
       teto: "com teto de {pct}",
       dicaRitmo: "A nuvem já deixa por último, na escolha, a conta que está acima do ritmo.",
     },
@@ -49,6 +53,10 @@ export default secao({
       diasGrafico: "Usage on each day of the week",
       cotaLinha: "daily quota",
       semLeitura: "This account has no weekly reading yet.",
+      semSemana: "This account does not report a weekly quota right now: only the 5-hour window.",
+      semSemanaSelo: "No week",
+      soFable:
+        "This account does not report its overall week right now. This is the Fable week, which only counts for sessions on Fable.",
       teto: "with a {pct} cap",
       dicaRitmo: "The cloud already puts an account that's above pace last when choosing.",
     },

@@ -1,7 +1,7 @@
 // Decisão LOCAL de troca, usada só sem nuvem (instalação `--sem-nuvem`). Com a nuvem ligada, quem decide é a função
 // `decidir()` do banco e o agente só aplica a atribuição. As regras são as do roteador que já roda, com teste.
 
-import { TIPOS_JANELA } from "./anthropic.js";
+import { janelaDaConta } from "./anthropic.js";
 import { ESPERA_ENTRE_TROCAS_S, LEITURA_VALIDA_S } from "./config.js";
 import type { ContaLocal, EstadoLocal } from "./estado.js";
 
@@ -17,7 +17,7 @@ export type Acao =
 export function pctEfetivo(conta: ContaLocal, t: number): number | null {
   const valores: number[] = [];
   for (const j of conta.janelas ?? []) {
-    if (!TIPOS_JANELA.includes(j.tipo) || j.pct === null || j.pct === undefined) continue;
+    if (!janelaDaConta(j.tipo) || j.pct === null || j.pct === undefined) continue;
     valores.push(j.resetEm && j.resetEm <= t ? 0 : Number(j.pct));
   }
   return valores.length ? Math.max(...valores) : null;
@@ -38,6 +38,8 @@ function livres(estado: EstadoLocal, t: number): [number, string][] {
   const saida: [number, string][] = [];
   for (const [id, c] of Object.entries(estado.contas)) {
     if (id === estado.ativa || c.pausada || c.precisaLogin || !leituraValida(c, t)) continue;
+    // não roda o modelo das sessões deste computador (sem créditos de uso): fora até a marca vencer
+    if ((estado.semModelo?.[id]?.ate ?? 0) > t) continue;
     const p = pctEfetivo(c, t);
     if (p !== null && p < estado.config.aviso) saida.push([p, id]);
   }

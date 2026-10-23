@@ -357,6 +357,9 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
     if (m.p7 !== null) janelas.push({ tipo: "seven_day", pct: m.p7, resetEm: iso(t0 + m.reset7Min * MIN) })
     if (m.p7Grande !== undefined)
       janelas.push({ tipo: "seven_day_opus", pct: m.p7Grande, resetEm: iso(t0 + m.reset7Min * MIN) })
+    // a semana do Fable que a API manda à parte (outubro de 2026); a conta de equipe não tem
+    const fable = m.id === "conta-trabalho" ? 18 : m.id === "conta-pessoal" ? 7 : null
+    if (fable !== null) janelas.push({ tipo: "seven_day_fable", pct: fable, resetEm: iso(t0 + m.reset7Min * MIN) })
     const posse =
       m.id === "conta-trabalho"
         ? { computadorId: "pc-notebook", motivo: "uso" as const, expiraEm: iso(t0 + 2 * MIN) }
@@ -383,6 +386,8 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
       fonte: m.precisaLogin ? null : m.id === "conta-reserva" || m.id === "conta-cliente" ? "api" : "sessao",
       loginExpiraEm: m.precisaLogin ? iso(t0 - 26 * H) : iso(t0 + (m.id === "conta-reserva" ? 5 : 30) * H),
       posse,
+      // a conta de equipe não roda o Fable sem créditos: fora do Notebook por algumas horas (o caso de 22/10/2026)
+      semModelo: m.id === "conta-laboratorio" ? [{ computadorId: "pc-notebook", modelo: "claude-fable-5-1", ate: iso(t0 + 4 * H) }] : [],
     }
   })
 
@@ -1196,6 +1201,7 @@ export class FonteDemo implements Fonte {
             precisaLogin: false,
             criadaEm: this.agora().toISOString(),
             janelas: [],
+            semModelo: [],
             lidoEm: null,
             fonte: null,
             loginExpiraEm: null,

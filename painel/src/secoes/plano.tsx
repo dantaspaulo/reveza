@@ -13,7 +13,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAgora, useConsulta, useEstado } from "@/dados/contexto"
-import { janela, p7 } from "@/dados/derivados"
+import { janela, p7, pctJanela } from "@/dados/derivados"
 import type { Conta, PontoHistorico } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import { corConta } from "@/lib/cores"
@@ -52,8 +52,12 @@ export default function Plano() {
 
 function CartaoPlano({ conta, agora, historico }: { conta: Conta; agora: Date; historico: PontoHistorico[] | null }) {
   const { t, idioma } = useT()
-  const j = janela(conta, "seven_day")
-  const plano = planoSemana({ p7: p7(conta, agora), resetEm: j?.resetEm ?? null, agora, teto: conta.tetoSemana })
+  // sem a semana geral (a Anthropic deixou de informar em várias contas, 22/10/2026), a semana do Fable, quando houver
+  const geral = janela(conta, "seven_day")
+  const fable = geral ? undefined : janela(conta, "seven_day_fable")
+  const j = geral ?? fable
+  const pctSemana = geral ? p7(conta, agora) : fable ? pctJanela(conta, "seven_day_fable", agora) : null
+  const plano = planoSemana({ p7: pctSemana, resetEm: j?.resetEm ?? null, agora, teto: geral ? conta.tetoSemana : null })
   const ritmo: Ritmo = plano?.ritmo ?? "sem_dado"
   return (
     <Card>
@@ -70,15 +74,16 @@ function CartaoPlano({ conta, agora, historico }: { conta: Conta; agora: Date; h
         </CardDescription>
         <CardAction>
           <Badge variant="outline" className={cn(TOM[ritmo])}>
-            {t(`plano.ritmo.${ritmo}`)}
+            {!plano && conta.lidoEm ? t("plano.semSemanaSelo") : t(`plano.ritmo.${ritmo}`)}
           </Badge>
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {!plano ? (
-          <p className="text-sm text-muted-foreground">{t("plano.semLeitura")}</p>
+          <p className="text-sm text-muted-foreground">{conta.lidoEm ? t("plano.semSemana") : t("plano.semLeitura")}</p>
         ) : (
           <>
+            {fable ? <p className="text-xs text-muted-foreground">{t("plano.soFable")}</p> : null}
             <div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-3xl font-semibold tabular-nums">{fmtPct(plano.usado, idioma)}</span>
@@ -129,13 +134,16 @@ function CartaoPlano({ conta, agora, historico }: { conta: Conta; agora: Date; h
                 {t("plano.folga", { pct: fmtPct(plano.limite - plano.usado, idioma) })}
               </p>
             ) : null}
-            <DiasDaSemana
-              conta={conta}
-              historico={historico}
-              inicio={plano.inicio}
-              cota={plano.cotaDia}
-              agora={agora}
-            />
+            {/* o histórico guarda a semana geral: com a do Fable, não há uso por dia para mostrar */}
+            {geral ? (
+              <DiasDaSemana
+                conta={conta}
+                historico={historico}
+                inicio={plano.inicio}
+                cota={plano.cotaDia}
+                agora={agora}
+              />
+            ) : null}
           </>
         )}
       </CardContent>

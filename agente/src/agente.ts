@@ -1863,8 +1863,16 @@ export class Agente {
         return { status: 200, corpo: { ok: true } };
       },
       limite: (corpo: Record<string, unknown>): Resposta => {
-        const r = this.trocador.limiteDaSessao(corpo);
         const sessao = String(corpo.sessao ?? "").slice(0, 80);
+        // a conta não roda o modelo da sessão (sem créditos de uso): marca a conta fora deste computador e troca
+        if (corpo.erro === "modelo") {
+          const r = this.trocador.modeloDaSessao(corpo);
+          if (sessao) this.contador.marcarParada(sessao);
+          this.salvar();
+          if (r.anotado) this.fundo(this.semModeloDepois(sessao, r.modelo));
+          return { status: 200, corpo: { ok: true, versao: r.versao } };
+        }
+        const r = this.trocador.limiteDaSessao(corpo);
         if (sessao) this.contador.marcarParada(sessao);
         this.salvar();
         if (r.anotado) this.fundo(this.limiteDepois(sessao));
@@ -1965,6 +1973,25 @@ export class Agente {
         return { status: 200, corpo: { ok: true } };
       },
     };
+  }
+
+  /** A conta não roda o modelo da sessão: a nuvem marca e decide na hora (agente_sem_modelo); sem nuvem, decide aqui. */
+  private async semModeloDepois(sessao: string, modelo: string): Promise<void> {
+    if (this.d.sombra) {
+      this.d.log.faria(`marcar a conta em uso sem o ${modelo} e trocar de conta (sessão ${sessao.slice(0, 8)})`);
+      return;
+    }
+    if (!this.comNuvem) return this.agir(true);
+    const ativa = this.estado.ativa;
+    const contaId = ativa ? this.estado.contas[ativa]?.contaId : null;
+    if (!contaId) return;
+    try {
+      const r = await this.d.nuvem!.semModelo(contaId, modelo, sessao || null);
+      if (!r.trocou) this.d.log.info(`a conta em uso não roda o ${modelo} e não há outra livre: a sessão segue no modelo padrão`);
+      await this.busca();
+    } catch (e) {
+      this.d.log.erro(`avisar à nuvem a conta sem o ${modelo}: ${(e as Error).message}`);
+    }
   }
 
   /** O limite de uma sessão decide na hora: na nuvem (agente_limite) ou aqui, sem nuvem. */

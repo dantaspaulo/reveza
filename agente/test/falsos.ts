@@ -505,6 +505,12 @@ export class NuvemFalsa implements Nuvem {
     return { ok: true, trocou: a?.conta !== contaId, versao: a?.versao ?? null };
   }
 
+  async semModelo(contaId: string, modelo: string, sessao: string | null) {
+    this.registrarChamada("semModelo", contaId, modelo, sessao);
+    const a = this.banco.atribuicao.get(this.pc);
+    return { ok: true, trocou: a?.conta !== contaId, versao: a?.versao ?? null };
+  }
+
   async reservarComando(id: number) {
     this.registrarChamada("reservarComando", id);
     const c = this.banco.comandos.find((x) => x.id === id && x.pc === this.pc && x.estado === "pendente");

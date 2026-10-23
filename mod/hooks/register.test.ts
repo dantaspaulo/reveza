@@ -240,7 +240,12 @@ test('o tipo do limite pelas mensagens reais do Claude Code', async () => {
   expect(tipoDoLimite('Extra usage is required for long context requests.', undefined)).toBe('contexto_longo')
   expect(tipoDoLimite(undefined, 'API Error: Usage credits required for 1M context · run /usage-credits to turn them on')).toBe('contexto_longo')
   expect(tipoDoLimite(undefined, 'API Error: Request rejected (429) · this may be a temporary capacity issue.')).toBe('outro')
-  expect(tipoDoLimite(undefined, 'API Error: This model requires usage credits · /model to switch models.')).toBe('outro')
+  // a conta não roda o modelo da sessão sem créditos de uso (o Fable 5.1 numa conta Team, 22/10/2026): troca de conta
+  expect(tipoDoLimite(undefined, 'API Error: This model requires usage credits · /model to switch models.')).toBe('modelo')
+  expect(tipoDoLimite(undefined, 'Fable 5.1 requires usage credits. Switch to another model to continue.')).toBe('modelo')
+  expect(
+    tipoDoLimite(undefined, 'Fable limit reached · continuing on Fable 5.1 uses usage credits, and the prompt to confirm went unanswered — nothing was sent · answer it where this session is running, or /model to change'),
+  ).toBe('modelo')
   expect(tipoDoLimite(undefined, undefined)).toBe('uso')
 })
 
@@ -388,4 +393,74 @@ test('resumo e janelasTexto no idioma pedido, com o português como padrão', ()
   expect(janelasTexto([{ tipo: 'seven_day', pct: 10, resetEm: null }], 'en')).toBe('Week 10%')
   expect(janelasTexto([], 'en')).toBe('no reading yet')
   expect(janelasTexto([{ tipo: 'five_hour', pct: 42, resetEm: 1000000000 }], 'en')).toContain('(resets ')
+})
+
+// O Fable 5.1 numa conta Team sem créditos de uso (relato do Paulo, 22/10/2026): troca de conta e continua no Fable;
+// sem troca em 2 minutos, ou parando de novo logo, segue no modelo padrão (/model default), sem ficar preso.
+function comModelo(on: On) {
+  on('session.model', () => ({ value: 'claude-fable-5-1' }))
+  const comandos: string[] = []
+  on('command.run', ($, e) => (comandos.push(`/${e.command} ${e.args}`.trim()), { text: '' }) as never)
+  const enviados: string[] = []
+  on('prompt.submit', ($, e) => (enviados.push(e.text), { text: e.text }))
+  return { comandos, enviados }
+}
+const FABLE_SEM_CREDITO = { error: 'rate_limit', last_assistant_message: 'Fable 5.1 requires usage credits. Switch to another model to continue.' } as never
+
+async function andar(relogio: ReturnType<typeof mock.clock>, ms: number) {
+  for (let feito = 0; feito < ms; feito += 5000) {
+    await relogio.advance(5000)
+    await relogio.settle()
+  }
+}
+
+test('conta sem o modelo da sessão: avisa o agente com o modelo e continua no Fable quando a conta troca', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos, estado, avisos } = agente(on)
+  const { comandos, enviados } = comModelo(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 10_000)
+  await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  const limite = recebidos.find(r => r.url.endsWith('/api/limite'))
+  expect(limite?.corpo).toMatchObject({ erro: 'modelo', modelo: 'claude-fable-5-1', tipo: 'interativa', versao: 3, sessao: 'sessao-teste' })
+  expect(avisos.some(a => a.includes('não roda o claude-fable-5-1'))).toBe(true)
+  estado.versao = 4
+  estado.email = 'b@exemplo.com'
+  await andar(relogio, 15_000)
+  expect(enviados).toHaveLength(1)
+  expect(comandos).toEqual([])
+})
+
+test('conta sem o modelo e nenhuma troca em 2 minutos: vai para o modelo padrão e continua', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { avisos } = agente(on)
+  const { comandos, enviados } = comModelo(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 10_000)
+  await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  await andar(relogio, 60_000)
+  expect(comandos).toEqual([])
+  expect(enviados).toHaveLength(0)
+  await andar(relogio, 70_000)
+  expect(comandos).toEqual(['/model default'])
+  expect(enviados).toHaveLength(1)
+  expect(avisos.some(a => a.includes('segue no modelo padrão'))).toBe(true)
+})
+
+test('parou de novo pelo modelo logo depois: não pede outra troca, vai direto para o modelo padrão', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos, estado } = agente(on)
+  const { comandos, enviados } = comModelo(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 10_000)
+  await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  estado.versao = 4
+  await andar(relogio, 15_000)
+  expect(enviados).toHaveLength(1)
+  // a conta nova também não roda
+  await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  expect(recebidos.filter(r => r.url.endsWith('/api/limite'))).toHaveLength(1)
+  await andar(relogio, 10_000)
+  expect(comandos).toEqual(['/model default'])
+  expect(enviados).toHaveLength(2)
 })

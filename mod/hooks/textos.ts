@@ -64,7 +64,14 @@ export type Textos = {
   descricao: string
   retomada: string
   foraDoAr: string
-  toasts: { limite: string; contexto: string; semAgente: string; troca: string }
+  toasts: {
+    limite: string
+    contexto: string
+    semAgente: string
+    troca: string
+    semModelo: (modelo: string) => string
+    modeloPadrao: (modelo: string) => string
+  }
 }
 
 /** Os textos no idioma pedido (por padrão, o da sessão). Sempre no momento do uso: o idioma só existe depois do import. */
@@ -125,6 +132,16 @@ export function textos(i: Idioma = atual): Textos {
         'Limite da conta atingido. Assim que o Reveza trocar de conta, a sessão continua sozinha.',
         'Account limit reached. As soon as Reveza switches accounts, the session continues on its own.',
       ),
+      semModelo: modelo =>
+        o(
+          `Esta conta não roda o ${modelo} sem créditos de uso. O Reveza troca de conta e a sessão continua sozinha; sem outra conta livre em 2 minutos, ela segue no modelo padrão.`,
+          `This account can't run ${modelo} without usage credits. Reveza switches accounts and the session continues on its own; with no other free account within 2 minutes, it goes on with the default model.`,
+        ),
+      modeloPadrao: modelo =>
+        o(
+          `Nenhuma conta livre roda o ${modelo} agora: a sessão segue no modelo padrão.`,
+          `No free account can run ${modelo} right now: the session goes on with the default model.`,
+        ),
     },
   }
 }

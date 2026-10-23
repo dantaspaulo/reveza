@@ -7,6 +7,26 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.9.0 · 22/10/2026
+
+Duas correções de um relato do Paulo: a troca para uma conta que não roda o Fable parou as sessões, e a tela Plano da
+semana ficou quase vazia. Precisa da nuvem atualizada (migração 0028: a nuvem se atualiza sozinha, ou pelo
+**Atualizar a nuvem**), dos computadores na 0.9.0 e do mod novo (vem junto com a atualização de cada computador; vale
+nas sessões abertas depois).
+
+- **Conta que não roda o modelo da sessão:** o Reveza trocou um computador com sessões no Fable 5.1 para uma conta de
+  plano Team, em que o Fable só roda com créditos de uso, e as sessões pararam com "Fable 5.1 requires usage credits".
+  Agora o mod reconhece esse aviso (e o "Fable limit reached"), o Reveza tira essa conta das escolhas daquele computador
+  por 6 horas, troca na hora para outra e a sessão continua sozinha, ainda no Fable. Sem outra conta livre em 2
+  minutos, ou se a conta nova também não rodar, a sessão segue no modelo padrão, sem ficar presa.
+- **O painel mostra a marca:** em **Contas**, "sem o Fable 5.1 em <computador> até <hora>".
+- **A semana do Fable:** a API de uso passou a mandar as cotas numa lista nova, com a semana de cada modelo à parte. O
+  Reveza lê a lista e mostra em **Contas** a semana do Fable. Ela não entra no percentual que decide a troca: quem usa
+  outro modelo não troca de conta porque a semana do Fable encheu.
+- **Plano da semana:** várias contas deixaram de informar a cota semanal geral (6 de 8 contas Max numa leitura de
+  22/10). Sem ela, o cartão mostra a semana do Fable, com o aviso de que ela só conta para o Fable; sem semana nenhuma,
+  diz que a conta não informa cota semanal agora, em vez de "ainda não tem leitura".
+
 ## 0.8.0 · 15/10/2026
 
 A versão do assistente de código (o Claude Code) em cada computador, no painel, e a escolha de como ele se atualiza.
