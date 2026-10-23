@@ -352,3 +352,20 @@ describe("FonteDemo", () => {
     expect(n).toBe(1)
   })
 })
+
+describe("renomear computador (0029)", () => {
+  it("o nome fica, espaços juntos; repetido, longo ou de computador revogado é recusado; vazio volta ao do sistema", async () => {
+    const f = nova()
+    const antes = await f.carregar()
+    const [a, b] = antes.computadores.filter((c) => !c.revogado && c.sistema !== "pendente")
+    await f.renomearComputador(a!.id, "  Notebook   da Ana ")
+    let pc = (await f.carregar()).computadores.find((c) => c.id === a!.id)!
+    expect(pc.nome).toBe("Notebook da Ana")
+    expect(pc.nomeDoPainel).toBe(true)
+    await expect(f.renomearComputador(b!.id, "NOTEBOOK DA ANA")).rejects.toMatchObject({ codigo: "nome_repetido" })
+    await expect(f.renomearComputador(b!.id, "x".repeat(61))).rejects.toMatchObject({ codigo: "nome_invalido" })
+    await f.renomearComputador(a!.id, "   ")
+    pc = (await f.carregar()).computadores.find((c) => c.id === a!.id)!
+    expect(pc.nomeDoPainel).toBe(false)
+  })
+})

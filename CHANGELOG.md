@@ -7,6 +7,18 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.10.0 · 22/10/2026
+
+Renomear os computadores no painel. Pedido de um usuário: o nome que o sistema manda vira coisa como "BOOK 124183127"
+ou o IP, e fica difícil saber qual é aquela máquina. Precisa da nuvem atualizada (migração 0029: a nuvem se atualiza
+sozinha, ou pelo **Atualizar a nuvem**) e do painel novo; os computadores não precisam mudar.
+
+- **Renomear:** em **Computadores**, o lápis ao lado do nome abre o campo (até 60 caracteres). Vale também para o
+  computador novo que ainda espera o primeiro contato: ele já entra com o nome que você deu.
+- **O nome fica:** antes, o agente regravava o nome do sistema a cada conexão. Agora o nome dado no painel fica até você
+  mudar. Deixar o campo vazio volta ao nome do sistema na próxima conexão.
+- Dois computadores ativos não ficam com o mesmo nome. Só quem administra renomeia, e fica na auditoria.
+
 ## 0.9.0 · 22/10/2026
 
 Duas correções de um relato do Paulo: a troca para uma conta que não roda o Fable parou as sessões, e a tela Plano da

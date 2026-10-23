@@ -10,6 +10,7 @@ import {
   CircleCheckIcon,
   KeyRoundIcon,
   LaptopIcon,
+  PencilIcon,
   PlusIcon,
   ShieldOffIcon,
   ShuffleIcon,
@@ -36,7 +37,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
-import { Field, FieldContent, FieldLabel } from "@/components/ui/field"
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
@@ -137,6 +139,7 @@ function CartaoComputador({ pc, estado, agora }: { pc: Computador; estado: Insta
   const acao = useAcao()
   const { pode } = usePermissao()
   const trocar = useDialogo()
+  const renomear = useDialogo()
   const [revogar, setRevogar] = React.useState(false)
   const situacao = estadoComputador(pc, agora, atualizadoEm)
   const Sistema = ICONE_SISTEMA[pc.sistema]
@@ -157,6 +160,17 @@ function CartaoComputador({ pc, estado, agora }: { pc: Computador; estado: Insta
             <Sistema className="size-4" aria-hidden />
           </span>
           <span className="truncate">{pc.nome}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0 text-muted-foreground"
+            disabled={!pode}
+            title={t("computadores.renomear.botao")}
+            aria-label={t("computadores.renomear.titulo", { computador: pc.nome })}
+            onClick={() => renomear.abrir()}
+          >
+            <PencilIcon className="size-3.5" />
+          </Button>
         </CardTitle>
         <CardDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span
@@ -265,6 +279,7 @@ function CartaoComputador({ pc, estado, agora }: { pc: Computador; estado: Insta
         </Button>
       </CardFooter>
       <DialogoTrocar key={trocar.chave} pc={pc} aberto={trocar.aberto} aoFechar={trocar.fechar} />
+      <DialogoRenomear key={`renomear-${renomear.chave}`} pc={pc} aberto={renomear.aberto} aoFechar={renomear.fechar} />
       <Confirmar
         aberto={revogar}
         aoFechar={() => setRevogar(false)}
@@ -371,6 +386,65 @@ function SaidaEnxuta({ pc }: { pc: Computador }) {
         onCheckedChange={(v) => void mudar(v)}
       />
     </Field>
+  )
+}
+
+/**
+ * Renomear o computador (pedido de um usuário, 22/10/2026: o nome do sistema vira "BOOK 124183127" ou o IP, e fica
+ * difícil saber qual máquina é). O nome fica mesmo quando o agente se registra de novo; vazio volta ao do sistema.
+ */
+function DialogoRenomear({ pc, aberto, aoFechar }: { pc: Computador; aberto: boolean; aoFechar: () => void }) {
+  // quem abre passa key={chave da abertura}: o campo nasce com o nome de agora a cada vez
+  const { t } = useT()
+  const { fonte } = useDados()
+  const acao = useAcao()
+  const [nome, setNome] = React.useState(pc.nome)
+  const [enviando, setEnviando] = React.useState(false)
+  const limpo = nome.replace(/\s+/g, " ").trim()
+  const nada = limpo === pc.nome || (!limpo && !pc.nomeDoPainel)
+  const salvar = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (nada) return
+    setEnviando(true)
+    const [ok] = await acao(
+      () => fonte.renomearComputador(pc.id, limpo),
+      limpo ? t("computadores.renomear.feito", { computador: limpo }) : t("computadores.renomear.voltou", { computador: pc.nome })
+    )
+    setEnviando(false)
+    if (ok) aoFechar()
+  }
+  return (
+    <Dialog open={aberto} onOpenChange={(v) => !v && aoFechar()}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={(e) => void salvar(e)} className="flex flex-col gap-4">
+          <DialogHeader>
+            <DialogTitle>{t("computadores.renomear.titulo", { computador: pc.nome })}</DialogTitle>
+            <DialogDescription>{t("computadores.renomear.descricao")}</DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor={`nome-${pc.id}`}>{t("computadores.renomear.rotulo")}</FieldLabel>
+            <Input
+              id={`nome-${pc.id}`}
+              value={nome}
+              maxLength={60}
+              autoFocus
+              placeholder={t("computadores.renomear.exemplo")}
+              onChange={(e) => setNome(e.target.value)}
+            />
+            <FieldDescription>{t("computadores.renomear.dicaSistema")}</FieldDescription>
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={aoFechar}>
+              {t("comum.cancelar")}
+            </Button>
+            <Button type="submit" disabled={enviando || nada}>
+              {enviando ? <Spinner /> : null}
+              {t("computadores.renomear.salvar")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

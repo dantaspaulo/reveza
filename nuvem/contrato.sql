@@ -268,6 +268,7 @@ create table auditoria (
 -- painel_convidar(email, papel) / painel_revogar_membro(user_id) / painel_mudar_papel(user_id, papel)
 -- painel_revogar_computador(computador_id)
 -- painel_computador_preferida(computador_id, conta_id)  conta preferida (null tira); livre agora, passa para ela
+-- painel_computador_nome(computador_id, nome)   nome dado no painel (0029); o registro do agente não o troca; vazio volta ao do sistema
 -- painel_ligacao_aprovador(computador_novo, aprovador, idioma)  em qual computador (e língua) a janela de liberar abre
 -- painel_alerta(...) / painel_webhook(...) / painel_chave_api(...)  (segredos vão ao Vault pela função)
 -- Qualquer membro: painel_meu_idioma(idioma), painel_push_inscrever(endpoint, p256dh, auth)

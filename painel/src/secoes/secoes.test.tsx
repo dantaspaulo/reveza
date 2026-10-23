@@ -699,3 +699,28 @@ describe("Contas e Plano: a conta sem o modelo de um computador e a semana do Fa
     expect(html).toContain("Esta conta ainda não tem leitura da semana.")
   })
 })
+
+describe("Computadores: renomear (pedido de um usuário, 22/10/2026)", () => {
+  it("cada computador tem o botão de renomear, com o nome dele no rótulo", async () => {
+    const lido = await fonte.carregar()
+    const { default: Tela } = await TELAS.computadores()
+    const { html, erros } = await desenhar(Tela, fonte, { ...lido, contas: pintarPorWorkspace(lido.contas) })
+    expect(erros).toEqual([])
+    expect(html).toContain('aria-label="Renomear Mac mini"')
+    expect(html).toContain('aria-label="Renomear MacBook"')
+  })
+
+  it("o nome dado no painel chega da nuvem (nome_do_painel)", async () => {
+    const antes = linhas.tabelas.computadores
+    linhas.tabelas.computadores = antes.map((c) => (c.id === "pc1" ? { ...c, nome: "Notebook da Ana", nome_do_painel: true } : c))
+    try {
+      const lido = await fonte.carregar()
+      const pc = lido.computadores.find((c) => c.id === "pc1")!
+      expect(pc.nome).toBe("Notebook da Ana")
+      expect(pc.nomeDoPainel).toBe(true)
+      expect(lido.computadores.find((c) => c.id === "pc2")!.nomeDoPainel).toBe(false)
+    } finally {
+      linhas.tabelas.computadores = antes
+    }
+  })
+})

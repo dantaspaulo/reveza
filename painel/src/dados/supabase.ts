@@ -199,6 +199,8 @@ const MENSAGENS: [RegExp, string][] = [
   [/outro computador já prefere/i, "preferida_de_outro"],
   [/sem login guardado/i, "conta_precisa_login"],
   [/modelo inválido/i, "modelo_invalido"],
+  [/já existe um computador com este nome/i, "nome_repetido"],
+  [/nome inválido: até 60 caracteres/i, "nome_invalido"],
   [/computador novo desconhecido|computador desconhecido/i, "computador_revogado"],
   [/conta desconhecida/i, "nao_encontrado"],
   [/duplicate key|already exists|unique/i, "ja_existe"],
@@ -572,6 +574,7 @@ export class FonteSupabase implements Fonte {
             : null,
           contaPreferidaId: texto(c.conta_preferida),
           enxugar: c.enxugar === true,
+          nomeDoPainel: c.nome_do_painel === true,
         }
       }),
       config: cfg,
@@ -869,6 +872,10 @@ export class FonteSupabase implements Fonte {
 
   async revogarComputador(id: string) {
     await rpc("painel_revogar_computador", { p_computador: id })
+  }
+
+  async renomearComputador(id: string, nome: string) {
+    await rpc("painel_computador_nome", { p_computador: id, p_nome: nome })
   }
 
   async criarAlerta(a: NovoAlerta) {

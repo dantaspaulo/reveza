@@ -508,6 +508,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
       diagnostico: diagnostico(versao, 180, false, "2.1.301"),
       atribuicao: { contaId: "conta-trabalho", motivo: "limite", decididoEm: iso(t0 - 2 * H - 4 * MIN) },
       contaPreferidaId: "conta-trabalho",
+      nomeDoPainel: false,
       enxugar: true,
     },
     {
@@ -521,6 +522,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
       diagnostico: diagnostico(anterior ?? versao, 420, anterior !== null, "2.1.293"),
       atribuicao: { contaId: "conta-pessoal", motivo: "rodizio", decididoEm: iso(t0 - 6 * H - 11 * MIN) },
       contaPreferidaId: null,
+      nomeDoPainel: false,
       enxugar: false,
     },
   ]
@@ -1248,6 +1250,7 @@ export class FonteDemo implements Fonte {
       atribuicao: null,
       contaPreferidaId: null,
       enxugar: false,
+      nomeDoPainel: false,
     })
     this.ligacoesDemo.set(id, { criadoEm: this.agora().getTime(), aprovador: null })
     this.auditar("computador_novo", "acesso criado")
@@ -1315,6 +1318,27 @@ export class FonteDemo implements Fonte {
       if (this.d.config.nuvem) this.d.config.nuvem.completa = false
       this.evento("info", "A atualização completa foi desligada (pelo painel): os tokens cifrados saíram da nuvem.", { atualizacao_completa: "desligada" })
       this.auditar("atualizacao_completa", "desligar")
+    })
+  }
+
+  renomearComputador(id: string, nome: string) {
+    return this.escrever(() => {
+      const pc = this.computador(id)
+      if (pc.revogado) throw new ErroPainel("computador_revogado")
+      // como o banco (0029): espaços juntos, até 60 caracteres, sem repetir o nome de outro ativo; vazio, o do sistema
+      const limpo = nome.replace(/\s+/g, " ").trim()
+      const controle = [...limpo].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127)
+      if (limpo.length > 60 || controle) throw new ErroPainel("nome_invalido")
+      if (!limpo) {
+        pc.nomeDoPainel = false
+        this.auditar("computador_nome", pc.nome)
+        return
+      }
+      if (this.d.computadores.some((x) => x.id !== id && !x.revogado && x.nome.toLowerCase() === limpo.toLowerCase()))
+        throw new ErroPainel("nome_repetido")
+      pc.nome = limpo
+      pc.nomeDoPainel = true
+      this.auditar("computador_nome", limpo)
     })
   }
 

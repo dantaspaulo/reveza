@@ -39,6 +39,7 @@ const pc = (versao: string, extra: Partial<Computador> = {}): Computador => ({
   atribuicao: null,
   contaPreferidaId: null,
   enxugar: false,
+  nomeDoPainel: false,
   ...extra,
 })
 

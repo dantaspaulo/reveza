@@ -191,6 +191,17 @@ export default secao({
       },
       diagnosticoPedido: "Diagnóstico pedido a {computador}",
       atualizarPedido: "Atualização pedida a {computador}",
+      renomear: {
+        botao: "Renomear",
+        titulo: "Renomear {computador}",
+        descricao: "O nome que aparece no painel e nos avisos. Fica mesmo quando o computador se conecta de novo.",
+        rotulo: "Nome",
+        exemplo: "Ex.: Notebook da Ana, Servidor do escritório",
+        dicaSistema: "Deixe vazio para voltar ao nome do sistema, que o computador manda na próxima conexão.",
+        salvar: "Salvar",
+        feito: "Agora se chama {computador}",
+        voltou: "{computador} volta ao nome do sistema na próxima conexão",
+      },
       trocar: {
         titulo: "Trocar a conta de {computador}",
         descricao:
@@ -450,6 +461,17 @@ export default secao({
       },
       diagnosticoPedido: "Diagnostics requested from {computador}",
       atualizarPedido: "Update requested from {computador}",
+      renomear: {
+        botao: "Rename",
+        titulo: "Rename {computador}",
+        descricao: "The name shown in the panel and in alerts. It stays even when the computer connects again.",
+        rotulo: "Name",
+        exemplo: "E.g. Ana's laptop, Office server",
+        dicaSistema: "Leave it empty to go back to the system name, which the computer sends on its next connection.",
+        salvar: "Save",
+        feito: "It is now called {computador}",
+        voltou: "{computador} goes back to the system name on the next connection",
+      },
       trocar: {
         titulo: "Switch {computador}'s account",
         descricao:

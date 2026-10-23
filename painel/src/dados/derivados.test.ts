@@ -31,6 +31,7 @@ function pc(vistoHaMs: number | null, extra: Partial<Computador> = {}): Computad
     atribuicao: null,
     contaPreferidaId: null,
     enxugar: false,
+    nomeDoPainel: false,
     ...extra,
   }
 }

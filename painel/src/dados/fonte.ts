@@ -90,6 +90,11 @@ export interface Fonte {
   estadoLigacao(computadorNovoId: string): Promise<EstadoLigacao>
   revogarComputador(id: string): Promise<void>
   /**
+   * O nome do computador no painel (administrador, 0029): fica mesmo quando o agente se registra de novo. Vazio: volta
+   * ao nome do sistema, que o agente grava no próximo registro.
+   */
+  renomearComputador(id: string, nome: string): Promise<void>
+  /**
    * Atualizar a nuvem (administrador): a nuvem aplica as migrações da versão oficial mais nova, sem token; com a
    * atualização completa ligada, funções e painel vêm depois, por um computador. Também destrava a publicação parada.
    */

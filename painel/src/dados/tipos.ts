@@ -145,6 +145,8 @@ export interface Computador {
   contaPreferidaId: string | null
   /** Saída enxuta: o mod do Reveza encurta a saída de comandos de leitura (git status, grep, find, ls) neste computador. */
   enxugar: boolean
+  /** O nome foi dado no painel (0029): o agente não troca pelo nome do sistema. */
+  nomeDoPainel: boolean
 }
 
 export interface ConfigTroca {
