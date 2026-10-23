@@ -3,7 +3,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 
-export const VERSAO = "0.8.0";
+export const VERSAO = "0.9.0";
 export const PORTA_PADRAO = 7788;
 /** No modo sombra o agente roda ao lado do roteador antigo, que já ocupa a 7788. */
 export const PORTA_SOMBRA = 7789;

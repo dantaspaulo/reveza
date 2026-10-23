@@ -8,7 +8,7 @@
 
 <a href="#-install"><img src="https://img.shields.io/badge/npx%20github%3Adantaspaulo%2Freveza-D97757?style=for-the-badge&logo=npm&logoColor=1F1E1D" alt="Install" /></a>
 <a href="https://reveza.ia.br/en"><img src="https://img.shields.io/badge/reveza.ia.br-1F1E1D?style=for-the-badge&logo=googlechrome&logoColor=D97757" alt="Website" /></a>
-<a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.8.0-1F1E1D?style=for-the-badge" alt="Version 0.8.0" /></a>
+<a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.9.0-1F1E1D?style=for-the-badge" alt="Version 0.9.0" /></a>
 <img src="https://img.shields.io/badge/license-MIT-1F1E1D?style=for-the-badge" alt="MIT license" />
 <a href="README.md"><img src="https://img.shields.io/badge/Portugu%C3%AAs-1F1E1D?style=for-the-badge" alt="Português" /></a>
 <a href="#-support-the-project"><img src="https://img.shields.io/badge/support-%F0%9F%92%9B-1F1E1D?style=for-the-badge" alt="Support the project" /></a>
@@ -113,7 +113,7 @@ settings.
 | You need | |
 |---|---|
 | 🟢 **Node 20.19 or newer** | on macOS, Windows or Linux, including a headless VPS |
-| 🪟 **On Windows** | `npx github:` needs [Git](https://git-scm.com/download/win); without it, use the release package: `npx https://github.com/dantaspaulo/reveza/archive/refs/tags/v0.8.0.tar.gz` |
+| 🪟 **On Windows** | `npx github:` needs [Git](https://git-scm.com/download/win); without it, use the release package: `npx https://github.com/dantaspaulo/reveza/archive/refs/tags/v0.9.0.tar.gz` |
 | 🧡 **Claude Code** | installed on each computer that will rotate accounts |
 | ☁️ **Supabase and Vercel** | free accounts are enough; without them, use `--sem-nuvem` |
 | 🌐 **A domain** | optional: without one, the dashboard lives at `<project>.vercel.app`, free and with HTTPS ([details](#-dashboard-address)) |
