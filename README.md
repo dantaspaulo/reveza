@@ -8,7 +8,7 @@
 
 <a href="#-instalar"><img src="https://img.shields.io/badge/npx%20github%3Adantaspaulo%2Freveza-D97757?style=for-the-badge&logo=npm&logoColor=1F1E1D" alt="Instalar" /></a>
 <a href="https://reveza.ia.br"><img src="https://img.shields.io/badge/reveza.ia.br-1F1E1D?style=for-the-badge&logo=googlechrome&logoColor=D97757" alt="Site" /></a>
-<a href="CHANGELOG.md"><img src="https://img.shields.io/badge/vers%C3%A3o-0.9.0-1F1E1D?style=for-the-badge" alt="Versão 0.9.0" /></a>
+<a href="CHANGELOG.md"><img src="https://img.shields.io/badge/vers%C3%A3o-0.10.0-1F1E1D?style=for-the-badge" alt="Versão 0.10.0" /></a>
 <img src="https://img.shields.io/badge/licen%C3%A7a-MIT-1F1E1D?style=for-the-badge" alt="Licença MIT" />
 <a href="README.en.md"><img src="https://img.shields.io/badge/English-1F1E1D?style=for-the-badge" alt="English" /></a>
 <a href="#-apoie-o-projeto"><img src="https://img.shields.io/badge/apoie-%F0%9F%92%9B-1F1E1D?style=for-the-badge" alt="Apoie o projeto" /></a>
@@ -111,7 +111,7 @@ fica em português, salvo `--idioma en`.
 | Precisa de | |
 |---|---|
 | 🟢 **Node 20.19 ou mais novo** | no macOS, no Windows ou no Linux, inclusive numa VPS sem tela |
-| 🪟 **No Windows** | o `npx github:` precisa do [Git](https://git-scm.com/download/win); sem ele, use o pacote da versão: `npx https://github.com/dantaspaulo/reveza/archive/refs/tags/v0.9.0.tar.gz` |
+| 🪟 **No Windows** | o `npx github:` precisa do [Git](https://git-scm.com/download/win); sem ele, use o pacote da versão: `npx https://github.com/dantaspaulo/reveza/archive/refs/tags/v0.10.0.tar.gz` |
 | 🧡 **Claude Code** | instalado em cada computador que vai revezar contas |
 | ☁️ **Supabase e Vercel** | contas grátis bastam; sem elas, use `--sem-nuvem` |
 | 🌐 **Domínio** | opcional: sem ele, o painel fica em `<projeto>.vercel.app`, de graça e com HTTPS ([detalhes](#-endereço-do-painel)) |
