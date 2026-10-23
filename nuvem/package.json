@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test testes/*.test.mjs && node --experimental-strip-types --no-warnings --test funcoes/testes/*.test.mjs"
+    "test": "node --test --test-concurrency=1 testes/*.test.mjs && node --experimental-strip-types --no-warnings --test funcoes/testes/*.test.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8"

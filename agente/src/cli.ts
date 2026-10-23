@@ -688,6 +688,7 @@ async function cmdDoctor(amb: Ambiente, a: Args): Promise<number> {
     },
     agora: () => amb.relogio.agora(),
     onde: "terminal",
+    sistema: amb.sistema,
     sombra,
     semServico: instalacao?.semServico === true,
   };
@@ -1009,6 +1010,7 @@ async function cmdRodar(amb: Ambiente, a: Args): Promise<number> {
     horaNuvem: async () => (nuvem ? nuvem.horaDoServidor() : null),
     agora: () => amb.relogio.agora(),
     onde: "agente",
+    sistema: amb.sistema,
     sombra,
     semServico: instalacao?.semServico === true,
   });

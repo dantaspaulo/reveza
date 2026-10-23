@@ -166,6 +166,8 @@ describe("doctor em inglês", () => {
       horaNuvem: async () => null,
       agora: () => T0,
       espacoLivre: () => 3.9 * 1024 ** 3,
+      // a lista fixa abaixo é a de fora do Windows (lá entra "Onde o assistente guarda o login")
+      sistema: "macos" as const,
     };
   }
 
