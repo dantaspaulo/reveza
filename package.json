@@ -1,6 +1,6 @@
 {
   "name": "reveza",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Reveza AI: gestor de várias contas do assistente de código, com painel na nuvem da própria pessoa, troca automática e registro de uso.",
   "type": "module",
   "bin": {
