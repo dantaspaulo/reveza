@@ -7,6 +7,20 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.10.4 · 23/10/2026
+
+A troca que não vale nas sessões do Windows passa a ser avisada. Relato de um usuário: "mesmo eu trocando de conta no
+reveza ele usa o limite da conta que está conectada no computador". Precisa dos computadores na 0.10.4 (no painel,
+**Computadores → Atualizar**); a nuvem não muda.
+
+- **Windows com o login no Gerenciador de Credenciais:** o assistente de código passou a poder guardar o login no
+  Gerenciador de Credenciais do Windows (um recurso novo dele, que liga aos poucos). Ligado, o arquivo de credenciais que
+  o Reveza troca vira só a reserva, e a troca não chega às sessões. Agora o agente confere isso de 10 em 10 minutos e
+  avisa nos eventos do painel quando liga, e o `reveza doctor` (e a Saúde) mostra "Onde o assistente guarda o login". O
+  suporte a esse lugar vem numa próxima versão.
+- **Onde a troca vale**, no README: no terminal e nas extensões de editor (VS Code, JetBrains). O app de desktop, o site
+  e o app do celular têm login próprio, que o Reveza não troca; desde a 0.10.3, o uso deles não entra na conta em uso.
+
 ## 0.10.3 · 23/10/2026
 
 Duas correções de um relato de usuário (Windows, duas contas Pro, o app de desktop aberto junto com o terminal).

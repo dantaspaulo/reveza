@@ -90,6 +90,12 @@ flowchart LR
 
 The computer only calls the cloud: no open port, no tunnel. Without internet, it keeps the current account and does not switch.
 
+**Where switching applies:** in the coding assistant sessions that use the computer's sign-in, in the terminal and in
+editor extensions (VS Code, JetBrains). The desktop app, the website and the phone app have their own sign-in, which
+Reveza does not switch; since 0.10.3, their usage does not count on the account in use either. On Windows, if the
+assistant starts keeping its sign-in in Windows Credential Manager (a new feature of it, turned on gradually),
+switching does not apply there yet: `reveza doctor` and the dashboard's Health page say so.
+
 <br/>
 
 ## 📥 Install

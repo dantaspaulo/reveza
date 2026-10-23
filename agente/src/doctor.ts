@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ApiContas } from "./anthropic.js";
 import type { Cli } from "./claudecli.js";
-import { VERSAO, type Caminhos } from "./config.js";
+import { sistemaAtual, VERSAO, type Caminhos, type Sistema } from "./config.js";
 import { expiraEm, oauth } from "./credenciais/blob.js";
 import { PRINCIPAL, type Credenciais } from "./credenciais/tipos.js";
 import type { Guarda } from "./cofre/guarda.js";
@@ -61,6 +61,8 @@ export interface DepsDoctor {
   semServico?: boolean;
   /** Bytes livres no disco da pasta do usuário (testes); de fábrica, lido do sistema. */
   espacoLivre?: () => number;
+  /** O sistema (testes); de fábrica, o deste computador. */
+  sistema?: Sistema;
 }
 
 /** Abaixo disto o disco vira aviso, e abaixo de DISCO_FALHA, falha: com o disco cheio nada do agente se grava. */
@@ -95,6 +97,39 @@ export function compararVersao(a: string, b: string): number {
     if (d) return d;
   }
   return 0;
+}
+
+/**
+ * O assistente guarda o login no Gerenciador de Credenciais do Windows? Desde as versões de outubro de 2026 ele pode
+ * (o recurso liga aos poucos, pela marca `tengu_windows_credman` que ele guarda no próprio .claude.json, ou à força por
+ * CLAUDE_CODE_FORCE_WINDOWS_CREDMAN=1), e aí o arquivo de credenciais vira só a reserva: o login que o Reveza põe nele
+ * não vale nas sessões. A mesma leitura do assistente: o `.config.json` da pasta ~/.claude primeiro, depois o
+ * ~/.claude.json. Relato de um usuário (Windows, 23/10/2026): "mesmo eu trocando de conta no reveza ele usa o limite da
+ * conta que está conectada no computador".
+ */
+export function loginNoGerenciadorDoWindows(home: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.CLAUDE_CODE_FORCE_WINDOWS_CREDMAN === "1") return true;
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8")) as { env?: Record<string, unknown> };
+    if (s?.env?.CLAUDE_CODE_FORCE_WINDOWS_CREDMAN === "1") return true;
+  } catch {
+    // sem settings
+  }
+  for (const arq of [path.join(home, ".claude", ".config.json"), path.join(home, ".claude.json")]) {
+    let texto = "";
+    try {
+      texto = fs.readFileSync(arq, "utf8");
+    } catch {
+      continue;
+    }
+    if (!texto) continue;
+    try {
+      return (JSON.parse(texto) as { cachedGrowthBookFeatures?: Record<string, unknown> })?.cachedGrowthBookFeatures?.tengu_windows_credman === true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 /** O mod está carregado? Por CLAUDE_CODE_PLUGIN_DIRS no settings.json ou instalado como plugin. */
@@ -293,6 +328,29 @@ export async function doctor(d: DepsDoctor): Promise<Conferencia[]> {
         "the system keychain did not respond: unlock it (or restart the user session) and check again",
       ),
     });
+  }
+
+  // No Windows, o assistente pode guardar o login no Gerenciador de Credenciais, e aí a troca pelo arquivo não vale
+  if ((d.sistema ?? sistemaAtual()) === "windows") {
+    if (loginNoGerenciadorDoWindows(d.c.home)) {
+      add(
+        "login-windows",
+        t("Onde o assistente guarda o login", "Where the assistant keeps its sign-in"),
+        "falha",
+        t(
+          "no Gerenciador de Credenciais do Windows (recurso novo, que liga aos poucos): o Reveza ainda troca só o arquivo de credenciais, e as trocas deste computador não valem nas sessões",
+          "in Windows Credential Manager (a new feature, being turned on gradually): Reveza still switches only the credentials file, so this computer's switches do not reach the sessions",
+        ),
+        {
+          fazer: t(
+            "o suporte ao Gerenciador de Credenciais vem numa versão do Reveza; até lá, neste computador, as sessões ficam na conta do login do assistente (troque à mão com /login, se precisar)",
+            "Credential Manager support is coming in a Reveza version; until then, on this computer the sessions stay on the assistant's signed-in account (switch by hand with /login if needed)",
+          ),
+        },
+      );
+    } else {
+      add("login-windows", t("Onde o assistente guarda o login", "Where the assistant keeps its sign-in"), "ok", t("no arquivo de credenciais, que o Reveza troca", "in the credentials file, which Reveza switches"));
+    }
   }
 
   const semLogin: string[] = [];

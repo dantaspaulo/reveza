@@ -165,6 +165,14 @@ recusa pelo escopo). O agente compara com a conta em uso: outra conta não mexe 
 fora do ar, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) segue como antes. Sessão ainda na conta que acabou de sair
 (troca de menos de 2 minutos) conta como "a troca já aconteceu": entra na fila e volta na conta nova.
 
+**O login do assistente no Windows (0.10.4).** O assistente passou a poder guardar o login no Gerenciador de
+Credenciais do Windows (store `windows-credman-with-plaintext-fallback`, ligado pela marca `tengu_windows_credman` que
+ele guarda em `cachedGrowthBookFeatures` do `.config.json` da pasta `~/.claude` ou do `~/.claude.json`, ou à força por
+`CLAUDE_CODE_FORCE_WINDOWS_CREDMAN=1`; lido no código do assistente 2.1.309). Ligado, o `.credentials.json` vira só a
+reserva, e o login que o Reveza põe nele não vale nas sessões. O agente confere de 10 em 10 minutos e solta um evento de
+erro quando liga; o `reveza doctor` (e a Saúde) mostra a conferência `login-windows`. O suporte (ler e gravar o login no
+Gerenciador) depende de conhecer o formato que o assistente usa lá, que não está no pacote do macOS.
+
 **O estado no disco (0.10.3).** Relato de um usuário (Windows, desligamento brusco em 22/10/2026): o `estado.json`
 voltou com bytes nulos e o agente subiu só com a conta em uso, sem aviso. A gravação atômica manda o conteúdo ao disco
 antes da troca de nome (e a pasta depois, onde o sistema deixa; uns 8 ms por gravação do estado, de 15 em 15 s; o

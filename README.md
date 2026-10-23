@@ -90,6 +90,12 @@ flowchart LR
 
 O computador só chama a nuvem: nenhuma porta aberta, nenhum túnel. Sem internet, ele mantém a conta atual e não troca.
 
+**Onde a troca vale:** nas sessões do assistente de código que usam o login do computador, no terminal e nas extensões
+de editor (VS Code, JetBrains). O app de desktop, o site e o app do celular têm login próprio, que o Reveza não troca;
+desde a 0.10.3, o uso deles também não entra na conta em uso. No Windows, se o assistente passar a guardar o login no
+Gerenciador de Credenciais (recurso novo dele, que liga aos poucos), a troca ainda não vale ali: o `reveza doctor` e a
+Saúde do painel avisam.
+
 <br/>
 
 ## 📥 Instalar

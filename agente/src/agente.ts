@@ -60,7 +60,7 @@ import {
   type MigracoesDaNuvem,
   type ModoAtualizar,
 } from "./atualizar.js";
-import { compararVersao } from "./doctor.js";
+import { compararVersao, loginNoGerenciadorDoWindows } from "./doctor.js";
 import { abrirTokens, completaLigada, PUBLICA_DESDE, pendenteDaPublicacao, semSegredos } from "./completa.js";
 import { gravarAtomico, gravarJson, lerJson } from "./util/arquivos.js";
 import { aplicarResumo, contaGrande, janelaDaConta, RESUMO_MAXIMO, RESUMO_MINIMO } from "./resumo.js";
@@ -490,10 +490,40 @@ export class Agente {
 
   // ------------------------------------------------------------------------------------------------ ciclo local
 
+  /** O login do assistente no Gerenciador de Credenciais do Windows (a troca pelo arquivo não vale): o estado lido. */
+  private loginNoGerenciador: boolean | null = null;
+  private loginNoGerenciadorEm = 0;
+
+  /**
+   * No Windows, de 10 em 10 minutos: o assistente passou a guardar o login no Gerenciador de Credenciais? A marca que
+   * liga isso chega sozinha (o recurso liga aos poucos), então muda com o agente rodando. Quando liga, sai um evento de
+   * erro (vai ao painel), e a Saúde mostra a mesma coisa.
+   */
+  private conferirLoginDoWindows(instante: number): void {
+    if (this.d.sistema !== "windows" || instante - this.loginNoGerenciadorEm < 600) return;
+    this.loginNoGerenciadorEm = instante;
+    const agora = loginNoGerenciadorDoWindows(this.d.c.home);
+    if (agora === this.loginNoGerenciador) return;
+    const antes = this.loginNoGerenciador;
+    this.loginNoGerenciador = agora;
+    if (agora) {
+      this.trocador.evento(
+        "erro",
+        t(
+          "Neste computador o assistente passou a guardar o login no Gerenciador de Credenciais do Windows, e o Reveza ainda troca só o arquivo de credenciais: as trocas daqui não valem nas sessões até a versão que traz esse suporte.",
+          "On this computer the assistant now keeps its sign-in in Windows Credential Manager, and Reveza still switches only the credentials file: switches here do not reach the sessions until the version that brings this support.",
+        ),
+      );
+    } else if (antes) {
+      this.trocador.evento("info", t("O assistente voltou a guardar o login no arquivo de credenciais: as trocas deste computador voltam a valer.", "The assistant keeps its sign-in in the credentials file again: this computer's switches work again."));
+    }
+  }
+
   async ciclo(): Promise<void> {
     if (this.emCiclo) return;
     this.emCiclo = true;
     try {
+      this.conferirLoginDoWindows(this.d.relogio.agora());
       const pendentes = await this.trocador.geral.com(async () => {
         const t = this.d.relogio.agora();
         if (t - this.pastasEm >= 60) {

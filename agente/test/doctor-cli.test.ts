@@ -3,7 +3,7 @@ import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { doctor, textoDoctor, compararVersao, acharMod } from "../src/doctor.js";
+import { doctor, textoDoctor, compararVersao, acharMod, loginNoGerenciadorDoWindows } from "../src/doctor.js";
 import { executarCli, lerArgs, linhaConta, textoJanela, type Ambiente } from "../src/cli.js";
 import { ClaudeJson } from "../src/claudejson.js";
 import { CredenciaisFalsas } from "../src/credenciais/falsa.js";
@@ -31,9 +31,42 @@ describe("doctor", () => {
       horaNuvem: async () => T0 + 5,
       agora: () => T0,
       espacoLivre: () => 50 * 1024 ** 3,
+      sistema: "macos" as const,
       ...extra,
     };
   }
+
+  // Relato de um usuário (Windows, 23/10/2026): a troca não valia nas sessões. O assistente pode guardar o login no
+  // Gerenciador de Credenciais do Windows (marca tengu_windows_credman), e aí o arquivo que o Reveza troca é só reserva.
+  test("Windows com o login no Gerenciador de Credenciais: a Saúde diz que a troca não vale aqui", async () => {
+    tmp = pastaTemporaria();
+    const d = deps({ sistema: "windows" });
+    await d.guarda.gravar(SEGREDO_COFRE, Buffer.alloc(32, 1).toString("base64"));
+    fs.writeFileSync(path.join(tmp.c.home, ".claude.json"), JSON.stringify({ cachedGrowthBookFeatures: { tengu_windows_credman: true } }));
+    const item = (await doctor(d)).find((x) => x.id === "login-windows")!;
+    assert.equal(item.situacao, "falha");
+    assert.match(item.detalhe, /Gerenciador de Credenciais do Windows/);
+    assert.ok(item.fazer);
+    fs.writeFileSync(path.join(tmp.c.home, ".claude.json"), JSON.stringify({ cachedGrowthBookFeatures: { tengu_windows_credman: false } }));
+    assert.equal((await doctor(d)).find((x) => x.id === "login-windows")!.situacao, "ok");
+    // fora do Windows a conferência nem aparece
+    assert.equal((await doctor(deps())).some((x) => x.id === "login-windows"), false);
+  });
+
+  test("onde o assistente guarda o login no Windows: a mesma leitura dele (.config.json antes, marca, variável)", () => {
+    tmp = pastaTemporaria();
+    const home = tmp.c.home;
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    assert.equal(loginNoGerenciadorDoWindows(home, {}), false, "sem arquivo nenhum");
+    fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ cachedGrowthBookFeatures: { tengu_windows_credman: true } }));
+    assert.equal(loginNoGerenciadorDoWindows(home, {}), true);
+    // o .config.json da pasta ~/.claude vem antes do ~/.claude.json
+    fs.writeFileSync(path.join(home, ".claude", ".config.json"), JSON.stringify({ cachedGrowthBookFeatures: {} }));
+    assert.equal(loginNoGerenciadorDoWindows(home, {}), false);
+    assert.equal(loginNoGerenciadorDoWindows(home, { CLAUDE_CODE_FORCE_WINDOWS_CREDMAN: "1" }), true);
+    fs.writeFileSync(path.join(home, ".claude", "settings.json"), JSON.stringify({ env: { CLAUDE_CODE_FORCE_WINDOWS_CREDMAN: "1" } }));
+    assert.equal(loginNoGerenciadorDoWindows(home, {}), true);
+  });
 
   test("tudo funcionando: conferências na ordem, com o e-mail da conta em uso", async () => {
     tmp = pastaTemporaria();
