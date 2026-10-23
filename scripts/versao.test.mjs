@@ -90,7 +90,10 @@ test("o Para atualizar nunca diz que o painel vai junto com a nuvem sem a atuali
   assert.match(tudo, /no computador que criou a instalação/);
   // a ordem: nuvem, funções e painel, computadores
   assert.ok(tudo.indexOf("Nuvem:") < tudo.indexOf("Funções e painel:") && tudo.indexOf("Funções e painel:") < tudo.indexOf("Computadores:"));
-  assert.match(paraAtualizar({ nuvem: false, funcoes: false, painel: true, computadores: false }), /Painel:\* vai ao ar sozinho/);
+  // só o painel mudou: a nuvem ainda entra, porque a publicação só sai na versão em que ela está
+  const soPainel = paraAtualizar({ nuvem: false, funcoes: false, painel: true, computadores: false });
+  assert.match(soPainel, /Painel:\* vai ao ar sozinho/);
+  assert.ok(soPainel.indexOf("Nuvem:") > -1 && soPainel.indexOf("Nuvem:") < soPainel.indexOf("Painel:"));
   assert.doesNotMatch(paraAtualizar({ nuvem: false, funcoes: false, painel: false, computadores: true }), /Painel|Nuvem/);
   assert.match(paraAtualizar({ nuvem: false, funcoes: false, painel: false, computadores: false }), /nada a fazer/);
 });

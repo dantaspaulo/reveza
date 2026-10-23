@@ -59,7 +59,11 @@ export function partesDaVersao(mudados) {
  */
 export function paraAtualizar(p) {
   const passos = [];
+  // funções e painel só vão ao ar na versão em que a nuvem já está: mesmo sem migração, a nuvem leva a versão antes
   if (p.nuvem) passos.push("*Nuvem:* se atualiza sozinha (ou pelo *Atualizar a nuvem*, em Computadores).");
+  else if (p.funcoes || p.painel) {
+    passos.push("*Nuvem:* pelo *Atualizar a nuvem* (ou sozinha). Ela não muda nada no banco desta vez, mas leva a versão, e com a atualização completa ligada um computador publica logo depois.");
+  }
   if (p.funcoes || p.painel) {
     const [o, vai] = p.funcoes && p.painel ? ["Funções e painel", "vão ao ar sozinhos"] : p.funcoes ? ["Funções da nuvem", "vão ao ar sozinhas"] : ["Painel", "vai ao ar sozinho"];
     passos.push(
