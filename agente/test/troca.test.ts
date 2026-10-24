@@ -530,6 +530,10 @@ describe("entradas do login", () => {
     assert.throws(() => m.agente.logins.iniciar("--help@exemplo.com"), /e-mail inválido/);
     const l = m.agente.logins.iniciar("a@exemplo.com");
     assert.match(m.agente.logins.codigo(l.id, "abc\ndef").erro ?? "", /uma linha só/);
+    // sem a parte depois do #, o login oficial diria "Invalid code" e seguiria esperando sem terminar
+    for (const incompleto of ["abc", "abc#", "#def"]) assert.match(m.agente.logins.codigo(l.id, incompleto).erro ?? "", /incompleto/, incompleto);
+    const proc = m.cli.logins[m.cli.logins.length - 1]!.proc;
+    assert.deepEqual(proc.escrito, [], "nada do código incompleto chega ao login");
   });
 });
 
@@ -578,8 +582,8 @@ describe("conexão de conta", () => {
     assert.equal(l.url, "https://claude.com/cai/oauth/authorize?code=true&client_id=x&state=y");
     assert.match(l.mensagem, /janela anônima/);
     // o código colado no painel ou no terminal vai para o login aberto
-    assert.deepEqual(m.agente.logins.codigo(l.id, "  codigo-da-pagina  "), { ok: true });
-    assert.deepEqual(proc.escrito, ["codigo-da-pagina\n"]);
+    assert.deepEqual(m.agente.logins.codigo(l.id, "  codigo#estado  "), { ok: true });
+    assert.deepEqual(proc.escrito, ["codigo#estado\n"]);
   });
 
   test("login que pede Enter no fim: quando a credencial aparece, confirma", async () => {
