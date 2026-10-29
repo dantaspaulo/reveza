@@ -143,6 +143,9 @@ describe("sessão atrasada na troca", () => {
     assert.deepEqual(terceira.corpo, { ok: true, versao: e().versao, outraConta: true, naoPegou: "b@exemplo.com" });
     assert.equal(e().fila.filter((f) => f.estado === "aguardando").length, 0, "não entra na fila de novo");
     assert.ok(e().eventos.some((ev) => ev.tipo === "aviso" && ev.texto.includes("não pegou a troca")));
+    // a pessoa escreveu de novo e a sessão bateu de novo na mesma conta: não volta a insistir, nem a avisar outra vez
+    assert.deepEqual((await limite()).corpo, { ok: true, versao: e().versao, outraConta: true, naoPegou: "b@exemplo.com" });
+    assert.equal(e().eventos.filter((ev) => ev.texto.includes("não pegou a troca")).length, 1);
     // outra sessão na mesma conta começa do zero
     const outra = await m.agente.alvoPonte().limite({ sessao: "s2", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B") });
     assert.equal((outra.corpo as Record<string, unknown>).aguardarS, 35);

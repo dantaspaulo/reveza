@@ -717,18 +717,20 @@ export class Trocador {
     const mesma = !!antes && antes.conta === id && antes.versao === this.estado.versao && t - antes.em < ATRASADA_VALE_S;
     const vezes = mesma ? antes!.vezes + 1 : 1;
     const parou = modelo === null ? "bateu o limite" : `não roda o ${modelo} sem créditos de uso`;
-    if (vezes > ATRASADA_ESPERA_S.length) {
-      this.atrasadas.delete(sessao);
-      this.evento(
-        "aviso",
-        `A sessão ${sessao.slice(0, 8)} continua em ${c.email}, que ${parou}, e não pegou a troca para ${emUso ?? "a conta em uso"}: feche e abra essa sessão.`,
-        { conta: id, sessao },
-      );
-      return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true, naoPegou: c.email };
-    }
     if (sessao) {
       if (this.atrasadas.size > 200) this.atrasadas.clear();
       this.atrasadas.set(sessao, { conta: id, versao: this.estado.versao, vezes, em: t });
+    }
+    // depois de não pegar, o próximo limite da mesma sessão nessa conta também não pega: não volta a insistir
+    if (vezes > ATRASADA_ESPERA_S.length) {
+      if (vezes === ATRASADA_ESPERA_S.length + 1) {
+        this.evento(
+          "aviso",
+          `A sessão ${sessao.slice(0, 8)} continua em ${c.email}, que ${parou}, e não pegou a troca para ${emUso ?? "a conta em uso"}: feche e abra essa sessão.`,
+          { conta: id, sessao },
+        );
+      }
+      return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true, naoPegou: c.email };
     }
     this.enfileirar(corpo, sessao);
     this.evento("limite", `Uma sessão que ainda estava em ${c.email} ${parou}; a conta em uso já é ${emUso ?? "outra"} e ela volta nessa.`, {
