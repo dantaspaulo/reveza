@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 
-import { hmacHex, janelasTexto, resumo, tipoDoLimite } from './register'
+import { aguardarMs, hmacHex, janelasTexto, releituraDaConta, resumo, tipoDoLimite } from './register'
 
 // Agente falso: responde /api/ativa com a versão do momento e guarda o que o mod mandou.
 // `instalacao` é o conteúdo do instalacao.json (o idioma da instalação); sem ele, o arquivo não existe (português).
@@ -29,6 +29,8 @@ function agente(on: On, instalacao?: string) {
     perfil: null as { status: number; corpo: unknown } | null,
     // o agente diz que a sessão está noutra conta
     outraConta: false,
+    // o que o agente acrescenta à resposta do limite (sessão atrasada na troca: { trocou, aguardarS }, ou { naoPegou })
+    limiteExtra: {} as Record<string, unknown>,
   }
   const perfis: { auth: string | undefined; cabecalhos: Record<string, string> }[] = []
   on('http.fetch', async ($, e) => {
@@ -47,7 +49,7 @@ function agente(on: On, instalacao?: string) {
     })
     let resposta: unknown = { ok: true }
     if (e.url.endsWith('/api/ativa')) resposta = { slug: 'a', email: estado.email, versao: estado.versao, trocadaEm: 0, enxugar: estado.enxugar }
-    if (e.url.endsWith('/api/limite')) resposta = { ok: true, versao: estado.versao, ...(estado.outraConta ? { outraConta: true } : {}) }
+    if (e.url.endsWith('/api/limite')) resposta = { ok: true, versao: estado.versao, ...(estado.outraConta ? { outraConta: true } : {}), ...estado.limiteExtra }
     if (e.url.endsWith('/api/medida')) resposta = { ok: true, outraConta: estado.outraConta }
     if (e.url.endsWith('/api/estado'))
       resposta = {
@@ -554,4 +556,106 @@ test('limite numa sessão de outra conta: avisa, não espera troca nem manda con
   estado.email = 'b@exemplo.com'
   await andar(relogio, 15_000)
   expect(enviados).toHaveLength(0)
+})
+
+// Relato do Paulo (29/10/2026): sessões que seguiram na conta que saiu por minutos depois da troca bateram o limite dela
+// e pararam sem voltar. O agente agora diz que a troca já aconteceu e quanto esperar: a sessão relê o login a cada 30 s.
+function comEnvio(on: On) {
+  const enviados: string[] = []
+  on('prompt.submit', ($, e) => {
+    enviados.push(e.text)
+    return { text: e.text }
+  })
+  return enviados
+}
+
+test('sessão atrasada na troca: o agente pede 35 s e a sessão só continua depois deles, já com a versão nova', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado, avisos } = agente(on)
+  on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
+  const enviados = comEnvio(on)
+  estado.perfil = PERFIL_A
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 10_000)
+  // a troca já aconteceu (versão 4): a sessão é que ainda estava na conta de antes
+  estado.versao = 4
+  estado.email = 'b@exemplo.com'
+  estado.limiteExtra = { trocou: true, aguardarS: 35 }
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  expect(avisos.some(a => a.includes('ainda estava na conta anterior'))).toBe(true)
+  await andar(relogio, 25_000)
+  expect(enviados).toHaveLength(0)
+  await andar(relogio, 15_000)
+  expect(enviados).toHaveLength(1)
+  expect(enviados[0]).toContain('trocou de conta')
+})
+
+test('no limite, a conta da sessão é lida de novo (a guardada pode ser de antes de ela reler o login)', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos, estado, perfis } = agente(on)
+  on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
+  estado.perfil = PERFIL_A
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.session.measure(MEDIDA)
+  expect(perfis).toHaveLength(1)
+  await andar(relogio, 5_000)
+  estado.perfil = { status: 200, corpo: { account: { uuid: 'acc-B' }, organization: { uuid: 'org-B' } } }
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  expect(perfis).toHaveLength(2)
+  expect(recebidos.find(r => r.url.endsWith('/api/limite'))?.corpo).toMatchObject({ conta: { accountUuid: 'acc-B', orgUuid: 'org-B' } })
+  await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  expect(perfis).toHaveLength(3)
+})
+
+test('voltou e não pegou a troca: o mod diz em que conta a sessão ficou e não manda continuar', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado, avisos, status } = agente(on)
+  on('session.authorize', () => ({ value: { handle: 'h', kind: 'bearer' as const } }))
+  const enviados = comEnvio(on)
+  estado.perfil = PERFIL_A
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 10_000)
+  estado.limiteExtra = { outraConta: true, naoPegou: 'contato@exemplo.com' }
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  expect(avisos.some(a => a.includes('contato@exemplo.com') && a.includes('não pegou a troca'))).toBe(true)
+  expect(status.at(-1)).toContain('noutra conta')
+  estado.versao = 4
+  await andar(relogio, 60_000)
+  expect(enviados).toHaveLength(0)
+})
+
+test('modelo recusado numa sessão atrasada: espera o que o agente pede e continua no mesmo modelo', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado, avisos } = agente(on)
+  const { comandos, enviados } = comModelo(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 10_000)
+  estado.versao = 4
+  estado.limiteExtra = { trocou: true, aguardarS: 35 }
+  await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  expect(avisos.some(a => a.includes('ainda estava na conta anterior'))).toBe(true)
+  await andar(relogio, 25_000)
+  expect(enviados).toHaveLength(0)
+  await andar(relogio, 15_000)
+  expect(enviados).toHaveLength(1)
+  expect(comandos).toEqual([])
+})
+
+test('a conta da sessão é relida logo quando ela está numa conta deste computador que saiu de uso', () => {
+  expect(releituraDaConta({ conta: 'atrasada', outraConta: false })).toBe(30_000)
+  expect(releituraDaConta({ conta: 'atrasada', outraConta: true })).toBe(30_000)
+  expect(releituraDaConta({ conta: 'outra', outraConta: true })).toBe(2 * 60 * 1000)
+  expect(releituraDaConta({ conta: 'ativa', outraConta: false })).toBe(null)
+  expect(releituraDaConta({ outraConta: false })).toBe(null)
+  expect(releituraDaConta(null)).toBe(null)
+})
+
+test('a espera que o agente pede vale em segundos, com teto de 10 minutos', () => {
+  expect(aguardarMs(35)).toBe(35_000)
+  expect(aguardarMs(120)).toBe(120_000)
+  expect(aguardarMs(86_400)).toBe(600_000)
+  expect(aguardarMs(undefined)).toBe(0)
+  expect(aguardarMs(-5)).toBe(0)
+  expect(aguardarMs('35')).toBe(0)
+  expect(aguardarMs(Number.NaN)).toBe(0)
 })

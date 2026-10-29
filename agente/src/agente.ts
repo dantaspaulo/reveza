@@ -417,11 +417,15 @@ export class Agente {
   /** Sessões que medem outra conta, já anotadas no log (uma linha por sessão, não uma por medida). */
   private sessoesDeOutraConta = new Set<string>();
 
-  private avisarSessaoDeOutraConta(sessao: string): void {
+  private avisarSessaoDeOutraConta(sessao: string, corpo: Record<string, unknown>): void {
     if (!sessao || this.sessoesDeOutraConta.has(sessao)) return;
     if (this.sessoesDeOutraConta.size > 200) this.sessoesDeOutraConta.clear();
     this.sessoesDeOutraConta.add(sessao);
-    this.d.log.info(`a sessão ${sessao.slice(0, 8)} usa outra conta, não a em uso: o uso dela fica fora do painel e da troca`);
+    // numa conta deste computador, o log diz qual (sem isso não dava para saber, depois, de onde vinha o limite dela)
+    const id = this.trocador.contaDeOutraSessao(corpo);
+    const ativa = this.estado.ativa ? this.estado.contas[this.estado.ativa] : null;
+    const onde = id ? `está em ${this.estado.contas[id]!.email}, não na em uso (${ativa?.email ?? "nenhuma"})` : "usa outra conta, não a em uso";
+    this.d.log.info(`a sessão ${sessao.slice(0, 8)} ${onde}: o uso dela fica fora do painel e da troca`);
   }
 
   /** O estado estava ilegível na partida: diz o que voltou (no painel, nos eventos e alertas) e onde ficou o estragado. */
@@ -636,11 +640,12 @@ export class Agente {
     });
   }
 
-  retomarHeadless(): void {
+  /** `so`: só esta sessão (a atrasada na troca volta sozinha, sem levar junto as que esperam uma conta livre). */
+  retomarHeadless(so?: string): void {
     if (!this.estado.config.retomarHeadless) return;
     const t = this.d.relogio.agora();
     for (const f of this.estado.fila) {
-      if (f.tipo !== "headless" || f.estado !== "aguardando") continue;
+      if (f.tipo !== "headless" || f.estado !== "aguardando" || (so !== undefined && f.sessao !== so)) continue;
       // entrada velha (de antes de ligar a opção, ou importada) não volta a rodar sozinha
       if (t - f.em > FILA_VALIDA_S) {
         f.estado = "descartada";
@@ -1949,26 +1954,25 @@ export class Agente {
         if (entrou) this.fundo(this.comNuvem ? this.relatarUso() : this.agir());
         // a sessão mede outra conta (o app de desktop com login próprio, um token no ambiente): o mod diz isso a ela
         const outraConta = this.trocador.sessaoDeOutraConta(corpo);
-        if (outraConta) this.avisarSessaoDeOutraConta(String(corpo.sessao ?? "").slice(0, 80));
-        return { status: 200, corpo: { ok: true, outraConta } };
+        if (outraConta) this.avisarSessaoDeOutraConta(String(corpo.sessao ?? "").slice(0, 80), corpo);
+        // `conta`: o mod relê a conta da sessão mais cedo quando ela não está na em uso
+        return { status: 200, corpo: { ok: true, outraConta, conta: this.trocador.contaDaSessao(corpo) } };
       },
       limite: (corpo: Record<string, unknown>): Resposta => {
         const sessao = String(corpo.sessao ?? "").slice(0, 80);
         // a conta não roda o modelo da sessão (sem créditos de uso): marca a conta fora deste computador e troca
-        if (corpo.erro === "modelo") {
-          const r = this.trocador.modeloDaSessao(corpo);
-          if (r.outraConta) return { status: 200, corpo: { ok: true, versao: r.versao, outraConta: true } };
-          if (sessao) this.contador.marcarParada(sessao);
-          this.salvar();
-          if (r.anotado) this.fundo(this.semModeloDepois(sessao, r.modelo));
-          return { status: 200, corpo: { ok: true, versao: r.versao, trocou: r.trocou } };
+        const modelo = corpo.erro === "modelo" ? this.trocador.modeloDaSessao(corpo) : null;
+        const r = modelo ?? this.trocador.limiteDaSessao(corpo);
+        if (r.outraConta) {
+          if (r.naoPegou) this.salvar();
+          return { status: 200, corpo: { ok: true, versao: r.versao, outraConta: true, ...(r.naoPegou ? { naoPegou: r.naoPegou } : {}) } };
         }
-        const r = this.trocador.limiteDaSessao(corpo);
-        if (r.outraConta) return { status: 200, corpo: { ok: true, versao: r.versao, outraConta: true } };
         if (sessao) this.contador.marcarParada(sessao);
         this.salvar();
-        if (r.anotado) this.fundo(this.limiteDepois(sessao));
-        return { status: 200, corpo: { ok: true, versao: r.versao, trocou: r.trocou } };
+        if (r.anotado) this.fundo(modelo ? this.semModeloDepois(sessao, modelo.modelo) : this.limiteDepois(sessao));
+        // sessão de terminal atrasada na troca: a troca já aconteceu, então ela volta agora (num processo novo, que lê o login)
+        if (r.aguardarS && corpo.tipo === "headless" && sessao) this.retomarHeadless(sessao);
+        return { status: 200, corpo: { ok: true, versao: r.versao, trocou: r.trocou, ...(r.aguardarS ? { aguardarS: r.aguardarS } : {}) } };
       },
       fila: (sessao: string, acao: string): Resposta => {
         for (const f of this.estado.fila) {

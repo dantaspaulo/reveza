@@ -160,10 +160,25 @@ da sessão com `$.session.authorize()` (a credencial fica no Claude Code; o mod 
 endereço oficial) e `GET /api/oauth/profile`, uma vez por sessão e de novo quando a conta em uso muda (30 min de
 validade; 2 min sem resposta ou com o agente dizendo outra conta), e manda ao agente só `{ accountUuid, orgUuid }`, ou
 `{ fora: true }` para sessão sem o login que o Reveza troca (chave de API, token só de uso no ambiente, que o perfil
-recusa pelo escopo). O agente compara com a conta em uso: outra conta não mexe no número, não enche a conta, não marca
-"sem o modelo" e não entra na fila (o mod avisa a sessão e mostra na linha de status); sem a conta (mod antigo, perfil
-fora do ar, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) segue como antes. Sessão ainda na conta que acabou de sair
-(troca de menos de 2 minutos) conta como "a troca já aconteceu": entra na fila e volta na conta nova.
+recusa pelo escopo). O agente compara com a conta em uso: login de fora (conta que não está neste computador, `fora`)
+não mexe no número, não enche a conta, não marca "sem o modelo" e não entra na fila (o mod avisa a sessão e mostra na
+linha de status); sem a conta (mod antigo, perfil fora do ar, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) segue como
+antes.
+
+**Sessão atrasada na troca (0.10.5).** O assistente relê o login a cada 30 s (medido no 2.1.312: o chaveiro trocado no
+meio de um turno vale a partir do pedido seguinte a esses 30 s), mas nem toda sessão consegue: em 29/10/2026 a tela do
+Mac travou e a sessão gráfica fechou 4 minutos depois de uma troca, e os processos das sessões do editor que sobraram
+(sem o editor, numa sessão do sistema que acabou) seguiram na conta que saiu por 7 a 11 minutos, até ela bater 100%. A
+0.10.3 só reconhecia a conta que saiu nos 2 primeiros minutos; depois disso o limite virava "outra conta" e a sessão
+parava sem voltar. Agora a sessão numa conta deste computador que não é a em uso é `atrasada`, a qualquer tempo: a
+medida dela não entra na conta em uso, o mod relê a conta dela em 30 s (e não em 30 min), e o limite (ou o modelo
+recusado) marca a conta dela (cheia, ou sem o modelo), põe a sessão na fila e responde `trocou` com `aguardarS` (35 s, e
+120 s na segunda vez). O mod espera esse tempo e manda a sessão continuar; a de terminal volta na hora, num processo
+novo, que lê o login. Voltou e bateu de novo na mesma conta, na mesma versão da troca, pela terceira vez: a sessão não
+pega a troca (processo sem acesso ao chaveiro, login próprio numa dessas contas), e o agente responde `outraConta` com
+`naoPegou` (o e-mail da conta), o mod diz isso à sessão e sai um aviso nos eventos. No limite o mod lê a conta da sessão
+de novo, sem a guardada: o limite é da credencial do pedido que acabou de falhar. O log diz em que conta está cada
+sessão fora da em uso.
 
 **O login do assistente no Windows (0.10.4).** O assistente passou a poder guardar o login no Gerenciador de
 Credenciais do Windows (store `windows-credman-with-plaintext-fallback`, ligado pela marca `tengu_windows_credman` que

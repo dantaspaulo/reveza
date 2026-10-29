@@ -67,6 +67,26 @@ export const PEDIR_LOGIN_APOS_S = 3 * 3600;
 
 /** Quanto tempo a conta fica fora da escolha deste computador depois de não rodar o modelo de uma sessão. */
 export const SEM_MODELO_S = 6 * 3600;
+/**
+ * Sessão que bateu o limite numa conta deste computador que já saiu de uso: quanto o mod espera antes de mandá-la
+ * continuar (a sessão relê o login a cada 30 s), na primeira e na segunda vez. Na terceira, ela não está pegando a troca.
+ */
+export const ATRASADA_ESPERA_S = [35, 120] as const;
+/** As vezes que uma sessão atrasada na mesma conta pode ter voltado, nesta mesma versão da troca, valem por isto. */
+export const ATRASADA_VALE_S = 3600;
+
+export type SituacaoDaSessao = "ativa" | "atrasada" | "outra" | "desconhecida";
+export type RespostaDoLimite = {
+  ok: true;
+  trocou: boolean;
+  versao: number;
+  anotado: boolean;
+  outraConta?: true;
+  /** Segundos que o mod espera antes de mandar a sessão continuar (sessão atrasada na troca). */
+  aguardarS?: number;
+  /** A sessão voltou e bateu de novo na mesma conta: o e-mail dela, para o mod dizer que a sessão não pegou a troca. */
+  naoPegou?: string;
+};
 
 export class Trocador {
   readonly geral = new Trava();
@@ -79,6 +99,8 @@ export class Trocador {
   tropecoDesde: Record<string, number> = {};
   /** Pastas de conta sem login e fora da lista, já avisadas nesta partida do agente. */
   private pastasSemLogin = new Set<string>();
+  /** Sessões atrasadas na troca que já foram mandadas continuar: em que conta estavam, em que versão e quantas vezes. */
+  private atrasadas = new Map<string, { conta: string; versao: number; vezes: number; em: number }>();
   sombra = false;
   private ultimoFaria = "";
   /** A principal já foi lida desde que o agente subiu? */
@@ -550,11 +572,12 @@ export class Trocador {
 
   /**
    * De quem é a sessão que mandou a medida ou o limite, pela conta que o mod leu com a credencial da própria sessão:
-   * `ativa`, `outra` ou `desconhecida` (mod antigo, perfil fora do ar). Relato de um usuário (22/10/2026): o app de
-   * desktop, com login próprio numa conta A, carregava o mod e o uso dele era gravado na conta B, a em uso. Sessão que
-   * não usa o login que o Reveza troca (o app, um token no ambiente) é `outra`; desconhecida segue como antes.
+   * `ativa`; `atrasada`, numa conta deste computador que não é a em uso (a sessão não releu o login depois da troca, ou
+   * tem login próprio numa dessas contas); `outra`, num login que o Reveza não conhece (o app de desktop numa conta de
+   * fora, um token no ambiente); `desconhecida` (mod antigo, perfil fora do ar), que segue como antes. Relato de um
+   * usuário (22/10/2026): o app de desktop, com login próprio numa conta A, carregava o mod e o uso dele ia para a B.
    */
-  contaDaSessao(corpo: Record<string, unknown>): "ativa" | "outra" | "desconhecida" {
+  contaDaSessao(corpo: Record<string, unknown>): SituacaoDaSessao {
     const c = corpo.conta;
     if (!c || typeof c !== "object") return "desconhecida";
     const d = c as Record<string, unknown>;
@@ -563,24 +586,27 @@ export class Trocador {
     const org = typeof d.orgUuid === "string" ? d.orgUuid : null;
     const a = this.estado.ativa ? this.estado.contas[this.estado.ativa] : null;
     if (!conta || !org || !a?.accountUuid || !a.orgUuid) return "desconhecida";
-    return a.accountUuid === conta && a.orgUuid === org ? "ativa" : "outra";
+    if (a.accountUuid === conta && a.orgUuid === org) return "ativa";
+    return this.contaDeOutraSessao(corpo) ? "atrasada" : "outra";
   }
 
-  /** A sessão está noutra conta de verdade (não só atrasada na troca): é o que o mod mostra a ela. */
-  sessaoDeOutraConta(corpo: Record<string, unknown>): boolean {
-    return this.contaDaSessao(corpo) === "outra" && !this.daContaQueSaiu(corpo);
+  /** A conta deste computador, fora a em uso, em que a sessão está (pela conta que o mod leu). */
+  contaDeOutraSessao(corpo: Record<string, unknown>): string | null {
+    const d = corpo.conta as Record<string, unknown> | undefined;
+    if (!d || typeof d.accountUuid !== "string" || typeof d.orgUuid !== "string") return null;
+    for (const [id, c] of Object.entries(this.estado.contas)) {
+      if (id !== this.estado.ativa && c.accountUuid === d.accountUuid && c.orgUuid === d.orgUuid) return id;
+    }
+    return null;
   }
 
   /**
-   * A sessão ainda estava na conta que acabou de sair (a troca tem menos de 2 minutos e a sessão não releu o login): o
-   * limite foi dela, e a troca já aconteceu. Ela entra na fila e volta na conta nova, como sempre.
+   * O mod mostra à sessão que ela está noutra conta: login de fora, ou uma conta deste computador passados 2 minutos da
+   * troca (antes disso é só a sessão que ainda não releu o login).
    */
-  private daContaQueSaiu(corpo: Record<string, unknown>): boolean {
-    if (this.agora() - (this.estado.trocadaEm || 0) > SAIU_HA_POUCO_S) return false;
-    const linha = this.estado.linhaContas;
-    const anterior = linha.length >= 2 ? this.estado.contas[linha[linha.length - 2]![1]] : null;
-    const d = corpo.conta as Record<string, unknown> | undefined;
-    return !!anterior?.accountUuid && anterior.accountUuid === d?.accountUuid && anterior.orgUuid === d?.orgUuid;
+  sessaoDeOutraConta(corpo: Record<string, unknown>): boolean {
+    const s = this.contaDaSessao(corpo);
+    return s === "outra" || (s === "atrasada" && this.agora() - (this.estado.trocadaEm || 0) > SAIU_HA_POUCO_S);
   }
 
   /** Uso que uma sessão mandou (de graça, ao vivo). Devolve true quando entrou. */
@@ -589,7 +615,8 @@ export class Trocador {
     const ativa = this.estado.ativa;
     if (!ativa || !this.estado.contas[ativa] || t - (this.estado.trocadaEm || 0) < IGNORAR_MEDIDA_APOS_TROCA_S) return false;
     // o número é de outra conta: na conta em uso ele mentiria para o painel e para a decisão da troca
-    if (this.contaDaSessao(corpo) === "outra") return false;
+    const situacao = this.contaDaSessao(corpo);
+    if (situacao === "outra" || situacao === "atrasada") return false;
     const versao = corpo.versao;
     if (versao !== null && versao !== undefined && versao !== this.estado.versao) return false;
     const janelas: Janela[] = [];
@@ -614,26 +641,17 @@ export class Trocador {
    * Não marca a janela como cheia (para quem usa outro modelo a conta segue boa): marca a conta fora da escolha deste
    * computador por 6 horas e põe a sessão na fila, como no limite. Devolve a versão e se a troca já tinha acontecido.
    */
-  modeloDaSessao(corpo: Record<string, unknown>): { ok: true; trocou: boolean; versao: number; anotado: boolean; modelo: string; outraConta?: true } {
+  modeloDaSessao(corpo: Record<string, unknown>): RespostaDoLimite & { modelo: string } {
     const sessao = String(corpo.sessao ?? "").slice(0, 80);
     const modelo = String(corpo.modelo ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60) || "?";
     const ativa = this.estado.ativa;
-    // a sessão roda noutra conta: trocar a em uso não a ajuda, e a conta em uso não fica marcada sem o modelo
-    const outra = this.contaDaSessao(corpo) === "outra";
-    if (outra && !this.daContaQueSaiu(corpo)) return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, modelo, outraConta: true };
-    if (sessao && !this.estado.fila.some((f) => f.sessao === sessao && f.estado === "aguardando")) {
-      this.estado.fila.unshift({
-        sessao,
-        cwd: String(corpo.cwd ?? "").slice(0, 500),
-        tipo: corpo.tipo === "headless" ? "headless" : "interativa",
-        em: this.agora(),
-        estado: "aguardando",
-        conta: ativa,
-      });
-      this.estado.fila.splice(50);
-    }
+    // a sessão roda num login de fora: trocar a em uso não a ajuda, e a conta em uso não fica marcada sem o modelo
+    const situacao = this.contaDaSessao(corpo);
+    if (situacao === "outra") return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, modelo, outraConta: true };
+    if (situacao === "atrasada") return { ...this.limiteAtrasada(corpo, sessao, modelo), modelo };
+    this.enfileirar(corpo, sessao);
     const v = corpo.versao;
-    if (outra || (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao)) {
+    if (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao) {
       return { ok: true, trocou: true, versao: this.estado.versao, anotado: false, modelo };
     }
     if (ativa && this.estado.contas[ativa]) {
@@ -648,38 +666,87 @@ export class Trocador {
   }
 
   /** Uma sessão bateu o limite. Devolve a versão do momento e se a troca já tinha acontecido. */
-  limiteDaSessao(corpo: Record<string, unknown>): { ok: true; trocou: boolean; versao: number; anotado: boolean; outraConta?: true } {
+  limiteDaSessao(corpo: Record<string, unknown>): RespostaDoLimite {
     const sessao = String(corpo.sessao ?? "").slice(0, 80);
     const ativa = this.estado.ativa;
-    // o limite é de outra conta: a em uso não fica cheia, a sessão não entra na fila (trocar não a faria voltar)
-    const outra = this.contaDaSessao(corpo) === "outra";
-    if (outra && !this.daContaQueSaiu(corpo)) return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true };
-    if (sessao && !this.estado.fila.some((f) => f.sessao === sessao && f.estado === "aguardando")) {
-      this.estado.fila.unshift({
-        sessao,
-        cwd: String(corpo.cwd ?? "").slice(0, 500),
-        tipo: corpo.tipo === "headless" ? "headless" : "interativa",
-        em: this.agora(),
-        estado: "aguardando",
-        conta: ativa,
-      });
-      this.estado.fila.splice(50);
-    }
+    // o limite é de um login de fora: a em uso não fica cheia, a sessão não entra na fila (trocar não a faria voltar)
+    const situacao = this.contaDaSessao(corpo);
+    if (situacao === "outra") return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true };
+    if (situacao === "atrasada") return this.limiteAtrasada(corpo, sessao, null);
+    this.enfileirar(corpo, sessao);
     const v = corpo.versao;
-    if (outra || (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao)) {
-      // A troca já aconteceu depois que a sessão mandou o pedido (ou antes de ela reler o login): o limite foi da conta que saiu.
+    if (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao) {
+      // A troca já aconteceu depois que a sessão mandou o pedido: o limite foi da conta que saiu.
       return { ok: true, trocou: true, versao: this.estado.versao, anotado: false };
     }
     if (ativa && this.estado.contas[ativa]) {
       const c = this.estado.contas[ativa]!;
-      const mapa = new Map(c.janelas.map((j) => [j.tipo, j]));
-      const cinco = mapa.get("five_hour") ?? { tipo: "five_hour" as const, pct: null, resetEm: null };
-      mapa.set("five_hour", { ...cinco, pct: 100 });
-      c.janelas = [...mapa.values()];
-      c.lidoEm = this.agora();
+      this.encherCinco(c);
       this.evento("limite", `Uma sessão bateu o limite em ${c.email}.`, { conta: ativa, sessao });
     }
     return { ok: true, trocou: false, versao: this.estado.versao, anotado: true };
+  }
+
+  /**
+   * Limite (ou modelo recusado) de uma sessão que ainda está noutra conta deste computador depois da troca. Relato do
+   * Paulo (29/10/2026): sessões com turnos longos seguiram na conta que saiu por 7 a 11 minutos, até ela bater 100%, e
+   * pararam sem voltar, porque a 0.10.3 só reconhecia a conta que saiu nos 2 primeiros minutos e tratava o resto como
+   * login de fora. A conta dela fica anotada (cheia, ou sem o modelo), a sessão entra na fila e o mod a manda continuar
+   * depois de dar tempo de ela reler o login. Voltou e bateu de novo na mesma conta duas vezes: ela não está pegando a
+   * troca (processo que sobrou de um editor fechado, login próprio numa dessas contas), e o mod diz isso em vez de insistir.
+   */
+  private limiteAtrasada(corpo: Record<string, unknown>, sessao: string, modelo: string | null): RespostaDoLimite {
+    const t = this.agora();
+    const id = this.contaDeOutraSessao(corpo)!;
+    const c = this.estado.contas[id]!;
+    const emUso = this.estado.ativa ? (this.estado.contas[this.estado.ativa]?.email ?? null) : null;
+    if (modelo === null) this.encherCinco(c);
+    else (this.estado.semModelo ??= {})[id] = { modelo, ate: t + SEM_MODELO_S };
+    const antes = sessao ? this.atrasadas.get(sessao) : undefined;
+    const mesma = !!antes && antes.conta === id && antes.versao === this.estado.versao && t - antes.em < ATRASADA_VALE_S;
+    const vezes = mesma ? antes!.vezes + 1 : 1;
+    const parou = modelo === null ? "bateu o limite" : `não roda o ${modelo} sem créditos de uso`;
+    if (vezes > ATRASADA_ESPERA_S.length) {
+      this.atrasadas.delete(sessao);
+      this.evento(
+        "aviso",
+        `A sessão ${sessao.slice(0, 8)} continua em ${c.email}, que ${parou}, e não pegou a troca para ${emUso ?? "a conta em uso"}: feche e abra essa sessão.`,
+        { conta: id, sessao },
+      );
+      return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true, naoPegou: c.email };
+    }
+    if (sessao) {
+      if (this.atrasadas.size > 200) this.atrasadas.clear();
+      this.atrasadas.set(sessao, { conta: id, versao: this.estado.versao, vezes, em: t });
+    }
+    this.enfileirar(corpo, sessao);
+    this.evento("limite", `Uma sessão que ainda estava em ${c.email} ${parou}; a conta em uso já é ${emUso ?? "outra"} e ela volta nessa.`, {
+      conta: id,
+      sessao,
+    });
+    return { ok: true, trocou: true, versao: this.estado.versao, anotado: false, aguardarS: ATRASADA_ESPERA_S[vezes - 1] };
+  }
+
+  private enfileirar(corpo: Record<string, unknown>, sessao: string): void {
+    if (!sessao || this.estado.fila.some((f) => f.sessao === sessao && f.estado === "aguardando")) return;
+    this.estado.fila.unshift({
+      sessao,
+      cwd: String(corpo.cwd ?? "").slice(0, 500),
+      tipo: corpo.tipo === "headless" ? "headless" : "interativa",
+      em: this.agora(),
+      estado: "aguardando",
+      conta: this.estado.ativa,
+    });
+    this.estado.fila.splice(50);
+  }
+
+  /** O limite de uma sessão é a prova de que a janela de 5 horas da conta encheu. */
+  private encherCinco(c: ContaLocal): void {
+    const mapa = new Map(c.janelas.map((j) => [j.tipo, j]));
+    const cinco = mapa.get("five_hour") ?? { tipo: "five_hour" as const, pct: null, resetEm: null };
+    mapa.set("five_hour", { ...cinco, pct: 100 });
+    c.janelas = [...mapa.values()];
+    c.lidoEm = this.agora();
   }
 
   // ------------------------------------------------------------------------------------------------ pastas

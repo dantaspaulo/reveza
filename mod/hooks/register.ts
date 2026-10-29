@@ -46,6 +46,10 @@ const LEITURA_MS = 30_000
 /** A conta da sessão lida vale isto; sem resposta, ou com o agente dizendo que é outra conta, ela é relida mais cedo. */
 const CONTA_VALE_MS = 30 * 60 * 1000
 const CONTA_RECONFERE_MS = 2 * 60 * 1000
+/** Numa conta deste computador que já saiu de uso, a sessão ainda vai reler o login (o assistente relê a cada 30 s). */
+const CONTA_ATRASADA_MS = 30_000
+/** O agente pede para esperar antes de mandar a sessão atrasada continuar; mais que isto, não. */
+const AGUARDAR_MAXIMO_MS = 10 * 60 * 1000
 const PERFIL = 'https://api.anthropic.com/api/oauth/profile'
 
 /**
@@ -188,6 +192,21 @@ async function doAgente(r: { ok: boolean; headers?: Record<string, string> }, no
   return (r.headers?.['x-reveza-servidor'] ?? '') === (await hmacHex(chavePonte, `servidor\n${nonce}`))
 }
 
+/**
+ * Em quanto tempo a conta da sessão é relida, pelo que o agente disse na medida (null: vale o tempo normal). Noutra
+ * conta pode ser só a sessão atrasada na troca; numa conta deste computador que saiu de uso, a releitura é logo, porque
+ * a sessão relê o login em até 30 s e a medida dela volta a valer.
+ */
+export function releituraDaConta(resposta: { outraConta?: boolean; conta?: string } | null): number | null {
+  if (resposta?.conta === 'atrasada') return CONTA_ATRASADA_MS
+  return resposta?.outraConta === true ? CONTA_RECONFERE_MS : null
+}
+
+/** O tempo que o agente pediu para esperar antes de a sessão continuar, em ms: 0 sem pedido, e no máximo 10 minutos. */
+export function aguardarMs(segundos: unknown): number {
+  return typeof segundos === 'number' && Number.isFinite(segundos) && segundos > 0 ? Math.min(segundos * 1000, AGUARDAR_MAXIMO_MS) : 0
+}
+
 function lerJson<T>(r: { ok: boolean; text: string }): T | null {
   if (!r.ok) return null
   try {
@@ -206,8 +225,9 @@ export const register: Register = (on, options) => {
   let cinco = ''
   let foraDoAr = false
   let ultimaLeitura = -Infinity
-  // `desde`: Date.now() na espera do limite; no caso do modelo, o relógio da sessão ($.clock.now(), o que o teste move)
-  let espera: { referencia: number; desde: number; modelo?: string } | null = null
+  // `desde`: Date.now() na espera do limite; no caso do modelo, o relógio da sessão ($.clock.now(), o que o teste move).
+  // `apos`: no relógio da sessão, quando a sessão atrasada na troca pode continuar (dá tempo de ela reler o login).
+  let espera: { referencia: number; desde: number; modelo?: string; apos?: number } | null = null
   let retomando = false
   let enxugar = false
   // a última vez que esta sessão parou porque a conta não roda o modelo dela
@@ -219,8 +239,9 @@ export const register: Register = (on, options) => {
   // o agente disse que esta sessão está noutra conta: a linha de status diz isso, e o limite dela não pede troca
   let outraConta = false
 
-  async function contaAtual(agora: number, ler: () => Promise<ContaSessao | null>): Promise<ContaSessao | null> {
-    if (!contaLida || contaLida.versao !== versao || agora >= contaLida.ate) {
+  // `fresca`: no limite a conta é lida de novo, porque o limite é da credencial do pedido que acabou de falhar
+  async function contaAtual(agora: number, ler: () => Promise<ContaSessao | null>, fresca = false): Promise<ContaSessao | null> {
+    if (fresca || !contaLida || contaLida.versao !== versao || agora >= contaLida.ate) {
       const valor = await ler()
       contaLida = { valor, versao, ate: agora + (valor ? CONTA_VALE_MS : CONTA_RECONFERE_MS) }
     }
@@ -293,6 +314,7 @@ export const register: Register = (on, options) => {
         }
         if (espera && !espera.modelo && Date.now() - espera.desde > ESPERA_MAXIMA_MS) espera = null
         if (!espera || !ativa || ativa.versao <= espera.referencia) return
+        if (espera.apos !== undefined && agora < espera.apos) return
         espera = null
         retomando = true
         await $.prompt.submit({
@@ -325,9 +347,10 @@ export const register: Register = (on, options) => {
           const p = await pedido('POST', '/api/medida', { sessao, versao, janelas, ...(conta ? { conta } : {}) })
           const r = await $.http.fetch(`${BASE}/api/medida`, p.init)
           if (await doAgente(r, p.nonce)) {
-            const dito = lerJson<{ outraConta?: boolean }>(r)?.outraConta === true
-            // noutra conta pode ser só a sessão atrasada na troca: relê a conta dela daqui a pouco
-            if (dito && contaLida) contaLida.ate = Math.min(contaLida.ate, agora + CONTA_RECONFERE_MS)
+            const resposta = lerJson<{ outraConta?: boolean; conta?: string }>(r)
+            const dito = resposta?.outraConta === true
+            const releitura = releituraDaConta(resposta)
+            if (releitura !== null && contaLida) contaLida.ate = Math.min(contaLida.ate, agora + releitura)
             if (dito !== outraConta) {
               outraConta = dito
               $.ui.status(textoStatus())
@@ -372,10 +395,10 @@ export const register: Register = (on, options) => {
       semModeloEm = agora
       const antesModelo = versao
       let respondeu = false
-      let dito: { versao: number; trocou?: boolean; outraConta?: boolean } | null = null
+      let dito: { versao: number; trocou?: boolean; outraConta?: boolean; aguardarS?: number; naoPegou?: string } | null = null
       if (!repetiu) {
         try {
-          const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)))
+          const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)), true)
           const p = await pedido('POST', '/api/limite', {
             sessao,
             cwd: await $.session.cwd(),
@@ -393,18 +416,19 @@ export const register: Register = (on, options) => {
         }
       }
       if (dito?.outraConta) {
-        // a sessão está noutra conta (o app de desktop, por exemplo): o Reveza não troca a conta dela
+        // a sessão está noutra conta (o app de desktop, por exemplo), ou voltou e não pegou a troca: o Reveza não insiste
         outraConta = true
         $.ui.status(textoStatus())
-        $.ui.toast(x.toasts.outraConta)
+        $.ui.toast(dito.naoPegou ? x.toasts.naoPegou(dito.naoPegou) : x.toasts.outraConta)
         return next(e)
       }
       if (tipoModelo === 'interativa') {
         // a volta para o modelo padrão sai na próxima conferência de 5 s (dentro deste hook o comando é recusado); a troca
         // que já aconteceu antes de a sessão reler o login conta como feita
         const referencia = dito?.trocou ? dito.versao - 1 : (antesModelo ?? -1)
-        espera = { referencia, desde: respondeu ? agora : agora - ESPERA_MODELO_MS - 1, modelo }
-        if (respondeu) $.ui.toast(x.toasts.semModelo(modelo))
+        const aguardar = aguardarMs(dito?.aguardarS)
+        espera = { referencia, desde: respondeu ? agora : agora - ESPERA_MODELO_MS - 1, modelo, ...(aguardar ? { apos: agora + aguardar } : {}) }
+        if (respondeu) $.ui.toast(aguardar ? x.toasts.atrasada : x.toasts.semModelo(modelo))
       }
       return next(e)
     }
@@ -412,9 +436,9 @@ export const register: Register = (on, options) => {
     const superficies = await $.session.surfaces().catch(() => [])
     const tipo = interativa || superficies.length > 0 ? 'interativa' : 'headless'
     const antes = versao
-    let resposta: { ok: boolean; versao: number; trocou?: boolean; outraConta?: boolean } | null = null
+    let resposta: { ok: boolean; versao: number; trocou?: boolean; outraConta?: boolean; aguardarS?: number; naoPegou?: string } | null = null
     try {
-      const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)))
+      const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)), true)
       const p = await pedido('POST', '/api/limite', { sessao, cwd: await $.session.cwd(), tipo, erro: 'rate_limit', versao: antes, ...(conta ? { conta } : {}) })
       const r = await $.http.fetch(`${BASE}/api/limite`, p.init)
       resposta = (await doAgente(r, p.nonce)) ? lerJson(r) : null
@@ -424,14 +448,21 @@ export const register: Register = (on, options) => {
     if (!resposta) {
       $.ui.toast(x.toasts.semAgente)
     } else if (resposta.outraConta) {
-      // o limite é de outra conta (o app de desktop, por exemplo): trocar a conta em uso não faz esta sessão voltar
+      // o limite é de outra conta (o app de desktop, por exemplo), ou a sessão voltou e não pegou a troca: trocar a conta
+      // em uso não faz esta sessão voltar
       outraConta = true
       $.ui.status(textoStatus())
-      $.ui.toast(x.toasts.outraConta)
+      $.ui.toast(resposta.naoPegou ? x.toasts.naoPegou(resposta.naoPegou) : x.toasts.outraConta)
     } else if (tipo === 'interativa') {
-      // a troca que já aconteceu antes de a sessão reler o login conta como feita: volta na próxima leitura
-      espera = { referencia: resposta.trocou ? resposta.versao - 1 : (antes ?? resposta.versao), desde: Date.now() }
-      $.ui.toast(x.toasts.troca)
+      // a troca que já aconteceu antes de a sessão reler o login conta como feita: volta na próxima leitura (a sessão
+      // atrasada numa conta que já saiu de uso volta depois do tempo que o agente pede, para reler o login antes)
+      const aguardar = aguardarMs(resposta.aguardarS)
+      espera = {
+        referencia: resposta.trocou ? resposta.versao - 1 : (antes ?? resposta.versao),
+        desde: Date.now(),
+        ...(aguardar ? { apos: (await $.clock.now()) + aguardar } : {}),
+      }
+      $.ui.toast(aguardar ? x.toasts.atrasada : x.toasts.troca)
     }
     return next(e)
   }).catch(($, e, next) => next(e))

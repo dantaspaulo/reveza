@@ -73,6 +73,8 @@ export type Textos = {
     semModelo: (modelo: string) => string
     modeloPadrao: (modelo: string) => string
     outraConta: string
+    atrasada: string
+    naoPegou: (email: string) => string
   }
 }
 
@@ -149,6 +151,15 @@ export function textos(i: Idioma = atual): Textos {
         'Esta sessão usa outra conta, não a que o Reveza põe em uso (por exemplo, a do app de desktop, que tem login próprio). O Reveza não troca a conta dela: espere a janela renovar ou continue no terminal.',
         "This session uses another account, not the one Reveza puts in use (for example, the desktop app's, which has its own sign-in). Reveza does not switch its account: wait for the window to reset or carry on in the terminal.",
       ),
+      atrasada: o(
+        'Esta sessão ainda estava na conta anterior. O Reveza já trocou de conta: em instantes a sessão continua sozinha na conta em uso.',
+        'This session was still on the previous account. Reveza has already switched accounts: in a moment the session continues on its own on the account in use.',
+      ),
+      naoPegou: email =>
+        o(
+          `Esta sessão continua na conta ${email}, que bateu o limite, e não pegou a troca do Reveza. Feche e abra esta sessão para ela entrar na conta em uso (se for o app de desktop, que tem login próprio, troque a conta nele).`,
+          `This session is still on ${email}, which hit its limit, and did not pick up Reveza's switch. Close and reopen this session so it moves to the account in use (if it is the desktop app, which has its own sign-in, switch the account there).`,
+        ),
     },
   }
 }

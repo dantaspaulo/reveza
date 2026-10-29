@@ -3,6 +3,8 @@
 // usa medida e limite da sessão que está na conta em uso.
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { ativaEm, contaEstacionada, montar, type Montado } from "./falsos.js";
 
 let m: Montado;
@@ -44,9 +46,9 @@ describe("a conta da sessão", () => {
     m = await montar();
     await ativaEm(m, "B", 1);
     const outra = await m.agente.alvoPonte().medida({ sessao: "app", versao: e().versao, conta: conta("A"), janelas: [{ tipo: "five_hour", pct: 48 }] });
-    assert.deepEqual(outra.corpo, { ok: true, outraConta: true });
+    assert.deepEqual(outra.corpo, { ok: true, outraConta: true, conta: "outra" });
     const mesma = await m.agente.alvoPonte().medida({ sessao: "cli", versao: e().versao, conta: conta("B"), janelas: [{ tipo: "five_hour", pct: 2 }] });
-    assert.deepEqual(mesma.corpo, { ok: true, outraConta: false });
+    assert.deepEqual(mesma.corpo, { ok: true, outraConta: false, conta: "ativa" });
     assert.equal(m.log.linhas.filter((l) => l.includes("usa outra conta")).length, 1, "uma linha no log por sessão");
     await m.agente.alvoPonte().medida({ sessao: "app", versao: e().versao, conta: conta("A"), janelas: [{ tipo: "five_hour", pct: 49 }] });
     assert.equal(m.log.linhas.filter((l) => l.includes("usa outra conta")).length, 1);
@@ -88,7 +90,7 @@ describe("a conta da sessão", () => {
 
   test("sessão ainda na conta que acabou de sair: a troca já aconteceu, ela entra na fila e a conta nova não enche", async () => {
     m = await montar();
-    await ativaEm(m, "B", 99);
+    const b = await ativaEm(m, "B", 99);
     const c = contaEstacionada(m, "C", 3);
     const r0 = await tr().trocar(c, "teste");
     assert.ok(r0.ok);
@@ -99,9 +101,109 @@ describe("a conta da sessão", () => {
     assert.equal(e().ativa, c);
     assert.equal(cinco(c), 3, "a conta nova não ficou cheia");
     assert.equal(e().fila[0]!.sessao, "cli");
-    // passados 2 minutos, a mesma conta já não é "a que acabou de sair": é outra conta
-    m.relogio.t += 121;
-    const depois = tr().limiteDaSessao({ sessao: "cli2", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B") });
-    assert.equal(depois.outraConta, true);
+    assert.equal(r.aguardarS, 35, "o mod espera a sessão reler o login antes de mandá-la continuar");
+    assert.equal(cinco(b), 100, "a conta da sessão é que encheu");
+  });
+});
+
+// Relato do Paulo (29/10/2026): depois da troca de contato para suelen, sessões com turnos longos seguiram na conta que
+// saiu por 7 a 11 minutos (processos que sobraram de um editor fechado não releem o login), até ela bater 100%. A 0.10.3
+// só reconhecia a conta que saiu nos 2 primeiros minutos: o limite delas virou "outra conta", e elas pararam sem voltar.
+describe("sessão atrasada na troca", () => {
+  async function trocadaHa(minutos: number) {
+    m = await montar();
+    const b = await ativaEm(m, "B", 95);
+    const c = contaEstacionada(m, "C", 3);
+    assert.ok((await tr().trocar(c, "teste")).ok);
+    m.relogio.t += minutos * 60;
+    return { b, c };
+  }
+
+  test("10 minutos depois da troca, o limite na conta que saiu: ela enche, a em uso não; a sessão entra na fila e volta em 35 s", async () => {
+    const { b, c } = await trocadaHa(10);
+    const r = await m.agente.alvoPonte().limite({ sessao: "s1", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B") });
+    assert.deepEqual(r.corpo, { ok: true, versao: e().versao, trocou: true, aguardarS: 35 });
+    await m.agente.esperar();
+    assert.equal(e().ativa, c, "não troca de novo");
+    assert.equal(cinco(c), 3, "a conta em uso não ficou cheia");
+    assert.equal(cinco(b), 100, "a conta da sessão ficou cheia");
+    assert.equal(e().fila[0]!.sessao, "s1");
+    assert.equal(e().fila[0]!.estado, "aguardando");
+    assert.ok(e().eventos.some((ev) => ev.tipo === "limite" && ev.texto.includes("b@exemplo.com") && ev.texto.includes("c@exemplo.com")));
+  });
+
+  test("voltou e bateu de novo na mesma conta: espera mais; na terceira, a sessão não pegou a troca e o mod diz isso", async () => {
+    await trocadaHa(10);
+    const limite = () => m.agente.alvoPonte().limite({ sessao: "s1", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B") });
+    assert.equal(((await limite()).corpo as Record<string, unknown>).aguardarS, 35);
+    await m.agente.alvoPonte().fila("s1", "retomada");
+    assert.equal(((await limite()).corpo as Record<string, unknown>).aguardarS, 120);
+    await m.agente.alvoPonte().fila("s1", "retomada");
+    const terceira = await limite();
+    assert.deepEqual(terceira.corpo, { ok: true, versao: e().versao, outraConta: true, naoPegou: "b@exemplo.com" });
+    assert.equal(e().fila.filter((f) => f.estado === "aguardando").length, 0, "não entra na fila de novo");
+    assert.ok(e().eventos.some((ev) => ev.tipo === "aviso" && ev.texto.includes("não pegou a troca")));
+    // outra sessão na mesma conta começa do zero
+    const outra = await m.agente.alvoPonte().limite({ sessao: "s2", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B") });
+    assert.equal((outra.corpo as Record<string, unknown>).aguardarS, 35);
+  });
+
+  test("uma troca nova no meio: a contagem da sessão recomeça", async () => {
+    const { b } = await trocadaHa(10);
+    const limite = () => tr().limiteDaSessao({ sessao: "s1", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B") });
+    assert.equal(limite().aguardarS, 35);
+    assert.equal(limite().aguardarS, 120);
+    const d = contaEstacionada(m, "D", 1);
+    assert.ok((await tr().trocar(d, "teste")).ok);
+    m.relogio.t += 600;
+    assert.equal(limite().aguardarS, 35);
+    assert.equal(cinco(b), 100);
+  });
+
+  test("modelo recusado numa sessão atrasada: a conta dela fica sem o modelo, a em uso não", async () => {
+    const { b, c } = await trocadaHa(10);
+    const r = await m.agente.alvoPonte().limite({ sessao: "s1", cwd: "/tmp", tipo: "interativa", erro: "modelo", modelo: "Fable 5.1", versao: e().versao, conta: conta("B") });
+    assert.deepEqual(r.corpo, { ok: true, versao: e().versao, trocou: true, aguardarS: 35 });
+    assert.equal(e().semModelo?.[b]?.modelo, "Fable 5.1");
+    assert.equal(e().semModelo?.[c], undefined);
+    assert.equal(cinco(b), 95, "modelo recusado não enche a janela");
+  });
+
+  test("sessão de terminal atrasada: volta logo, num processo novo (que lê o login da conta em uso)", async () => {
+    await trocadaHa(10);
+    e().config.retomarHeadless = true;
+    const sessao = "77777777-0000-4000-8000-000000000007";
+    const dir = path.join(m.c.projetos, "-projeto");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${sessao}.jsonl`), JSON.stringify({ type: "user", sessionId: sessao, cwd: m.c.base }) + "\n");
+    // outra sessão de terminal esperando uma conta livre não volta junto
+    const esperando = "66666666-0000-4000-8000-000000000006";
+    fs.writeFileSync(path.join(dir, `${esperando}.jsonl`), JSON.stringify({ type: "user", sessionId: esperando, cwd: m.c.base }) + "\n");
+    e().fila.unshift({ sessao: esperando, cwd: m.c.base, tipo: "headless", em: m.relogio.agora(), estado: "aguardando", conta: null });
+    await m.agente.alvoPonte().limite({ sessao, cwd: "/tmp", tipo: "headless", versao: e().versao, conta: conta("B") });
+    await m.agente.esperar();
+    assert.deepEqual(m.cli.retomadas, [{ sessao, cwd: m.c.base }]);
+    assert.equal(e().fila.find((f) => f.sessao === sessao)!.estado, "retomada");
+    assert.equal(e().fila.find((f) => f.sessao === esperando)!.estado, "aguardando");
+  });
+
+  test("a medida da sessão atrasada não entra na conta em uso; o mod relê a conta dela logo, e o log diz qual é", async () => {
+    const { c } = await trocadaHa(1);
+    const medida = (sessao: string) =>
+      m.agente.alvoPonte().medida({ sessao, versao: e().versao, conta: conta("B"), janelas: [{ tipo: "five_hour", pct: 97 }] });
+    // no primeiro minuto é só a sessão que ainda não releu o login: o mod não mostra "outra conta"
+    assert.deepEqual((await medida("s1")).corpo, { ok: true, outraConta: false, conta: "atrasada" });
+    assert.equal(cinco(c), 3);
+    m.relogio.t += 120;
+    assert.deepEqual((await medida("s1")).corpo, { ok: true, outraConta: true, conta: "atrasada" });
+    assert.equal(cinco(c), 3);
+    assert.ok(m.log.linhas.some((l) => l.includes("está em b@exemplo.com, não na em uso (c@exemplo.com)")));
+  });
+
+  test("login de fora (conta que não é deste computador) segue como outra conta, sem fila nem espera", async () => {
+    await trocadaHa(10);
+    const r = await m.agente.alvoPonte().limite({ sessao: "app", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("Z") });
+    assert.deepEqual(r.corpo, { ok: true, versao: e().versao, outraConta: true });
+    assert.equal(e().fila.length, 0);
   });
 });

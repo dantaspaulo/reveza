@@ -7,6 +7,27 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.10.5 · 29/10/2026
+
+A sessão que ficou na conta anterior depois da troca volta sozinha. Relato do Paulo: "quando bateu o limite, ele não
+trocou e mostrou a msg: You've hit your 5-hour limit · resets 3:50pm (America/Fortaleza) e parou". Precisa dos
+computadores na 0.10.5 (no painel, **Computadores → Atualizar**) e de sessões abertas depois da atualização (o mod
+novo); a nuvem não muda.
+
+- **O que aconteceu:** o Reveza trocou de conta às 11:43, com a anterior em 95%. Quatro minutos depois a tela do Mac
+  travou e a sessão gráfica fechou; os processos das sessões do editor que sobraram seguiram trabalhando na conta
+  anterior por 7 a 11 minutos, até ela chegar a 100%. A 0.10.3 só reconhecia a conta anterior nos 2 primeiros minutos
+  depois da troca: depois disso, o limite dessas sessões era tratado como de um login de fora (o do app de desktop), e
+  elas paravam sem voltar.
+- **Agora:** a sessão numa conta deste computador que não é a em uso, a qualquer tempo depois da troca, é tratada como
+  atrasada. No limite, a conta dela fica marcada como cheia (e não a em uso), a sessão entra na fila e o mod a manda
+  continuar depois de 35 segundos, o tempo de o assistente reler o login (ele relê a cada 30 s). A sessão de terminal
+  volta na hora, num processo novo.
+- **Se mesmo assim ela não pegar a troca** (voltou e bateu de novo na mesma conta duas vezes), o mod diz em que conta a
+  sessão ficou e pede para fechar e abrir a sessão, e sai um aviso nos eventos do painel, em vez de insistir.
+- No limite, o mod lê a conta da sessão na hora (antes usava a lida até 30 minutos antes), e o log do agente diz em que
+  conta está cada sessão fora da em uso.
+
 ## 0.10.4 · 23/10/2026
 
 A troca que não vale nas sessões do Windows passa a ser avisada. Relato de um usuário: "mesmo eu trocando de conta no
