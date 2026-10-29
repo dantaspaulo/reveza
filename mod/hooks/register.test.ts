@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 
-import { aguardarMs, hmacHex, janelasTexto, releituraDaConta, resumo, tipoDoLimite } from './register'
+import { aguardarMs, entradaDaSessao, hmacHex, janelasTexto, releituraDaConta, resumo, tipoDoLimite } from './register'
 
 // Agente falso: responde /api/ativa com a versão do momento e guarda o que o mod mandou.
 // `instalacao` é o conteúdo do instalacao.json (o idioma da instalação); sem ele, o arquivo não existe (português).
@@ -31,6 +31,8 @@ function agente(on: On, instalacao?: string) {
     outraConta: false,
     // o que o agente acrescenta à resposta do limite (sessão atrasada na troca: { trocou, aguardarS }, ou { naoPegou })
     limiteExtra: {} as Record<string, unknown>,
+    // o CLAUDE_CODE_ENTRYPOINT da sessão
+    entrada: undefined as string | undefined,
   }
   const perfis: { auth: string | undefined; cabecalhos: Record<string, string> }[] = []
   on('http.fetch', async ($, e) => {
@@ -66,7 +68,7 @@ function agente(on: On, instalacao?: string) {
     return { value: { status: 200, ok: true, headers, text: JSON.stringify(resposta) } }
   })
   on('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '' } }) as never)
-  on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/teste' : undefined }))
+  on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/teste' : e.name === 'CLAUDE_CODE_ENTRYPOINT' ? estado.entrada : undefined }))
   on('fs.read', ($, e) => {
     if (e.path === '/home/teste/.reveza/ponte.chave') return { value: `${'c'.repeat(64)}\n` }
     if (instalacao && e.path === '/home/teste/.reveza/instalacao.json') return { value: instalacao }
@@ -648,6 +650,31 @@ test('a conta da sessão é relida logo quando ela está numa conta deste comput
   expect(releituraDaConta({ conta: 'ativa', outraConta: false })).toBe(null)
   expect(releituraDaConta({ outraConta: false })).toBe(null)
   expect(releituraDaConta(null)).toBe(null)
+})
+
+test('o limite leva de onde a sessão roda (o app de desktop tem login próprio, e o agente não o manda esperar)', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos, estado } = agente(on)
+  comModelo(on)
+  estado.entrada = 'claude-desktop'
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 10_000)
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  const limites = recebidos.filter(r => r.url.endsWith('/api/limite'))
+  expect(limites).toHaveLength(2)
+  expect(limites.every(r => r.corpo?.entrada === 'claude-desktop')).toBe(true)
+})
+
+test('de onde a sessão roda vai só com a forma de um nome', () => {
+  expect(entradaDaSessao('claude-desktop')).toBe('claude-desktop')
+  expect(entradaDaSessao('cli')).toBe('cli')
+  expect(entradaDaSessao('sdk-ts')).toBe('sdk-ts')
+  expect(entradaDaSessao(undefined)).toBe(null)
+  expect(entradaDaSessao('')).toBe(null)
+  expect(entradaDaSessao('Claude Desktop')).toBe(null)
+  expect(entradaDaSessao('x'.repeat(41))).toBe(null)
+  expect(entradaDaSessao('a\nb')).toBe(null)
 })
 
 test('a espera que o agente pede vale em segundos, com teto de 10 minutos', () => {

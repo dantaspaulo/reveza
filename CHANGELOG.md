@@ -25,6 +25,8 @@ novo); a nuvem não muda.
   volta na hora, num processo novo.
 - **Se mesmo assim ela não pegar a troca** (voltou e bateu de novo na mesma conta duas vezes), o mod diz em que conta a
   sessão ficou e pede para fechar e abrir a sessão, e sai um aviso nos eventos do painel, em vez de insistir.
+- O app de desktop, que tem login próprio, segue como na 0.10.3: o limite dele avisa na hora que a sessão está noutra
+  conta, sem esperar.
 - No limite, o mod lê a conta da sessão na hora (antes usava a lida até 30 minutos antes), e o log do agente diz em que
   conta está cada sessão fora da em uso.
 

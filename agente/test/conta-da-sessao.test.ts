@@ -200,6 +200,21 @@ describe("sessão atrasada na troca", () => {
     assert.ok(m.log.linhas.some((l) => l.includes("está em b@exemplo.com, não na em uso (c@exemplo.com)")));
   });
 
+  test("o app de desktop (login próprio) numa conta deste computador: avisa na hora, sem esperar nem fila", async () => {
+    const { b } = await trocadaHa(10);
+    for (const entrada of ["claude-desktop", "local-agent"]) {
+      const r = await m.agente.alvoPonte().limite({ sessao: `app-${entrada}`, cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B"), entrada });
+      assert.deepEqual(r.corpo, { ok: true, versao: e().versao, outraConta: true });
+    }
+    const modelo = await m.agente.alvoPonte().limite({ sessao: "app", cwd: "/tmp", tipo: "interativa", erro: "modelo", modelo: "Fable 5.1", versao: e().versao, conta: conta("B"), entrada: "claude-desktop" });
+    assert.equal((modelo.corpo as Record<string, unknown>).outraConta, true);
+    assert.equal(e().fila.length, 0);
+    assert.equal(cinco(b), 95);
+    // do terminal ou do editor, a mesma conta é sessão atrasada
+    const cli = await m.agente.alvoPonte().limite({ sessao: "cli", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B"), entrada: "claude-vscode" });
+    assert.equal((cli.corpo as Record<string, unknown>).aguardarS, 35);
+  });
+
   test("login de fora (conta que não é deste computador) segue como outra conta, sem fila nem espera", async () => {
     await trocadaHa(10);
     const r = await m.agente.alvoPonte().limite({ sessao: "app", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("Z") });

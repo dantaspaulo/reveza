@@ -74,6 +74,11 @@ export const SEM_MODELO_S = 6 * 3600;
 export const ATRASADA_ESPERA_S = [35, 120] as const;
 /** As vezes que uma sessão atrasada na mesma conta pode ter voltado, nesta mesma versão da troca, valem por isto. */
 export const ATRASADA_VALE_S = 3600;
+/**
+ * Onde o assistente roda com login próprio, que o Reveza não troca (o app de desktop, pelo `CLAUDE_CODE_ENTRYPOINT` que o
+ * mod manda): numa conta deste computador ele não está atrasado na troca, está noutra conta, e esperar não adianta.
+ */
+const LOGIN_PROPRIO = new Set(["claude-desktop", "local-agent"]);
 
 export type SituacaoDaSessao = "ativa" | "atrasada" | "outra" | "desconhecida";
 export type RespostaDoLimite = {
@@ -600,6 +605,12 @@ export class Trocador {
     return null;
   }
 
+  /** A conta da sessão no limite: o app de desktop numa conta deste computador está noutra conta, não atrasado. */
+  private contaNoLimite(corpo: Record<string, unknown>): SituacaoDaSessao {
+    const s = this.contaDaSessao(corpo);
+    return s === "atrasada" && LOGIN_PROPRIO.has(String(corpo.entrada ?? "")) ? "outra" : s;
+  }
+
   /**
    * O mod mostra à sessão que ela está noutra conta: login de fora, ou uma conta deste computador passados 2 minutos da
    * troca (antes disso é só a sessão que ainda não releu o login).
@@ -646,7 +657,7 @@ export class Trocador {
     const modelo = String(corpo.modelo ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60) || "?";
     const ativa = this.estado.ativa;
     // a sessão roda num login de fora: trocar a em uso não a ajuda, e a conta em uso não fica marcada sem o modelo
-    const situacao = this.contaDaSessao(corpo);
+    const situacao = this.contaNoLimite(corpo);
     if (situacao === "outra") return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, modelo, outraConta: true };
     if (situacao === "atrasada") return { ...this.limiteAtrasada(corpo, sessao, modelo), modelo };
     this.enfileirar(corpo, sessao);
@@ -670,7 +681,7 @@ export class Trocador {
     const sessao = String(corpo.sessao ?? "").slice(0, 80);
     const ativa = this.estado.ativa;
     // o limite é de um login de fora: a em uso não fica cheia, a sessão não entra na fila (trocar não a faria voltar)
-    const situacao = this.contaDaSessao(corpo);
+    const situacao = this.contaNoLimite(corpo);
     if (situacao === "outra") return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true };
     if (situacao === "atrasada") return this.limiteAtrasada(corpo, sessao, null);
     this.enfileirar(corpo, sessao);

@@ -202,6 +202,15 @@ export function releituraDaConta(resposta: { outraConta?: boolean; conta?: strin
   return resposta?.outraConta === true ? CONTA_RECONFERE_MS : null
 }
 
+/**
+ * De onde a sessão roda (`CLAUDE_CODE_ENTRYPOINT`: cli, claude-vscode, claude-desktop...), só com a forma de um nome. O
+ * agente usa no limite: o app de desktop tem login próprio, e a sessão dele numa conta deste computador não está atrasada
+ * na troca (esperar não adianta).
+ */
+export function entradaDaSessao(valor: unknown): string | null {
+  return typeof valor === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(valor) ? valor : null
+}
+
 /** O tempo que o agente pediu para esperar antes de a sessão continuar, em ms: 0 sem pedido, e no máximo 10 minutos. */
 export function aguardarMs(segundos: unknown): number {
   return typeof segundos === 'number' && Number.isFinite(segundos) && segundos > 0 ? Math.min(segundos * 1000, AGUARDAR_MAXIMO_MS) : 0
@@ -399,6 +408,7 @@ export const register: Register = (on, options) => {
       if (!repetiu) {
         try {
           const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)), true)
+          const entrada = entradaDaSessao(await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => undefined))
           const p = await pedido('POST', '/api/limite', {
             sessao,
             cwd: await $.session.cwd(),
@@ -407,6 +417,7 @@ export const register: Register = (on, options) => {
             modelo,
             versao: antesModelo,
             ...(conta ? { conta } : {}),
+            ...(entrada ? { entrada } : {}),
           })
           const r = await $.http.fetch(`${BASE}/api/limite`, p.init)
           dito = (await doAgente(r, p.nonce)) ? lerJson(r) : null
@@ -439,7 +450,16 @@ export const register: Register = (on, options) => {
     let resposta: { ok: boolean; versao: number; trocou?: boolean; outraConta?: boolean; aguardarS?: number; naoPegou?: string } | null = null
     try {
       const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)), true)
-      const p = await pedido('POST', '/api/limite', { sessao, cwd: await $.session.cwd(), tipo, erro: 'rate_limit', versao: antes, ...(conta ? { conta } : {}) })
+      const entrada = entradaDaSessao(await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => undefined))
+      const p = await pedido('POST', '/api/limite', {
+        sessao,
+        cwd: await $.session.cwd(),
+        tipo,
+        erro: 'rate_limit',
+        versao: antes,
+        ...(conta ? { conta } : {}),
+        ...(entrada ? { entrada } : {}),
+      })
       const r = await $.http.fetch(`${BASE}/api/limite`, p.init)
       resposta = (await doAgente(r, p.nonce)) ? lerJson(r) : null
     } catch {

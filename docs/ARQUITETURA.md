@@ -176,8 +176,10 @@ recusado) marca a conta dela (cheia, ou sem o modelo), põe a sessão na fila e 
 120 s na segunda vez). O mod espera esse tempo e manda a sessão continuar; a de terminal volta na hora, num processo
 novo, que lê o login. Voltou e bateu de novo na mesma conta, na mesma versão da troca, pela terceira vez: a sessão não
 pega a troca (processo sem acesso ao chaveiro, login próprio numa dessas contas), e o agente responde `outraConta` com
-`naoPegou` (o e-mail da conta), o mod diz isso à sessão e sai um aviso nos eventos. No limite o mod lê a conta da sessão
-de novo, sem a guardada: o limite é da credencial do pedido que acabou de falhar. O log diz em que conta está cada
+`naoPegou` (o e-mail da conta), o mod diz isso à sessão e sai um aviso nos eventos. O app de desktop tem login próprio:
+o mod manda no limite o `CLAUDE_CODE_ENTRYPOINT` da sessão, e com `claude-desktop` ou `local-agent` a conta deste
+computador conta como outra conta (avisa na hora, sem esperar nem fila), como na 0.10.3. No limite o mod lê a conta da
+sessão de novo, sem a guardada: o limite é da credencial do pedido que acabou de falhar. O log diz em que conta está cada
 sessão fora da em uso.
 
 **O login do assistente no Windows (0.10.4).** O assistente passou a poder guardar o login no Gerenciador de
