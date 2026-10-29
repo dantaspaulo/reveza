@@ -177,8 +177,9 @@ recusado) marca a conta dela (cheia, ou sem o modelo), põe a sessão na fila e 
 novo, que lê o login. Voltou e bateu de novo na mesma conta, na mesma versão da troca, pela terceira vez: a sessão não
 pega a troca (processo sem acesso ao chaveiro, login próprio numa dessas contas), e o agente responde `outraConta` com
 `naoPegou` (o e-mail da conta), o mod diz isso à sessão e sai um aviso nos eventos. O app de desktop tem login próprio:
-o mod manda no limite o `CLAUDE_CODE_ENTRYPOINT` da sessão, e com `claude-desktop` ou `local-agent` a conta deste
-computador conta como outra conta (avisa na hora, sem esperar nem fila), como na 0.10.3. No limite o mod lê a conta da
+o mod manda na medida e no limite o `CLAUDE_CODE_ENTRYPOINT` da sessão, e com `claude-desktop`, `claude-desktop-3p` ou
+`local-agent` (o Cowork; o mesmo conjunto que o assistente trata como app de desktop) a conta deste computador conta como
+outra conta (no limite avisa na hora, sem esperar nem fila), como na 0.10.3. No limite o mod lê a conta da
 sessão de novo, sem a guardada: o limite é da credencial do pedido que acabou de falhar. O log diz em que conta está cada
 sessão fora da em uso.
 

@@ -659,8 +659,10 @@ test('o limite leva de onde a sessão roda (o app de desktop tem login próprio,
   estado.entrada = 'claude-desktop'
   await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
   await andar(relogio, 10_000)
+  await $.session.measure(MEDIDA)
   await $.classic.StopFailure({ error: 'rate_limit' })
   await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  expect(recebidos.find(r => r.url.endsWith('/api/medida'))?.corpo?.entrada).toBe('claude-desktop')
   const limites = recebidos.filter(r => r.url.endsWith('/api/limite'))
   expect(limites).toHaveLength(2)
   expect(limites.every(r => r.corpo?.entrada === 'claude-desktop')).toBe(true)

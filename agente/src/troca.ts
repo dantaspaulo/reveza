@@ -76,9 +76,10 @@ export const ATRASADA_ESPERA_S = [35, 120] as const;
 export const ATRASADA_VALE_S = 3600;
 /**
  * Onde o assistente roda com login próprio, que o Reveza não troca (o app de desktop, pelo `CLAUDE_CODE_ENTRYPOINT` que o
- * mod manda): numa conta deste computador ele não está atrasado na troca, está noutra conta, e esperar não adianta.
+ * mod manda): numa conta deste computador ele não está atrasado na troca, está noutra conta, e esperar não adianta. É o
+ * mesmo conjunto que o assistente 2.1.312 trata como app de desktop (o Cowork é o `local-agent`).
  */
-const LOGIN_PROPRIO = new Set(["claude-desktop", "local-agent"]);
+const LOGIN_PROPRIO = new Set(["claude-desktop", "claude-desktop-3p", "local-agent"]);
 
 export type SituacaoDaSessao = "ativa" | "atrasada" | "outra" | "desconhecida";
 export type RespostaDoLimite = {
@@ -592,7 +593,8 @@ export class Trocador {
     const a = this.estado.ativa ? this.estado.contas[this.estado.ativa] : null;
     if (!conta || !org || !a?.accountUuid || !a.orgUuid) return "desconhecida";
     if (a.accountUuid === conta && a.orgUuid === org) return "ativa";
-    return this.contaDeOutraSessao(corpo) ? "atrasada" : "outra";
+    // o app de desktop numa conta deste computador está noutra conta (login próprio), não atrasado na troca
+    return this.contaDeOutraSessao(corpo) && !LOGIN_PROPRIO.has(String(corpo.entrada ?? "")) ? "atrasada" : "outra";
   }
 
   /** A conta deste computador, fora a em uso, em que a sessão está (pela conta que o mod leu). */
@@ -603,12 +605,6 @@ export class Trocador {
       if (id !== this.estado.ativa && c.accountUuid === d.accountUuid && c.orgUuid === d.orgUuid) return id;
     }
     return null;
-  }
-
-  /** A conta da sessão no limite: o app de desktop numa conta deste computador está noutra conta, não atrasado. */
-  private contaNoLimite(corpo: Record<string, unknown>): SituacaoDaSessao {
-    const s = this.contaDaSessao(corpo);
-    return s === "atrasada" && LOGIN_PROPRIO.has(String(corpo.entrada ?? "")) ? "outra" : s;
   }
 
   /**
@@ -657,7 +653,7 @@ export class Trocador {
     const modelo = String(corpo.modelo ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60) || "?";
     const ativa = this.estado.ativa;
     // a sessão roda num login de fora: trocar a em uso não a ajuda, e a conta em uso não fica marcada sem o modelo
-    const situacao = this.contaNoLimite(corpo);
+    const situacao = this.contaDaSessao(corpo);
     if (situacao === "outra") return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, modelo, outraConta: true };
     if (situacao === "atrasada") return { ...this.limiteAtrasada(corpo, sessao, modelo), modelo };
     this.enfileirar(corpo, sessao);
@@ -681,7 +677,7 @@ export class Trocador {
     const sessao = String(corpo.sessao ?? "").slice(0, 80);
     const ativa = this.estado.ativa;
     // o limite é de um login de fora: a em uso não fica cheia, a sessão não entra na fila (trocar não a faria voltar)
-    const situacao = this.contaNoLimite(corpo);
+    const situacao = this.contaDaSessao(corpo);
     if (situacao === "outra") return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true };
     if (situacao === "atrasada") return this.limiteAtrasada(corpo, sessao, null);
     this.enfileirar(corpo, sessao);

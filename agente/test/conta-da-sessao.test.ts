@@ -205,7 +205,7 @@ describe("sessão atrasada na troca", () => {
 
   test("o app de desktop (login próprio) numa conta deste computador: avisa na hora, sem esperar nem fila", async () => {
     const { b } = await trocadaHa(10);
-    for (const entrada of ["claude-desktop", "local-agent"]) {
+    for (const entrada of ["claude-desktop", "claude-desktop-3p", "local-agent"]) {
       const r = await m.agente.alvoPonte().limite({ sessao: `app-${entrada}`, cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B"), entrada });
       assert.deepEqual(r.corpo, { ok: true, versao: e().versao, outraConta: true });
     }
@@ -216,6 +216,12 @@ describe("sessão atrasada na troca", () => {
     // do terminal ou do editor, a mesma conta é sessão atrasada
     const cli = await m.agente.alvoPonte().limite({ sessao: "cli", cwd: "/tmp", tipo: "interativa", versao: e().versao, conta: conta("B"), entrada: "claude-vscode" });
     assert.equal((cli.corpo as Record<string, unknown>).aguardarS, 35);
+  });
+
+  test("a medida do app de desktop numa conta deste computador já sai como outra conta, mesmo logo depois da troca", async () => {
+    await trocadaHa(1);
+    const r = await m.agente.alvoPonte().medida({ sessao: "app", versao: e().versao, conta: conta("B"), entrada: "claude-desktop", janelas: [{ tipo: "five_hour", pct: 97 }] });
+    assert.deepEqual(r.corpo, { ok: true, outraConta: true, conta: "outra" });
   });
 
   test("login de fora (conta que não é deste computador) segue como outra conta, sem fila nem espera", async () => {

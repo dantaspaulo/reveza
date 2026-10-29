@@ -21,8 +21,8 @@ novo); a nuvem não muda.
   elas paravam sem voltar.
 - **Agora:** a sessão numa conta deste computador que não é a em uso, a qualquer tempo depois da troca, é tratada como
   atrasada. No limite, a conta dela fica marcada como cheia (e não a em uso), a sessão entra na fila e o mod a manda
-  continuar depois de 35 segundos, o tempo de o assistente reler o login (ele relê a cada 30 s). A sessão de terminal
-  volta na hora, num processo novo.
+  continuar depois de 35 segundos, o tempo de o assistente reler o login (no Mac ele relê a cada 30 s, medido). A sessão
+  de terminal volta na hora, num processo novo.
 - **Se mesmo assim ela não pegar a troca** (voltou e bateu de novo na mesma conta duas vezes), o mod diz em que conta a
   sessão ficou e pede para fechar e abrir a sessão, e sai um aviso nos eventos do painel, em vez de insistir.
 - O app de desktop, que tem login próprio, segue como na 0.10.3: o limite dele avisa na hora que a sessão está noutra

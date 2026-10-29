@@ -247,6 +247,8 @@ export const register: Register = (on, options) => {
   let contaLida: { valor: ContaSessao | null; versao: number | null; ate: number } | null = null
   // o agente disse que esta sessão está noutra conta: a linha de status diz isso, e o limite dela não pede troca
   let outraConta = false
+  // de onde a sessão roda (entradaDaSessao), lido no começo dela; vai na medida e no limite
+  let entrada: string | null = null
 
   // `fresca`: no limite a conta é lida de novo, porque o limite é da credencial do pedido que acabou de falhar
   async function contaAtual(agora: number, ler: () => Promise<ContaSessao | null>, fresca = false): Promise<ContaSessao | null> {
@@ -279,6 +281,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     interativa = e.isInteractive
     sessao = await $.session.id()
+    entrada = entradaDaSessao(await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => undefined))
     const raiz =
       (await $.env.get('REVEZA_HOME')) ??
       `${(await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''}/.reveza`
@@ -353,7 +356,7 @@ export const register: Register = (on, options) => {
         const agora = Date.now()
         const conta = await contaAtual(agora, () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)))
         try {
-          const p = await pedido('POST', '/api/medida', { sessao, versao, janelas, ...(conta ? { conta } : {}) })
+          const p = await pedido('POST', '/api/medida', { sessao, versao, janelas, ...(conta ? { conta } : {}), ...(entrada ? { entrada } : {}) })
           const r = await $.http.fetch(`${BASE}/api/medida`, p.init)
           if (await doAgente(r, p.nonce)) {
             const resposta = lerJson<{ outraConta?: boolean; conta?: string }>(r)
@@ -408,7 +411,6 @@ export const register: Register = (on, options) => {
       if (!repetiu) {
         try {
           const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)), true)
-          const entrada = entradaDaSessao(await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => undefined))
           const p = await pedido('POST', '/api/limite', {
             sessao,
             cwd: await $.session.cwd(),
@@ -450,7 +452,6 @@ export const register: Register = (on, options) => {
     let resposta: { ok: boolean; versao: number; trocou?: boolean; outraConta?: boolean; aguardarS?: number; naoPegou?: string } | null = null
     try {
       const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)), true)
-      const entrada = entradaDaSessao(await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => undefined))
       const p = await pedido('POST', '/api/limite', {
         sessao,
         cwd: await $.session.cwd(),
