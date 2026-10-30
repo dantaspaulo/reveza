@@ -244,10 +244,11 @@ sites that always stay active, in the browser's performance options.
 **Switching and the computer's memory:** in editors (VS Code and its derivatives), on each switch the assistant's
 extension refreshes every panel, and each panel starts a new process, of up to 250 MB, just to read its settings again.
 With many panels and memory already tight, that burst can freeze the computer. So the automatic switch (at the
-threshold or on rotation) waits for free memory: the agent counts the assistant's open processes and only switches if
-10% of memory stays free after the burst (in practice, it waits when less than 30% is free). The wait has an end: with
-the account in use at 98%, or after 15 minutes, it switches anyway; switches from a session limit, the dashboard and the
-API never wait. When it holds a switch, a notice shows in the events.
+threshold or on rotation) waits for free memory: the agent counts the sessions opened by the editor extension and only
+switches if 10% of memory stays free after the burst (in practice, it waits when less than 30% is free). Without editor
+sessions (terminal only), the switch never waits. The wait has an end: with the account in use at 98%, or after 15
+minutes, it switches anyway; switches from a session limit, the dashboard and the API never wait. When it holds a
+switch, a notice shows in the events.
 
 <details>
 <summary><b>🔌 API and webhooks</b></summary>

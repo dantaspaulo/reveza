@@ -7,6 +7,20 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.10.7 · 30/10/2026
+
+A espera por memória na troca só vale para quem usa a extensão do assistente no editor. Pergunta do Paulo: como fica
+para quem pega o Reveza do GitHub e usa só o terminal? Precisa dos computadores na 0.10.7 (no painel, **Computadores →
+Atualizar**); a nuvem e o painel não mudam.
+
+- **O que acontecia na 0.10.6:** a conta da leva pegava todo processo do assistente, inclusive as sessões de terminal e
+  o `claude -p`, que não abrem processo nenhum na troca. Com a memória baixa, a troca de quem usa só o terminal
+  esperava sem motivo, até 15 minutos ou até a conta chegar a 98%.
+- **Agora:** só contam as sessões abertas pela extensão do editor (VS Code e os derivados dele), reconhecidas pela forma
+  como ela inicia o assistente (`--input-format stream-json`), no macOS, no Linux e no Windows. Sem sessão de editor, a
+  troca nunca espera, como antes da 0.10.6. Com editor, nada muda.
+- No Windows a contagem vai pelo PowerShell; se ela falhar, a troca não espera.
+
 ## 0.10.6 · 30/10/2026
 
 A troca automática espera sobrar memória no computador. Relato do Paulo: o Mac dele travou logo depois de trocas de

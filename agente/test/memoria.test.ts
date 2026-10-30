@@ -1,4 +1,5 @@
-// A troca automática espera sobrar memória para a leva de processos que ela abre nos editores (memoria.ts, 0.10.6).
+// A troca automática espera sobrar memória para a leva de processos que ela abre nos editores (memoria.ts, 0.10.6); só
+// as sessões da extensão do editor contam, e sem elas a troca não espera (0.10.7).
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -10,7 +11,7 @@ import { ESPERA_MAXIMA_S, esperarMemoria, lerMemoria, trocaPodeEsperar, type Mem
 import { ativaEm, BancoFalso, blob, contaEstacionada, ExecutorFalso, montar, NuvemFalsa, type Montado } from "./falsos.js";
 
 const GB = 1024 ** 3;
-const mem = (livrePct: number, processos: number | null = 16, totalGb = 16): Memoria => ({ livrePct, totalBytes: totalGb * GB, processos });
+const mem = (livrePct: number, sessoesEditor: number | null = 16, totalGb = 16): Memoria => ({ livrePct, totalBytes: totalGb * GB, sessoesEditor });
 
 describe("quando a troca pode esperar", () => {
   test("o gatilho abaixo de 100% e o rodízio esperam; limite, painel, API, 100% e motivo vazio, não", () => {
@@ -44,9 +45,10 @@ describe("a conta da espera", () => {
     assert.equal(esperarMemoria(mem(20, 4), p()).esperar, false);
   });
 
-  test("sem contar os processos, vale só a folga mínima", () => {
-    assert.equal(esperarMemoria(mem(9, null), p()).esperar, true);
-    assert.equal(esperarMemoria(mem(12, null), p()).esperar, false);
+  test("sem sessão de editor, ou sem conseguir contar, a troca não espera nem com a memória no fim", () => {
+    assert.equal(esperarMemoria(mem(3, 0), p()).esperar, false);
+    assert.equal(esperarMemoria(mem(3, null), p()).esperar, false);
+    assert.equal(esperarMemoria(mem(3, 1), p()).esperar, true);
   });
 
   test("conta em 98% ou mais, espera longa, sem leitura da memória ou motivo que não espera: troca", () => {
@@ -55,26 +57,26 @@ describe("a conta da espera", () => {
     assert.equal(esperarMemoria(mem(10), p({ desde: 1000 - ESPERA_MAXIMA_S + 1 })).esperar, true);
     assert.equal(esperarMemoria(mem(10), p({ desde: 1000 - ESPERA_MAXIMA_S })).esperar, false);
     assert.equal(esperarMemoria(null, p()).esperar, false);
-    assert.equal(esperarMemoria({ livrePct: 10, totalBytes: 0, processos: 3 }, p()).esperar, false);
+    assert.equal(esperarMemoria({ livrePct: 10, totalBytes: 0, sessoesEditor: 3 }, p()).esperar, false);
     assert.equal(esperarMemoria(mem(10), p({ motivo: "a sessão bateu o limite" })).esperar, false);
   });
 });
 
 describe("leitura da memória", () => {
-  test("macOS: sysctl e pgrep pelo caminho inteiro (o serviço roda sem /usr/sbin no PATH), só do usuário", async () => {
+  test("macOS: sysctl e pgrep pelo caminho inteiro (o serviço roda sem /usr/sbin no PATH), só as sessões do editor do usuário", async () => {
     const ex = new ExecutorFalso();
     ex.responder = (argv) =>
       argv[0] === "/usr/sbin/sysctl" ? { codigo: 0, saida: "37\n17179869184\n", erro: "" } : { codigo: 0, saida: "101\n202\n303\n", erro: "" };
-    assert.deepEqual(await lerMemoria(ex, "macos", { uid: 501 }), { livrePct: 37, totalBytes: 17179869184, processos: 3 });
+    assert.deepEqual(await lerMemoria(ex, "macos", { uid: 501 }), { livrePct: 37, totalBytes: 17179869184, sessoesEditor: 3 });
     assert.deepEqual(ex.chamadas[0]!.argv, ["/usr/sbin/sysctl", "-n", "kern.memorystatus_level", "hw.memsize"]);
-    assert.deepEqual(ex.chamadas[1]!.argv, ["/usr/bin/pgrep", "-x", "-U", "501", "claude"]);
+    assert.deepEqual(ex.chamadas[1]!.argv, ["/usr/bin/pgrep", "-f", "-U", "501", "claude.*input-format stream-json"]);
   });
 
   test("pgrep sem nenhum processo conta zero; sysctl que falha não lê (a troca não espera)", async () => {
     const ex = new ExecutorFalso();
     ex.responder = (argv) => (argv[0] === "/usr/sbin/sysctl" ? { codigo: 0, saida: "50\n1000\n", erro: "" } : { codigo: 1, saida: "", erro: "" });
-    assert.equal((await lerMemoria(ex, "macos", { uid: null }))!.processos, 0);
-    assert.deepEqual(ex.chamadas[1]!.argv, ["/usr/bin/pgrep", "-x", "claude"]);
+    assert.equal((await lerMemoria(ex, "macos", { uid: null }))!.sessoesEditor, 0);
+    assert.deepEqual(ex.chamadas[1]!.argv, ["/usr/bin/pgrep", "-f", "claude.*input-format stream-json"]);
     ex.responder = () => ({ codigo: 127, saida: "", erro: "não achei" });
     assert.equal(await lerMemoria(ex, "macos"), null);
   });
@@ -87,15 +89,20 @@ describe("leitura da memória", () => {
     ex.responder = () => ({ codigo: 0, saida: "7\n", erro: "" });
     const r = await lerMemoria(ex, "linux", { meminfo: arq, uid: 1000 });
     fs.rmSync(dir, { recursive: true, force: true });
-    assert.deepEqual(r, { livrePct: 25, totalBytes: 8000000 * 1024, processos: 1 });
-    assert.deepEqual(ex.chamadas[0]!.argv, ["/usr/bin/pgrep", "-x", "-U", "1000", "claude"]);
+    assert.deepEqual(r, { livrePct: 25, totalBytes: 8000000 * 1024, sessoesEditor: 1 });
+    assert.deepEqual(ex.chamadas[0]!.argv, ["/usr/bin/pgrep", "-f", "-U", "1000", "claude.*input-format stream-json"]);
   });
 
-  test("Windows: memória do sistema e tasklist", async () => {
+  test("Windows: memória do sistema e as sessões do editor pelo PowerShell (sem aspas duplas no comando)", async () => {
     const ex = new ExecutorFalso();
-    ex.responder = () => ({ codigo: 0, saida: '"claude.exe","4321","Console","1","150.000 K"\r\n"claude.exe","4400","Console","1","90.000 K"\r\n', erro: "" });
-    const r = await lerMemoria(ex, "windows", { so: { freemem: () => 4 * GB, totalmem: () => 16 * GB } });
-    assert.deepEqual(r, { livrePct: 25, totalBytes: 16 * GB, processos: 2 });
+    ex.responder = () => ({ codigo: 0, saida: "2\r\n", erro: "" });
+    const so = { freemem: () => 4 * GB, totalmem: () => 16 * GB };
+    assert.deepEqual(await lerMemoria(ex, "windows", { so }), { livrePct: 25, totalBytes: 16 * GB, sessoesEditor: 2 });
+    const argv = ex.chamadas[0]!.argv;
+    assert.deepEqual(argv.slice(0, 4), ["powershell", "-NoProfile", "-NonInteractive", "-Command"]);
+    assert.ok(argv[4]!.includes("claude.exe") && argv[4]!.includes("--input-format stream-json") && !argv[4]!.includes('"'), argv[4]);
+    ex.responder = () => ({ codigo: 0, saida: "", erro: "" });
+    assert.equal((await lerMemoria(ex, "windows", { so }))!.sessoesEditor, null, "saída vazia não vira zero");
   });
 });
 
@@ -120,6 +127,15 @@ describe("o agente sem nuvem", () => {
     await m.agente.agir();
     assert.equal(e().ativa, b);
     assert.ok(m.log.linhas.some((l) => l.includes("fim da espera por memória")), m.log.linhas.join("\n"));
+  });
+
+  test("sem sessão de editor (só terminal), a troca dos 95% não espera nem com pouca memória", async () => {
+    m = await montar({ memoria: async () => mem(5, 0) });
+    await ativaEm(m, "A", 95);
+    const b = contaEstacionada(m, "B", 3);
+    await m.agente.agir();
+    assert.equal(e().ativa, b);
+    assert.equal(segurou(), 0);
   });
 
   test("com a conta em 98%, troca mesmo com pouca memória", async () => {
