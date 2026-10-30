@@ -702,6 +702,8 @@ export async function montar(
     versoes?: import("../src/atualizar.js").FonteVersoes;
     /** O projeto do Supabase (do endereço da nuvem): sem ele, o agente não publica funções e painel. */
     refNuvem?: string | null;
+    /** A memória do computador (sem ela, a troca não espera memória). */
+    memoria?: () => Promise<import("../src/memoria.js").Memoria | null>;
     /** Mexe nos arquivos antes de o agente nascer (um estado.json estragado, uma cópia boa). */
     antes?: (c: Caminhos) => void;
   } = {},
@@ -737,6 +739,7 @@ export async function montar(
     node: "/falso/node",
     ambienteDoInstalador: { PATH: "/falso/bin" },
     refNuvem: opcoes.refNuvem ?? null,
+    memoria: opcoes.memoria,
   });
   await agente.iniciar({ laços: false, ponte: false });
   const limpar = () => {

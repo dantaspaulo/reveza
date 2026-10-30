@@ -23,6 +23,7 @@ import { aplicarAutoUpdater } from "./assistente.js";
 import { importar } from "./importar.js";
 import { iniciarCofre, lerChave, liberarComputadorNovo, pedirParaEntrar, publicarLigacao, receberLigacao, impressaoDaChave } from "./ligar.js";
 import { letreiro } from "./letreiro.js";
+import { lerMemoria } from "./memoria.js";
 import { NuvemRpc } from "./nuvem/rpc.js";
 import { guardarIdentidade, lerIdentidade, rpcSupabase } from "./nuvem/supabase.js";
 import type { Nuvem } from "./nuvem/tipos.js";
@@ -973,6 +974,8 @@ async function cmdRodar(amb: Ambiente, a: Args): Promise<number> {
     node: process.execPath,
     ambienteDoInstalador: ambienteDoUsuario(amb.env),
     refNuvem: refDaNuvem(identidade?.url),
+    // a troca automática espera sobrar memória para a leva de processos que ela abre nos editores (memoria.ts)
+    memoria: amb.env.REVEZA_TROCA_ESPERA_MEMORIA === "0" ? undefined : () => lerMemoria(amb.exec, amb.sistema),
     diagnostico: async (): Promise<Record<string, unknown>> => {
       // a conferência periódica (agente_ola) só lê: nunca conserta sozinha
       const r = await doctor(depsDentro());

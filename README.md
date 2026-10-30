@@ -236,6 +236,14 @@ Chrome e no Edge, por exemplo) pausa ou recarrega a aba parada: o painel avisa q
 novo quando você volta. Para ele não recarregar, ponha o endereço do painel entre os sites que ficam sempre ativos, nas
 opções de desempenho do navegador.
 
+**Troca e memória do computador:** nos editores (VS Code e os derivados dele), a cada troca a extensão do assistente
+atualiza todos os painéis, e cada painel abre um processo novo, de até 250 MB, só para reler a configuração. Com muitos
+painéis e a memória já apertada, essa leva pode travar o computador. Por isso a troca automática (no gatilho ou no
+rodízio) espera sobrar memória: o agente conta os processos do assistente abertos e só troca se, depois da leva, ficarem
+15% da memória livres. A espera tem fim: com a conta em uso em 99%, ou depois de 15 minutos, troca assim mesmo; a troca
+do limite da sessão, a do painel e a da API não esperam. Quando segura, sai um aviso nos eventos. Para desligar,
+`REVEZA_TROCA_ESPERA_MEMORIA=0` no ambiente do agente.
+
 <details>
 <summary><b>🔌 API e webhooks</b></summary>
 

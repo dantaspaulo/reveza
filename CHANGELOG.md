@@ -7,6 +7,24 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.10.6 · 30/10/2026
+
+A troca automática espera sobrar memória no computador. Relato do Paulo: o Mac dele travou logo depois de trocas de
+conta. Precisa dos computadores na 0.10.6 (no painel, **Computadores → Atualizar**); a nuvem e o painel não mudam.
+
+- **O que acontecia:** nos editores (VS Code e os derivados dele), a extensão do assistente vigia o `~/.claude.json`.
+  Quando o Reveza troca a conta, ela vê outra conta ali e atualiza todos os painéis, e cada painel abre um processo do
+  assistente só para reler a configuração. Medido num Mac de 16 GB com 16 painéis: 16 processos em 1 segundo, 3,8 GB a
+  mais e pressão de memória crítica. Com a máquina já apertada, essa leva travou a tela; em quatro travamentos, a troca
+  veio de 3 a 8 minutos antes.
+- **Agora:** a troca automática (no gatilho ou no rodízio) espera sobrar memória para a leva. O agente conta os
+  processos do assistente abertos (cada um pode abrir outro, de até 250 MB) e só troca se, depois deles, ficarem 15% da
+  memória livres.
+- **A espera tem fim:** com a conta em uso em 99%, ou depois de 15 minutos, troca assim mesmo. A troca do limite da
+  sessão, a do painel e a da API não esperam.
+- Quando segura, sai um aviso nos eventos do painel, e o log do agente diz quando a espera acabou.
+- Vale no macOS, no Linux e no Windows. Para desligar: `REVEZA_TROCA_ESPERA_MEMORIA=0` no ambiente do agente.
+
 ## 0.10.5 · 29/10/2026
 
 A sessão que ficou na conta anterior depois da troca volta sozinha. Relato do Paulo: "quando bateu o limite, ele não

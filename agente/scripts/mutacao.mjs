@@ -87,6 +87,11 @@ const MUTANTES = [
   ["sozinho: o fim vai à nuvem (falha para os outros)", "src/agente.ts", "if (atual.sozinho && !atual.nuvemAvisada && atual.fim && this.d.nuvem) {", "if (atual.sozinho && !atual.nuvemAvisada && atual.fim && this.d.nuvem && Date.now() < 0) {", ["atualizar"]],
   ["sozinho: o que nem começou só tenta na noite seguinte", "src/agente.ts", "t - this.sozinhoNaoComecouEm < 12 * 3600", "false", ["atualizar"]],
   ["~/.claude.json: não regravar arquivo ilegível", "src/claudejson.ts", "        const v = JSON.parse(bruto);", "        let v; try { v = JSON.parse(bruto); } catch { v = {}; }", ["doctor-cli"]],
+  ["memória: com a conta em 99%, a troca não espera", "src/memoria.ts", "  if (p.pctConta !== null && p.pctConta >= TETO_ESPERA_PCT) return { esperar: false };\n", "", ["memoria"]],
+  ["memória: nenhuma troca espera mais que o máximo", "src/memoria.ts", "  if (p.desde !== null && p.t - p.desde >= ESPERA_MAXIMA_S) return { esperar: false };\n", "", ["memoria"]],
+  ["memória: limite, painel e API não esperam", "src/memoria.ts", "  return /^rodízio/i.test(motivo.trim());", "  return true;", ["memoria"]],
+  ["memória: a atribuição da nuvem também espera", "src/agente.ts", "if (!principalSemConta && (await this.esperarMemoriaParaTrocar(`${ativa}>${a.conta_id}`, a.motivo || \"\"))) {", "if (false) {", ["memoria"]],
+  ["memória: o aviso sai uma vez por espera", "src/agente.ts", "      } else this.esperaMemoria.esperando = true;", "      } else this.trocador.evento(\"aviso\", \"Segurei a troca de novo\");", ["memoria"]],
 ];
 
 function rodar(argv) {
