@@ -330,7 +330,9 @@ export class NuvemFalsa implements Nuvem {
     this.registrarChamada("ola", versao, diagnostico, contaLocal);
     const b = this.banco;
     b.versoes.set(this.pc, versao);
-    for (const p of b.posse.values()) if (p.pc === this.pc && p.motivo === "uso") p.expira = b.agora() + 120;
+    // como o agente_ola (0025): renova só a posse de uso da conta atribuída; a de uma conta que saiu vence sozinha
+    const atribuida = b.atribuicao.get(this.pc)?.conta;
+    for (const [conta, p] of b.posse) if (p.pc === this.pc && p.motivo === "uso" && conta === atribuida) p.expira = b.agora() + 120;
     if (!b.atribuicao.has(this.pc) && contaLocal) {
       const c = [...b.contas.values()].find((x) => x.email === contaLocal.toLowerCase());
       if (c && ![...b.atribuicao.values()].some((a) => a.conta === c.id)) b.atribuicao.set(this.pc, { conta: c.id, versao: 1, motivo: "conta que já estava no computador" });

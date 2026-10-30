@@ -245,9 +245,9 @@ sites that always stay active, in the browser's performance options.
 extension refreshes every panel, and each panel starts a new process, of up to 250 MB, just to read its settings again.
 With many panels and memory already tight, that burst can freeze the computer. So the automatic switch (at the
 threshold or on rotation) waits for free memory: the agent counts the assistant's open processes and only switches if
-15% of memory stays free after the burst. The wait has an end: with the account in use at 99%, or after 15 minutes, it
-switches anyway; switches from a session limit, the dashboard and the API never wait. When it holds a switch, a notice
-shows in the events. To turn it off, set `REVEZA_TROCA_ESPERA_MEMORIA=0` in the agent's environment.
+10% of memory stays free after the burst (in practice, it waits when less than 30% is free). The wait has an end: with
+the account in use at 98%, or after 15 minutes, it switches anyway; switches from a session limit, the dashboard and the
+API never wait. When it holds a switch, a notice shows in the events.
 
 <details>
 <summary><b>🔌 API and webhooks</b></summary>

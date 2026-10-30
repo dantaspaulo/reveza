@@ -206,8 +206,8 @@ export class Agente {
   private falhaAtribuicao = new Map<string, number>();
   /** A conta atribuída que não está entrando: desde quando, quantas tentativas e se já virou alerta. */
   private trocaQueNaoSai: { conta: string; desde: number; vezes: number; avisado: boolean } | null = null;
-  /** A troca automática que espera memória (memoria.ts): de qual conta para qual, desde quando e se ainda espera. */
-  private esperaMemoria: { chave: string; desde: number; esperando: boolean } | null = null;
+  /** A troca automática que espera memória (memoria.ts): de qual conta em uso, desde quando e se ainda espera. */
+  private esperaMemoria: { conta: string; desde: number; esperando: boolean } | null = null;
   private emFundo = new Set<Promise<unknown>>();
   private possesLimpas = false;
   private impressaoConferida = false;
@@ -609,6 +609,7 @@ export class Agente {
       const t = this.d.relogio.agora();
       const [acao, alvo] = decidir(this.estado, t, limite, this.d.sorteio ?? sorteioReal);
       const ativa = this.estado.ativa;
+      if (acao !== "trocar" && acao !== "rodizio") this.esperaMemoria = null;
       if (acao === "aviso") {
         this.estado.proxima = alvo;
         const chave = `${ativa}>${alvo}`;
@@ -626,7 +627,7 @@ export class Agente {
         const motivo =
           acao === "rodizio" ? "rodízio" : limite ? "a sessão bateu o limite" : `chegou a ${gatilhoDeTroca(this.estado).toFixed(0)}%`;
         // esperando memória, o ciclo seguinte decide de novo (e o rodízio não é reagendado)
-        if (!(await this.esperarMemoriaParaTrocar(`${ativa}>${alvo}`, motivo))) {
+        if (!(await this.esperarMemoriaParaTrocar(motivo))) {
           const r = await this.trocador.trocarDentro(alvo, motivo);
           if (r.ok) {
             this.aviso = null;
@@ -984,19 +985,24 @@ export class Agente {
 
   /**
    * A troca automática espera sobrar memória para a leva de processos que ela abre nos editores (memoria.ts). True
-   * enquanto espera: o evento sai uma vez por espera, e o log diz quando ela acaba. Em modo sombra não espera.
+   * enquanto espera: o evento sai uma vez por espera, e o log diz quando ela acaba. A espera é da conta em uso (no
+   * rodízio o destino muda a cada sorteio). Não espera em modo sombra, com sessão parada esperando conta, nem com a conta
+   * em uso sem login, pausada ou sem o modelo das sessões.
    */
-  private async esperarMemoriaParaTrocar(chave: string, motivo: string): Promise<boolean> {
-    if (!this.d.memoria || this.d.sombra || !trocaPodeEsperar(motivo)) return false;
+  private async esperarMemoriaParaTrocar(motivo: string): Promise<boolean> {
+    const ativa = this.estado.ativa;
+    const c = ativa ? this.estado.contas[ativa] : undefined;
+    if (!this.d.memoria || this.d.sombra || !ativa || !c || !trocaPodeEsperar(motivo)) return false;
     const t = this.d.relogio.agora();
-    if (this.esperaMemoria?.chave !== chave) this.esperaMemoria = null;
-    const ativa = this.estado.ativa ? this.estado.contas[this.estado.ativa] : undefined;
-    const pctConta = ativa ? pctEfetivo(ativa, t) : null;
+    if (c.precisaLogin || c.pausada || (this.estado.semModelo?.[ativa]?.ate ?? 0) > t) return false;
+    if (this.estado.fila.some((f) => f.estado === "aguardando" && t - f.em < FILA_VALIDA_S)) return false;
+    if (this.esperaMemoria?.conta !== ativa) this.esperaMemoria = null;
     const mem = await this.d.memoria().catch(() => null);
+    const pctConta = pctEfetivo(c, t);
     const r = esperarMemoria(mem, { motivo, pctConta, desde: this.esperaMemoria?.desde ?? null, t });
     if (r.esperar && mem) {
       if (!this.esperaMemoria) {
-        this.esperaMemoria = { chave, desde: t, esperando: true };
+        this.esperaMemoria = { conta: ativa, desde: t, esperando: true };
         const gb = ((r.levaMb ?? 0) / 1024).toFixed(1);
         this.trocador.evento(
           "aviso",
@@ -1015,6 +1021,19 @@ export class Agente {
   }
 
   /**
+   * A conta em uso continua com este computador enquanto a troca espera memória. A nuvem só renova a posse da conta
+   * atribuída (a nova), então a da conta em uso vencia em 2 min: outro computador podia pegá-la, o login dela não subia
+   * ao cofre e a limpeza depois da troca travava (revisão da 0.10.6). Posse de renovação a cada busca; false se a nuvem
+   * recusar (aí a troca não espera mais).
+   */
+  private async manterAtivaDuranteEspera(): Promise<boolean> {
+    const c = this.estado.ativa ? this.estado.contas[this.estado.ativa] : undefined;
+    if (!c?.contaId || !this.d.nuvem) return true;
+    const r = await this.d.nuvem.pegarPosse(c.contaId, "renovacao", POSSE_S).catch(() => null);
+    return r?.ok === true;
+  }
+
+  /**
    * Aplica a conta que a nuvem atribuiu. `principalSemConta` (o conserto da credencial): o assistente está sem login,
    * então a conta entra mesmo sendo a que já consta em uso, com a cópia mais nova do cofre, e sem a espera de 1 min.
    */
@@ -1027,6 +1046,7 @@ export class Agente {
       this.estado.nuvem.atribuicaoVersao = Math.max(this.estado.nuvem.atribuicaoVersao, a.versao);
       this.estado.nuvem.atribuicaoConta = a.conta_id;
       this.trocaQueNaoSai = null;
+      this.esperaMemoria = null;
       return { ok: true };
     }
     if (this.d.sombra) {
@@ -1038,8 +1058,9 @@ export class Agente {
       }
       return { ok: false, erro: "modo sombra: o agente não troca" };
     }
-    if (!principalSemConta && (await this.esperarMemoriaParaTrocar(`${ativa}>${a.conta_id}`, a.motivo || ""))) {
-      return { ok: false, erro: "a troca espera sobrar memória neste computador" };
+    if (!principalSemConta && (await this.esperarMemoriaParaTrocar(a.motivo || ""))) {
+      if (await this.manterAtivaDuranteEspera()) return { ok: false, erro: "a troca espera sobrar memória neste computador" };
+      this.d.log.info("[troca] a nuvem não deixou a conta em uso com este computador durante a espera por memória; troco agora");
     }
     const chave = `${a.conta_id}#${a.versao}`;
     if (!principalSemConta && (this.falhaAtribuicao.get(chave) ?? 0) > this.d.relogio.agora()) return { ok: false, erro: "tento de novo em 1 minuto" };
@@ -1215,6 +1236,8 @@ export class Agente {
     const t = this.d.relogio.agora();
     if (this.trocador.geral.ocupada || t - (this.estado.trocadaEm || 0) < 300) return false;
     if (this.posse?.soltarDepois.size) return false;
+    // a troca esperando memória: nada de atualização, publicação ou `claude update` agora
+    if (this.esperaMemoria?.esperando) return false;
     if (this.estado.fila.some((f) => f.estado === "aguardando" && t - f.em < FILA_VALIDA_S)) return false;
     const ativa = this.estado.ativa ? this.estado.contas[this.estado.ativa] : null;
     return !ativa || (pctEfetivo(ativa, t) ?? 0) < 100;

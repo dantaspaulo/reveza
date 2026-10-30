@@ -18,12 +18,15 @@ conta. Precisa dos computadores na 0.10.6 (no painel, **Computadores → Atualiz
   mais e pressão de memória crítica. Com a máquina já apertada, essa leva travou a tela; em quatro travamentos, a troca
   veio de 3 a 8 minutos antes.
 - **Agora:** a troca automática (no gatilho ou no rodízio) espera sobrar memória para a leva. O agente conta os
-  processos do assistente abertos (cada um pode abrir outro, de até 250 MB) e só troca se, depois deles, ficarem 15% da
-  memória livres.
-- **A espera tem fim:** com a conta em uso em 99%, ou depois de 15 minutos, troca assim mesmo. A troca do limite da
-  sessão, a do painel e a da API não esperam.
-- Quando segura, sai um aviso nos eventos do painel, e o log do agente diz quando a espera acabou.
-- Vale no macOS, no Linux e no Windows. Para desligar: `REVEZA_TROCA_ESPERA_MEMORIA=0` no ambiente do agente.
+  processos do assistente abertos (cada um pode abrir outro, de até 250 MB; a conta vai até 20% da memória) e só troca
+  se, depois deles, ficarem 10% da memória livres. Na prática, a troca espera quando há menos de 30% livres.
+- **A espera tem fim:** com a conta em uso em 98%, ou depois de 15 minutos, troca assim mesmo. Não esperam a troca do
+  limite da sessão, a do painel, a da API, nem a que vem com uma sessão parada à espera de conta.
+- Com a nuvem, a conta em uso continua com o computador enquanto a troca espera: outro computador não a pega, e o login
+  dela segue indo ao cofre.
+- Quando segura, sai um aviso nos eventos do painel, e o log do agente diz quando a espera acabou. Enquanto ela dura, o
+  agente não começa atualização nenhuma.
+- Vale no macOS, no Linux e no Windows.
 
 ## 0.10.5 · 29/10/2026
 

@@ -240,9 +240,9 @@ opções de desempenho do navegador.
 atualiza todos os painéis, e cada painel abre um processo novo, de até 250 MB, só para reler a configuração. Com muitos
 painéis e a memória já apertada, essa leva pode travar o computador. Por isso a troca automática (no gatilho ou no
 rodízio) espera sobrar memória: o agente conta os processos do assistente abertos e só troca se, depois da leva, ficarem
-15% da memória livres. A espera tem fim: com a conta em uso em 99%, ou depois de 15 minutos, troca assim mesmo; a troca
-do limite da sessão, a do painel e a da API não esperam. Quando segura, sai um aviso nos eventos. Para desligar,
-`REVEZA_TROCA_ESPERA_MEMORIA=0` no ambiente do agente.
+10% da memória livres (na prática, espera quando há menos de 30% livres). A espera tem fim: com a conta em uso em 98%,
+ou depois de 15 minutos, troca assim mesmo; a troca do limite da sessão, a do painel e a da API não esperam. Quando
+segura, sai um aviso nos eventos.
 
 <details>
 <summary><b>🔌 API e webhooks</b></summary>
