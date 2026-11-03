@@ -17,13 +17,14 @@ const linha = (hora: string, contaId: string | null, usd: number, extra: Partial
   cacheEscrita: 30,
   cacheLeitura: 40,
   usd,
+  agentes: 0,
   ...extra,
 })
 
 const linhas = [
   linha("2026-10-05T13:00:00-03:00", "a", 1),
   linha("2026-10-05T14:00:00-03:00", "b", 2, { projeto: "" }),
-  linha("2026-10-06T09:00:00-03:00", "a", 4, { modelo: "n" }),
+  linha("2026-10-06T09:00:00-03:00", "a", 4, { modelo: "n", agentes: 2 }),
 ]
 
 describe("agregações do uso", () => {
@@ -36,6 +37,7 @@ describe("agregações do uso", () => {
       cacheEscrita: 90,
       cacheLeitura: 120,
       respostas: 6,
+      agentes: 2,
     })
   })
 
@@ -73,7 +75,7 @@ describe("agregações do uso", () => {
     expect(m.flat().reduce((a, b) => a + b, 0)).toBe(7)
   })
 
-  it("sessões e agentes por dia", () => {
+  it("sessões pelo dia em que começaram; agentes pela hora em que cada um começou (das linhas de uso)", () => {
     const s = sessoesPorDia(
       [
         {
@@ -105,11 +107,13 @@ describe("agregações do uso", () => {
           paradaNoLimite: false,
         },
       ],
+      linhas,
       ["2026-10-05", "2026-10-06"]
     )
+    // os agentes que as sessões somam (3 + 1) não contam: a sessão longa os juntava no dia em que começou
     expect(s).toEqual([
-      { dia: "2026-10-05", sessoes: 2, agentes: 4 },
-      { dia: "2026-10-06", sessoes: 0, agentes: 0 },
+      { dia: "2026-10-05", sessoes: 2, agentes: 0 },
+      { dia: "2026-10-06", sessoes: 0, agentes: 2 },
     ])
   })
 })

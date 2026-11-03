@@ -115,6 +115,7 @@ create table uso_tokens (                    -- agregado por hora, vindo das tra
   cache_escrita bigint not null default 0,
   cache_leitura bigint not null default 0,
   usd numeric(14, 4) not null default 0,
+  agentes integer not null default 0,        -- agentes que começaram nesta hora (0030)
   primary key (hora, conta_id, computador_id, projeto, modelo)
 );
 

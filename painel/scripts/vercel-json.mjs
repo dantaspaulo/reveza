@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url"
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..")
 const ARQUIVO = join(RAIZ, "vercel.json")
 export const MARCADOR = "https://SEU-PROJETO.supabase.co"
+export const COTACAO = "https://olinda.bcb.gov.br"
 
 export function origemSupabase(url) {
   const u = new URL(url)
@@ -32,7 +33,8 @@ export function csp(supabase) {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
-    `connect-src 'self' ${https} ${wss}`,
+    // a cotação do dólar (PTAX do Banco Central) para mostrar o custo também em real
+    `connect-src 'self' ${https} ${wss} ${COTACAO}`,
     "worker-src 'self'",
     "manifest-src 'self'",
     "frame-src 'none'",

@@ -630,15 +630,30 @@ export class FonteSupabase implements Fonte {
   }
 
   async uso({ de, ate }: Intervalo): Promise<LinhaUso[]> {
-    const linhas = await tudo((a, b) =>
-      supabase()
-        .from("uso_tokens")
-        .select("hora,conta_id,computador_id,projeto,modelo,respostas,entrada,saida,cache_escrita,cache_leitura,usd")
-        .gte("hora", de.toISOString())
-        .lt("hora", ate.toISOString())
-        .order("hora")
-        .range(a, b)
-    )
+    let linhas: Linha[]
+    try {
+      linhas = await tudo((a, b) =>
+        supabase()
+          .from("uso_tokens")
+          .select("hora,conta_id,computador_id,projeto,modelo,respostas,entrada,saida,cache_escrita,cache_leitura,usd,agentes")
+          .gte("hora", de.toISOString())
+          .lt("hora", ate.toISOString())
+          .order("hora")
+          .range(a, b)
+      )
+    } catch (e) {
+      // nuvem de antes da 0030, sem a coluna dos agentes: o painel pode subir antes da migração
+      if (!/agentes/i.test(e instanceof Error ? e.message : String(e))) throw e
+      linhas = await tudo((a, b) =>
+        supabase()
+          .from("uso_tokens")
+          .select("hora,conta_id,computador_id,projeto,modelo,respostas,entrada,saida,cache_escrita,cache_leitura,usd")
+          .gte("hora", de.toISOString())
+          .lt("hora", ate.toISOString())
+          .order("hora")
+          .range(a, b)
+      )
+    }
     return linhas.map((l) => ({
       hora: String(l.hora),
       contaId: texto(l.conta_id),
@@ -651,6 +666,7 @@ export class FonteSupabase implements Fonte {
       cacheEscrita: Number(l.cache_escrita),
       cacheLeitura: Number(l.cache_leitura),
       usd: Number(l.usd),
+      agentes: Number(l.agentes ?? 0),
     }))
   }
 
@@ -659,7 +675,8 @@ export class FonteSupabase implements Fonte {
       supabase()
         .from("sessoes")
         .select("*")
-        .gte("inicio", de.toISOString())
+        // as sessões com uso no período, também as que começaram antes (sessão de editor fica aberta por semanas)
+        .or(`fim.gte.${de.toISOString()},fim.is.null`)
         .lt("inicio", ate.toISOString())
         .order("inicio", { ascending: false })
         .range(a, b)

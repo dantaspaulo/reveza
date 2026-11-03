@@ -179,7 +179,7 @@ const linhas = vi.hoisted(() => {
 })
 
 vi.mock("@/dados/cliente", () => {
-  // Consulta encadeável do supabase-js (select, order, eq, in, is, gt, limit, range, maybeSingle) que resolve com as
+  // Consulta encadeável do supabase-js (select, order, eq, in, is, gt, or, limit, range, maybeSingle) que resolve com as
   // linhas da tabela; o filtro de membros por user_id devolve uma linha só.
   function consulta(tabela: string) {
     let unica = false
@@ -192,6 +192,7 @@ vi.mock("@/dados/cliente", () => {
       gt: () => q,
       gte: () => q,
       lt: () => q,
+      or: () => q,
       limit: () => q,
       range: () => q,
       maybeSingle: () => {

@@ -238,6 +238,8 @@ export interface LinhaUso {
   cacheEscrita: number
   cacheLeitura: number
   usd: number
+  /** Agentes que começaram nesta hora (nuvem 0030; antes dela, 0). */
+  agentes: number
 }
 
 export interface SessaoUso {

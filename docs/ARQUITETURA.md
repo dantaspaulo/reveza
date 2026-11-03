@@ -116,7 +116,7 @@ aviso de limite. Para cada computador ligado:
 | `posse(conta_id, computador_id, expira_em)` | membro | só por função (`pegar_posse`, `soltar_posse`) |
 | `atribuicao(computador_id, conta_id, motivo, versao)` | membro | só a função `decidir` |
 | `uso_janelas(conta_id, tipo, pct, reset_em, lido_em, fonte)` | membro | computador |
-| `uso_tokens(dia, hora, conta_id, computador_id, projeto, modelo, entrada, saida, cache_escrita, cache_leitura, usd, respostas)` | membro | computador |
+| `uso_tokens(dia, hora, conta_id, computador_id, projeto, modelo, entrada, saida, cache_escrita, cache_leitura, usd, respostas, agentes)` | membro | computador |
 | `sessoes(id, computador_id, projeto, inicio, fim, agentes, usd, contas)` | membro | computador |
 | `eventos(em, tipo, texto, dados)` | membro | funções e computador |
 | `comandos(id, criado_por, computador_id, acao, corpo, estado, resposta)` | membro | admin cria; computador reserva e responde |
@@ -373,8 +373,13 @@ Menu lateral, nada empilhado numa tela só:
    digitado num computador que já usa o Reveza; o painel só acompanha), revogar; atualizações (a linha Nuvem e painel
    com o Atualizar a nuvem, seção 7e; Verificar atualização, Atualizar todos, como atualizar sozinho e o andamento,
    seção 7d).
-4. **Uso**: custo equivalente, tokens, agentes, sessões por dia, conta, modelo, projeto e computador; mapa de calor;
-   ranking; previsão de esgotar; exportar planilha.
+4. **Uso**: custo equivalente (também em real, pela PTAX de venda do Banco Central, que a CSP libera), tokens (com o
+   cache gravado e o relido separados), agentes, sessões por dia, conta, modelo, projeto e computador; leituras do
+   período; mapa de calor; ranking; previsão de esgotar; exportar planilha; e o cartão para os stories (1080 x 1920, em
+   JPG, desenhado no canvas do navegador com um número agregado e a marca reveza.ia.br). Os agentes são contados pela
+   hora em que cada um começou (coluna `agentes` de `uso_tokens`, 0030): antes, o painel somava os agentes das sessões
+   que começaram no período, e a sessão de editor fica aberta por semanas (em 30 dias, 1.089 agentes no lugar de
+   1.615 no Mac do Paulo). As sessões são as com uso no período, também as que começaram antes.
 5. **Plano da semana**: cota semanal por conta dividida pelos dias, quanto já foi, alerta de ritmo.
 6. **Troca automática**: liga e desliga, modo (só no limite, limiar, rodízio), limiares, intervalo, ordem, agenda.
 7. **Alertas**: canais (Telegram, e-mail, webhook, notificação no celular), quais eventos, botão de teste; e, por navegador, o aviso de troca de conta com notificação e som enquanto o painel está aberto.

@@ -1,12 +1,26 @@
-// Uso: números do período, barras por dia e por conta (adaptadas do "chart-bar-stacked" e do "chart-bar-interactive"
-// dos gráficos do shadcn/ui), ranking, sessões e agentes por dia, mapa de calor 7x24, previsão de esgotar, sessões mais
-// caras e a planilha CSV.
+// Uso: números do período (com o custo também em real), leituras do período, barras por dia e por conta (adaptadas do
+// "chart-bar-stacked" e do "chart-bar-interactive" dos gráficos do shadcn/ui), ranking, sessões e agentes por dia, mapa
+// de calor 7x24, previsão de esgotar, sessões mais caras, a planilha CSV e o cartão de conquista para os stories.
 
 import * as React from "react"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
-import { DownloadIcon, InfoIcon } from "lucide-react"
+import {
+  ActivityIcon,
+  BotIcon,
+  CalendarClockIcon,
+  ClockIcon,
+  DatabaseIcon,
+  DownloadIcon,
+  FolderIcon,
+  InfoIcon,
+  RepeatIcon,
+  TrendingDownIcon,
+  TrendingUpIcon,
+  type LucideIcon,
+} from "lucide-react"
 import { toast } from "sonner"
 
+import { CartaoConquista } from "@/components/painel/cartao-conquista"
 import { NomeConta, PontoConta } from "@/components/painel/conta"
 import { Pagina } from "@/components/painel/pagina"
 import { NumeroAnimado } from "@/components/rb"
@@ -19,13 +33,26 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useAgora, useConsulta, useEstado } from "@/dados/contexto"
+import { useAgora, useConsulta, useDados, useEstado } from "@/dados/contexto"
 import { cheia, p5, p7 } from "@/dados/derivados"
 import type { Instantaneo, LinhaUso, SessaoUso } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import { COR_OUTRAS, corConta, juntasPorWorkspace, seriesPorConta } from "@/lib/cores"
 import { baixarArquivo, paraCsv } from "@/lib/csv"
-import { chaveDia, fmtDia, fmtDuracao, fmtDataHora, fmtFuturo, fmtNumero, fmtTokens, fmtUsd } from "@/lib/formato"
+import { COTACAO_DEMO, useCotacaoDolar, type Cotacao } from "@/lib/cotacao"
+import {
+  chaveDia,
+  fmtBrl,
+  fmtDia,
+  fmtDuracao,
+  fmtDataHora,
+  fmtFuturo,
+  fmtNumero,
+  fmtPct,
+  fmtTokens,
+  fmtUsd,
+} from "@/lib/formato"
+import { leituras, type Leitura } from "@/lib/leituras"
 import { diasEntre, mapaCalor, porDia, ranking, sessoesPorDia, totais, type Dimensao, type Metrica } from "@/lib/uso"
 import { cn } from "@/lib/utils"
 import { usePrevisoes } from "./visao-geral"
@@ -35,7 +62,10 @@ const PERIODOS = ["7", "30", "90"] as const
 export default function Uso() {
   const { t, idioma } = useT()
   const estado = useEstado()
+  const { fonte } = useDados()
   const agora = useAgora(60_000)
+  // o custo também em real, pela PTAX do Banco Central (só no painel em português)
+  const cotacao = useCotacaoDolar(idioma === "pt-BR", fonte.demo ? COTACAO_DEMO : undefined)
   const [periodo, setPeriodo] = React.useState<(typeof PERIODOS)[number]>("30")
   const [metrica, setMetrica] = React.useState<Metrica>("usd")
 
@@ -53,6 +83,15 @@ export default function Uso() {
   }, [hoje, periodo])
   const uso = useConsulta((f) => f.uso(intervalo), [intervalo])
   const sessoes = useConsulta((f) => f.sessoes(intervalo), [intervalo])
+  // o período anterior, do mesmo tamanho, para a leitura da tendência
+  const anterior = useConsulta(
+    (f) => {
+      const de = new Date(intervalo.de)
+      de.setDate(de.getDate() - Number(periodo))
+      return f.uso({ de, ate: intervalo.de })
+    },
+    [intervalo, periodo]
+  )
   const historico = useConsulta((f) => f.historico(new Date(Date.now() - 24 * 3_600_000)), [])
   const dias = React.useMemo(() => diasEntre(intervalo.de, agora), [intervalo, agora])
 
@@ -65,6 +104,18 @@ export default function Uso() {
           : fmtNumero(v, idioma),
     [metrica, idioma]
   )
+
+  const numeros = React.useMemo(() => {
+    if (!uso.dados || !sessoes.dados) return null
+    const tot = totais(uso.dados)
+    return {
+      tokens: tot.tokens,
+      usd: tot.usd,
+      respostas: tot.respostas,
+      agentes: agentesDoPeriodo(uso.dados, sessoes.dados, intervalo.de),
+      sessoes: sessoes.dados.length,
+    }
+  }, [uso.dados, sessoes.dados, intervalo.de])
 
   const exportar = () => {
     if (!uso.dados) return
@@ -82,6 +133,7 @@ export default function Uso() {
       l.cacheEscrita,
       l.cacheLeitura,
       l.usd,
+      l.agentes,
     ])
     const nome = t("uso.csv.nome", { de: chaveDia(intervalo.de), ate: chaveDia(agora) })
     baixarArquivo(nome, paraCsv(t("uso.csv.colunas").split(","), linhas))
@@ -93,10 +145,20 @@ export default function Uso() {
       titulo={t("menu.secoes.uso")}
       descricao={t("uso.descricao")}
       acoes={
-        <Button variant="outline" onClick={exportar} disabled={!uso.dados?.length}>
-          <DownloadIcon />
-          {t("comum.exportar")}
-        </Button>
+        <>
+          <CartaoConquista
+            numeros={numeros}
+            dias={Number(periodo)}
+            de={intervalo.de}
+            ate={agora}
+            cotacao={cotacao}
+            disabled={!uso.dados?.length}
+          />
+          <Button variant="outline" onClick={exportar} disabled={!uso.dados?.length}>
+            <DownloadIcon />
+            {t("comum.exportar")}
+          </Button>
+        </>
       }
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -134,13 +196,23 @@ export default function Uso() {
         </div>
       </div>
 
-      <Numeros uso={uso.dados} sessoes={sessoes.dados} dias={dias.length} />
+      <Numeros uso={uso.dados} sessoes={sessoes.dados} dias={dias.length} de={intervalo.de} cotacao={cotacao} />
+
+      <Leituras
+        uso={uso.dados}
+        sessoes={sessoes.dados}
+        anterior={anterior.dados}
+        de={intervalo.de}
+        agora={agora}
+        diasPeriodo={Number(periodo)}
+        cotacao={cotacao}
+      />
 
       <GraficoPorDia estado={estado} uso={uso.dados} dias={dias} metrica={metrica} formatar={formatar} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Ranking estado={estado} uso={uso.dados} metrica={metrica} formatar={formatar} />
-        <SessoesPorDia sessoes={sessoes.dados} dias={dias} />
+        <SessoesPorDia sessoes={sessoes.dados} uso={uso.dados} dias={dias} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -153,7 +225,29 @@ export default function Uso() {
   )
 }
 
-function Numeros({ uso, sessoes, dias }: { uso: LinhaUso[] | null; sessoes: SessaoUso[] | null; dias: number }) {
+/**
+ * Agentes que começaram no período: das linhas de uso (nuvem 0030). Sem o número nas linhas (nuvem ou agentes de antes
+ * da 0.11.0), soma os das sessões que começaram no período, como antes.
+ */
+function agentesDoPeriodo(uso: LinhaUso[], sessoes: SessaoUso[], de: Date): number {
+  const pelasLinhas = uso.reduce((s, l) => s + l.agentes, 0)
+  if (pelasLinhas > 0) return pelasLinhas
+  return sessoes.filter((s) => new Date(s.inicio) >= de).reduce((s, x) => s + x.agentes, 0)
+}
+
+function Numeros({
+  uso,
+  sessoes,
+  dias,
+  de,
+  cotacao,
+}: {
+  uso: LinhaUso[] | null
+  sessoes: SessaoUso[] | null
+  dias: number
+  de: Date
+  cotacao: Cotacao | null
+}) {
   const { t, idioma } = useT()
   if (!uso || !sessoes)
     return (
@@ -164,8 +258,15 @@ function Numeros({ uso, sessoes, dias }: { uso: LinhaUso[] | null; sessoes: Sess
       </div>
     )
   const tot = totais(uso)
-  const agentes = sessoes.reduce((s, x) => s + x.agentes, 0)
+  const agentes = agentesDoPeriodo(uso, sessoes, de)
+  const novas = sessoes.filter((s) => new Date(s.inicio) >= de).length
   const porDia = (v: number, f: (n: number) => string) => t("uso.kpi.porDia", { valor: f(v / Math.max(1, dias)) })
+  const dica = (k: "sessoes" | "agentes") => (k === "sessoes" ? t("uso.kpi.sessoesDica") : t("uso.kpi.agentesDica"))
+  const contagens: { chave: "respostas" | "sessoes" | "agentes"; valor: number; rodape: string }[] = [
+    { chave: "respostas", valor: tot.respostas, rodape: porDia(tot.respostas, (n) => fmtNumero(n, idioma, n < 10 ? 1 : 0)) },
+    { chave: "sessoes", valor: sessoes.length, rodape: t("uso.kpi.sessoesNovas", { n: fmtNumero(novas, idioma) }) },
+    { chave: "agentes", valor: agentes, rodape: porDia(agentes, (n) => fmtNumero(n, idioma, n < 10 ? 1 : 0)) },
+  ]
   return (
     <div className="grid grid-cols-2 gap-4 *:data-[slot=card]:shadow-xs md:grid-cols-3 xl:grid-cols-5">
       <Card className="col-span-2 gap-2 md:col-span-1">
@@ -176,12 +277,29 @@ function Numeros({ uso, sessoes, dias }: { uso: LinhaUso[] | null; sessoes: Sess
               <TooltipTrigger aria-label={t("uso.kpi.custoDica")} className="text-muted-foreground">
                 <InfoIcon className="size-3.5" />
               </TooltipTrigger>
-              <TooltipContent className="max-w-60">{t("uso.kpi.custoDica")}</TooltipContent>
+              <TooltipContent className="max-w-64">
+                {t("uso.kpi.custoDica")}
+                {cotacao ? (
+                  <>
+                    {" "}
+                    {t("uso.kpi.cotacao", { valor: fmtBrl(cotacao.valor, idioma, 4), dia: fmtDia(`${cotacao.dia}T12:00:00`, idioma) })}
+                  </>
+                ) : null}
+              </TooltipContent>
             </Tooltip>
           </CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums">{fmtUsd(tot.usd, idioma, 0)}</CardTitle>
+          {cotacao ? (
+            <p className="text-sm text-muted-foreground tabular-nums">
+              {t("uso.kpi.emReal", { valor: fmtBrl(tot.usd * cotacao.valor, idioma) })}
+            </p>
+          ) : null}
         </CardHeader>
-        <CardFooter className="text-xs text-muted-foreground">{porDia(tot.usd, (v) => fmtUsd(v, idioma))}</CardFooter>
+        <CardFooter className="text-xs text-muted-foreground">
+          {porDia(tot.usd, (v) =>
+            cotacao ? `${fmtUsd(v, idioma)} · ${fmtBrl(v * cotacao.valor, idioma)}` : fmtUsd(v, idioma)
+          )}
+        </CardFooter>
       </Card>
       <Card className="col-span-2 gap-2 md:col-span-1">
         <CardHeader>
@@ -192,30 +310,126 @@ function Numeros({ uso, sessoes, dias }: { uso: LinhaUso[] | null; sessoes: Sess
           {t("uso.kpi.tokensDetalhe", {
             entrada: fmtTokens(tot.entrada, idioma),
             saida: fmtTokens(tot.saida, idioma),
-            cache: fmtTokens(tot.cacheEscrita + tot.cacheLeitura, idioma),
+            escrita: fmtTokens(tot.cacheEscrita, idioma),
+            leitura: fmtTokens(tot.cacheLeitura, idioma),
           })}
         </CardFooter>
       </Card>
-      {(
-        [
-          ["respostas", tot.respostas],
-          ["sessoes", sessoes.length],
-          ["agentes", agentes],
-        ] as const
-      ).map(([k, v]) => (
-        <Card key={k} className="gap-2">
+      {contagens.map(({ chave, valor, rodape }) => (
+        <Card key={chave} className="gap-2">
           <CardHeader>
-            <CardDescription>{t(`uso.kpi.${k}`)}</CardDescription>
+            <CardDescription className="flex items-center gap-1">
+              {t(`uso.kpi.${chave}`)}
+              {chave !== "respostas" ? (
+                <Tooltip>
+                  <TooltipTrigger aria-label={dica(chave)} className="text-muted-foreground">
+                    <InfoIcon className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64">{dica(chave)}</TooltipContent>
+                </Tooltip>
+              ) : null}
+            </CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums">
-              <NumeroAnimado valor={v} />
+              <NumeroAnimado valor={valor} />
             </CardTitle>
           </CardHeader>
-          <CardFooter className="text-xs text-muted-foreground">
-            {porDia(v, (n) => fmtNumero(n, idioma, n < 10 ? 1 : 0))}
-          </CardFooter>
+          <CardFooter className="text-xs text-muted-foreground">{rodape}</CardFooter>
         </Card>
       ))}
     </div>
+  )
+}
+
+const ICONE_LEITURA: Record<Leitura["tipo"], LucideIcon> = {
+  tendencia: TrendingUpIcon,
+  cache: DatabaseIcon,
+  longas: CalendarClockIcon,
+  curtas: RepeatIcon,
+  modelo: BotIcon,
+  projeto: FolderIcon,
+  pico: ActivityIcon,
+  horario: ClockIcon,
+}
+
+function Leituras({
+  uso,
+  sessoes,
+  anterior,
+  de,
+  agora,
+  diasPeriodo,
+  cotacao,
+}: {
+  uso: LinhaUso[] | null
+  sessoes: SessaoUso[] | null
+  anterior: LinhaUso[] | null
+  de: Date
+  agora: Date
+  diasPeriodo: number
+  cotacao: Cotacao | null
+}) {
+  const { t, idioma } = useT()
+  const lista = React.useMemo(
+    () => (uso && sessoes ? leituras({ uso, sessoes, anterior, de, agora, diasPeriodo }) : null),
+    [uso, sessoes, anterior, de, agora, diasPeriodo]
+  )
+  if (lista && lista.length === 0) return null
+  const dinheiro = (v: number) => (cotacao ? `${fmtUsd(v, idioma, 0)} (${fmtBrl(v * cotacao.valor, idioma)})` : fmtUsd(v, idioma, 0))
+  const pct = (f: number) => fmtPct(f * 100, idioma)
+  const dias = t("uso.calor.dias").split(",")
+  const texto = (l: Leitura): string => {
+    switch (l.tipo) {
+      case "tendencia":
+        return t(l.variacao > 0 ? "uso.leituras.tendenciaMais" : "uso.leituras.tendenciaMenos", {
+          pct: pct(Math.abs(l.variacao)),
+          n: l.dias,
+        })
+      case "cache":
+        return t("uso.leituras.cache", { pct: pct(l.fatia) })
+      case "longas":
+        return t("uso.leituras.longas", { n: l.n, dias: l.maisAntiga, valor: dinheiro(l.usd) })
+      case "curtas":
+        return t("uso.leituras.curtas", { n: fmtNumero(l.n, idioma), pct: pct(l.fatia) })
+      case "modelo":
+        return t("uso.leituras.modelo", { modelo: l.modelo, pct: pct(l.fatia) })
+      case "projeto":
+        return t("uso.leituras.projeto", { projeto: l.projeto, pct: pct(l.fatia) })
+      case "pico":
+        return t("uso.leituras.pico", {
+          dia: fmtDia(`${l.dia}T12:00:00`, idioma),
+          valor: dinheiro(l.usd),
+          respostas: fmtNumero(l.respostas, idioma),
+        })
+      case "horario":
+        return t("uso.leituras.horario", { dia: dias[l.diaSemana], hora: l.hora })
+    }
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("uso.leituras.titulo")}</CardTitle>
+        <CardDescription>{t("uso.leituras.descricao")}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!lista ? (
+          <Skeleton className="h-24 w-full" />
+        ) : (
+          <ul className="grid gap-x-6 gap-y-3 md:grid-cols-2">
+            {lista.map((l) => {
+              const Icone = l.tipo === "tendencia" && l.variacao < 0 ? TrendingDownIcon : ICONE_LEITURA[l.tipo]
+              return (
+                <li key={l.tipo} className="flex items-start gap-3 text-sm">
+                  <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <Icone className="size-4" />
+                  </span>
+                  <span className="leading-relaxed">{texto(l)}</span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -423,9 +637,9 @@ function Ranking({
   )
 }
 
-function SessoesPorDia({ sessoes, dias }: { sessoes: SessaoUso[] | null; dias: string[] }) {
+function SessoesPorDia({ sessoes, uso, dias }: { sessoes: SessaoUso[] | null; uso: LinhaUso[] | null; dias: string[] }) {
   const { t, idioma } = useT()
-  const dados = React.useMemo(() => (sessoes ? sessoesPorDia(sessoes, dias) : []), [sessoes, dias])
+  const dados = React.useMemo(() => (sessoes && uso ? sessoesPorDia(sessoes, uso, dias) : []), [sessoes, uso, dias])
   const config = {
     sessoes: { label: t("uso.sessoesDia.sessoes"), color: "var(--calor)" },
     agentes: { label: t("uso.sessoesDia.agentes"), color: "var(--calor)" },
@@ -439,7 +653,7 @@ function SessoesPorDia({ sessoes, dias }: { sessoes: SessaoUso[] | null; dias: s
         {(["sessoes", "agentes"] as const).map((k) => (
           <div key={k} className="min-w-0">
             <p className="mb-1 px-2 text-xs text-muted-foreground sm:px-0">{config[k].label}</p>
-            {!sessoes ? (
+            {!sessoes || !uso ? (
               <Skeleton className="h-[160px] w-full" />
             ) : (
               <ChartContainer config={config} className="aspect-auto h-[160px] w-full">
@@ -654,6 +868,7 @@ function SessoesCaras({ estado, sessoes, agora }: { estado: Instantaneo; sessoes
     <Card>
       <CardHeader>
         <CardTitle>{t("uso.sessoes.titulo")}</CardTitle>
+        <CardDescription>{t("uso.sessoes.descricao")}</CardDescription>
       </CardHeader>
       <CardContent className="px-0">
         {!lista ? (

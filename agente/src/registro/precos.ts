@@ -19,6 +19,10 @@ export const PRECOS: Record<string, [number, number, number]> = {
   "claude-haiku-4-5": [1.0, 5.0, 0.1],
 };
 export const PRECO_PADRAO = "claude-opus-5-5";
+/** Preço por faixa: com o pedido (entrada + cache) acima do limite, vale a outra tabela (o Haiku 5.5, acima de 100 mil). */
+const FAIXA: Record<string, { acima: number; precos: [number, number, number] }> = {
+  "claude-haiku-5-5": { acima: 100_000, precos: [0.5, 2.5, 0.05] },
+};
 const RAPIDO_X: Record<string, number> = { "claude-opus-5-5": 2.0, "claude-opus-5": 2.0, "claude-opus-4-8": 2.0 };
 const POR_TAMANHO = Object.keys(PRECOS).sort((a, b) => b.length - a.length);
 
@@ -60,9 +64,11 @@ export function tokens(u: Usage): Tokens {
 /** US$ equivalentes de uma resposta e se foi estimado (modelo fora da tabela usa o preço padrão). */
 export function custo(u: Usage, modelo: string | null | undefined): { usd: number; estimado: boolean } {
   const nome = familia(modelo);
-  const [entrada, saida, leitura] = PRECOS[nome ?? PRECO_PADRAO]!;
-  const x = u.speed === "fast" ? (RAPIDO_X[nome ?? ""] ?? 1) : 1;
   const t = tokens(u);
+  const faixa = FAIXA[nome ?? ""];
+  const [entrada, saida, leitura] =
+    faixa && t.ent + t.c5 + t.c1h + t.cl > faixa.acima ? faixa.precos : PRECOS[nome ?? PRECO_PADRAO]!;
+  const x = u.speed === "fast" ? (RAPIDO_X[nome ?? ""] ?? 1) : 1;
   const usd = ((t.ent * entrada + t.sai * saida + t.c5 * entrada * 1.25 + t.c1h * entrada * 2 + t.cl * leitura) / 1_000_000) * x;
   return { usd, estimado: nome === null };
 }

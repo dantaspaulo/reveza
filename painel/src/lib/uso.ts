@@ -14,6 +14,7 @@ export interface Totais {
   cacheEscrita: number
   cacheLeitura: number
   respostas: number
+  agentes: number
 }
 
 export function tokensDa(l: LinhaUso): number {
@@ -42,6 +43,7 @@ export function totais(linhas: LinhaUso[]): Totais {
     cacheEscrita: 0,
     cacheLeitura: 0,
     respostas: 0,
+    agentes: 0,
   }
   for (const l of linhas) {
     t.usd += l.usd
@@ -50,6 +52,7 @@ export function totais(linhas: LinhaUso[]): Totais {
     t.cacheEscrita += l.cacheEscrita
     t.cacheLeitura += l.cacheLeitura
     t.respostas += l.respostas
+    t.agentes += l.agentes
   }
   t.tokens = t.entrada + t.saida + t.cacheEscrita + t.cacheLeitura
   return t
@@ -127,16 +130,23 @@ export function mapaCalor(linhas: LinhaUso[], metrica: Metrica): number[][] {
   return m
 }
 
+/**
+ * Sessões novas (pelo dia em que começaram) e agentes (pela hora em que cada um começou, das linhas de uso) por dia. Os
+ * agentes não saem das sessões: a sessão de editor fica aberta por semanas, e os agentes dela iam todos para o 1º dia.
+ */
 export function sessoesPorDia(
   sessoes: SessaoUso[],
+  uso: LinhaUso[],
   dias: string[]
 ): { dia: string; sessoes: number; agentes: number }[] {
   const mapa = new Map(dias.map((d) => [d, { dia: d, sessoes: 0, agentes: 0 }]))
   for (const s of sessoes) {
     const linha = mapa.get(chaveDia(s.inicio))
-    if (!linha) continue
-    linha.sessoes += 1
-    linha.agentes += s.agentes
+    if (linha) linha.sessoes += 1
+  }
+  for (const l of uso) {
+    const linha = mapa.get(chaveDia(l.hora))
+    if (linha) linha.agentes += l.agentes
   }
   return [...mapa.values()]
 }

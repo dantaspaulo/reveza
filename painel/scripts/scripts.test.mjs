@@ -36,7 +36,7 @@ describe("cabeçalhos do vercel.json", () => {
   it("CSP restrita: script só do próprio domínio, conexão só com o Supabase da instalação", () => {
     const c = csp("https://abc.supabase.co")
     expect(c).toContain("script-src 'self';")
-    expect(c).toContain("connect-src 'self' https://abc.supabase.co wss://abc.supabase.co;")
+    expect(c).toContain("connect-src 'self' https://abc.supabase.co wss://abc.supabase.co https://olinda.bcb.gov.br;")
     expect(c).toContain("frame-ancestors 'none'")
     expect(c).not.toContain("unsafe-eval")
     expect(c).not.toMatch(/script-src[^;]*unsafe-inline/)

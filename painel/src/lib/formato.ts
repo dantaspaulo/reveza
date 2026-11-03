@@ -27,10 +27,31 @@ export function fmtUsd(valor: number, idioma: Idioma, casas = 2): string {
   }).format(valor)
 }
 
+/** Em real (a conversão do custo equivalente): "R$ 1.234" / "R$1,234". */
+export function fmtBrl(valor: number, idioma: Idioma, casas = 0): string {
+  return nf(idioma, {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: casas,
+    maximumFractionDigits: casas,
+  }).format(valor)
+}
+
 export function fmtNumero(valor: number, idioma: Idioma, casas = 0): string {
   return nf(idioma, {
     minimumFractionDigits: casas,
     maximumFractionDigits: casas,
+  }).format(valor)
+}
+
+/** Número redondo em forma curta, com ou sem moeda: "100 bi", "US$ 20 mil", "R$ 200 mil" / "100B", "$20K". */
+export function fmtCompacto(valor: number, idioma: Idioma, moeda?: "USD" | "BRL"): string {
+  // a moeda puxa duas casas mínimas ("US$ 20,0 mil"): o número redondo sai sem casa
+  return nf(idioma, {
+    notation: "compact",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+    ...(moeda ? { style: "currency", currency: moeda } : {}),
   }).format(valor)
 }
 

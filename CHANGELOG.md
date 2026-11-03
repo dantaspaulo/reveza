@@ -7,6 +7,34 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.11.0 · 03/11/2026
+
+A tela **Uso** revisada, com os agentes contados direito, o custo também em real, leituras do período e um cartão
+para os stories. Pedido do Paulo: "Será que tá contabilizando mesmo os agents usados? será que tá correto?". Precisa
+da nuvem e dos computadores na 0.11.0 (no painel, **Computadores → Atualizar** na linha Nuvem e painel e em cada
+computador).
+
+- **Agentes contados pela hora em que começaram.** O painel somava os agentes das sessões que começaram no período, e a
+  sessão do editor fica aberta por semanas: no Mac do Paulo, em 30 dias, a tela mostrava 1.089 agentes, e o registro
+  do próprio Mac tinha 1.615 (as sessões mais usadas estavam abertas desde julho, agosto e setembro). Agora cada linha
+  de uso por hora leva os agentes que começaram nela, e o agente atualizado reenvia o que já tinha visto.
+- **Sessões com uso no período**, também as que começaram antes e seguem abertas (o rodapé diz quantas são novas); o
+  gráfico por dia mostra as sessões novas e os agentes de cada dia; **Sessões mais caras** passa a incluir as sessões
+  longas, com o custo desde que começaram.
+- **Custo também em real**, abaixo do valor em dólar, pela PTAX de venda do Banco Central (a data e a cotação ficam no
+  ícone de informação). Só no painel em português.
+- **Tokens:** o cache aparece separado entre gravado e relido (no Mac do Paulo, 98% dos tokens são a conversa relida
+  a cada resposta).
+- **Leituras do período:** tendência contra o período anterior, quanto do uso é releitura de cache, sessões abertas há
+  mais de uma semana, execuções automáticas curtas, modelo e projeto que mais pesaram, dia mais intenso e horário de
+  pico.
+- **Cartão para os stories:** em **Uso → Compartilhar**, escolha o número (tokens, custo em dólar ou real, respostas,
+  agentes, sessões) e baixe um JPG de 1080 x 1920 com troféu e a marca reveza.ia.br; no celular, o botão
+  **Compartilhar** abre a folha de compartilhar. Vai só o número agregado: nada de conta, e-mail ou projeto.
+- O custo equivalente foi conferido contra a tabela de preços da API (Opus 5.5 a US$ 4 e 20 por milhão, cache lido a
+  US$ 0,20, gravado a 1,25 e 2 vezes a entrada): os números batem. O Haiku 5.5 passa a usar a faixa mais cara acima de
+  100 mil tokens no pedido.
+
 ## 0.10.7 · 30/10/2026
 
 A espera por memória na troca só vale para quem usa a extensão do assistente no editor. Pergunta do Paulo: como fica

@@ -117,6 +117,8 @@ export interface LinhaTokens {
   cache_escrita: number;
   cache_leitura: number;
   usd: number;
+  /** Agentes que começaram nesta hora (nuvem 0030; a nuvem antiga ignora o campo). */
+  agentes: number;
 }
 
 export interface SessaoNuvem {

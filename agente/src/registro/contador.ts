@@ -4,7 +4,8 @@
 // - Leitura incremental: guarda até que byte leu cada arquivo; linha pela metade fica para a próxima.
 // - A mesma resposta aparece em várias linhas (e em outra transcrição, quando a sessão é retomada): conta uma vez,
 //   pelo id da resposta. A linha zerada (que vem depois da cheia) não conta nem marca o id, então não apaga a cheia.
-// - Agente = arquivo `<sessão>/subagents/agent-<id>.jsonl`.
+// - Agente = arquivo `<sessão>/subagents/agent-<id>.jsonl`. Conta na linha da hora da primeira resposta dele (`ag`): o
+//   painel soma agentes pela hora em que começaram, não pela sessão (sessão de editor fica aberta por semanas).
 // - Projeto = só o nome da pasta final (nunca o caminho).
 // - Conteúdo da conversa não é guardado em lugar nenhum, só os números.
 //
@@ -31,6 +32,8 @@ export interface LinhaHora {
   c1h: number;
   cl: number;
   usd: number;
+  /** Agentes que começaram nesta hora, conta, modelo e projeto (desde o formato 2). */
+  ag?: number;
 }
 
 export interface SessaoReg {
@@ -52,7 +55,8 @@ export interface SessaoReg {
 }
 
 interface EstadoRegistro {
-  formato: 1;
+  /** 2: as linhas por hora contam os agentes (`ag`). */
+  formato: 1 | 2;
   arquivos: Record<string, number>;
   horas: Record<string, LinhaHora>;
   sessoes: Record<string, SessaoReg>;
@@ -63,7 +67,7 @@ interface EstadoRegistro {
 }
 
 const VAZIO = (): EstadoRegistro => ({
-  formato: 1,
+  formato: 2,
   arquivos: {},
   horas: {},
   sessoes: {},
@@ -109,6 +113,32 @@ export class Contador {
     for (const id of this.e.vistosRecentes) this.vistos.add(id);
     this.pendH = new Set(this.e.pendentesHoras);
     this.pendS = new Set(this.e.pendentesSessoes);
+    // registro de antes do formato 2: os agentes que ele já viu vão para as linhas por hora (fica gravado na próxima
+    // gravação do agente; a linha de comando só lê)
+    if (this.e.formato !== 2) this.contarAgentesPorHora();
+  }
+
+  /**
+   * Refaz o número de agentes de cada linha por hora a partir dos agentes conhecidos (início e conta). O agente vai
+   * para a linha daquela hora e conta com mais respostas: o dia e a conta saem exatos; o modelo e o projeto, os da
+   * linha principal da hora (o registro antigo não guardava os do agente). As linhas com agente voltam a ser enviadas.
+   */
+  private contarAgentesPorHora(): void {
+    const principal = new Map<string, string>();
+    for (const [k, h] of Object.entries(this.e.horas)) {
+      h.ag = 0;
+      const g = `${h.hora}|${h.conta}`;
+      const atual = principal.get(g);
+      if (!atual || this.e.horas[atual]!.msgs < h.msgs) principal.set(g, k);
+    }
+    for (const a of Object.values(this.e.agentes)) {
+      const k = principal.get(`${a.inicio - (a.inicio % 3600)}|${a.conta}`);
+      if (!k) continue;
+      const h = this.e.horas[k]!;
+      h.ag = (h.ag ?? 0) + 1;
+      this.pendH.add(k);
+    }
+    this.e.formato = 2;
   }
 
   // ------------------------------------------------------------------------------------------------ persistência
@@ -301,6 +331,7 @@ export class Contador {
       if (!this.e.agentes[ka]) {
         this.e.agentes[ka] = { inicio: ts, conta };
         s.agentes += 1;
+        h.ag = (h.ag ?? 0) + 1;
       }
     }
     this.pendS.add(sessao);
@@ -345,6 +376,7 @@ export class Contador {
         cache_escrita: h.c5 + h.c1h,
         cache_leitura: h.cl,
         usd: Math.round(h.usd * 10_000) / 10_000,
+        agentes: h.ag ?? 0,
       });
       chaves.push(k);
       if (linhas.length >= max) break;
@@ -423,6 +455,7 @@ export class Contador {
       this.pendS.add(s.sessao);
     }
     for (const a of dados.agentes) this.e.agentes[`${a.sessao}/${a.agente}`] ??= { inicio: a.inicio, conta: a.conta };
+    this.contarAgentesPorHora();
     this.salvar();
   }
 

@@ -298,6 +298,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
           cacheEscrita,
           cacheLeitura,
           usd: Math.round(usd * 10000) / 10000,
+          agentes: 0,
         })
       }
     }
@@ -323,6 +324,9 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
       const aberta = t0 - ultima < H
       const fim = aberta ? null : iso(ultima + (15 + Math.floor(sorteio() * 40)) * MIN)
       const contas = [...new Set(atual.map((l) => l.contaId).filter(Boolean))] as string[]
+      const agentes = Math.floor(sorteio() * sorteio() * 9)
+      // os agentes da sessão começam ao longo dela, um por hora de uso (o resto na última hora)
+      for (let i = 0; i < agentes; i++) atual[Math.min(i, atual.length - 1)].agentes += 1
       sessoes.push({
         id: `s-${++nSessao}`,
         computadorId: atual[0].computadorId,
@@ -332,7 +336,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
         respostas: atual.reduce((s, l) => s + l.respostas, 0),
         tokens: atual.reduce((s, l) => s + l.entrada + l.saida + l.cacheEscrita + l.cacheLeitura, 0),
         usd: Math.round(atual.reduce((s, l) => s + l.usd, 0) * 100) / 100,
-        agentes: Math.floor(sorteio() * sorteio() * 9),
+        agentes,
         contas,
         modelos: [...new Set(atual.map((l) => l.modelo))],
         paradaNoLimite: contas.includes("conta-cliente") && sorteio() < 0.2,
@@ -857,10 +861,8 @@ export class FonteDemo implements Fonte {
     const a = de.getTime()
     const b = ate.getTime()
     return this.l(
-      this.d.sessoes.filter((s) => {
-        const t = new Date(s.inicio).getTime()
-        return t >= a && t < b
-      })
+      // como a nuvem: as sessões com uso no período, também as que começaram antes
+      this.d.sessoes.filter((s) => new Date(s.inicio).getTime() < b && (!s.fim || new Date(s.fim).getTime() >= a))
     )
   }
 

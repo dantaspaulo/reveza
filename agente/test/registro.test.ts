@@ -45,6 +45,13 @@ describe("custo", () => {
     assert.ok(Math.abs(custo({ cache_read_input_tokens: 1e6 }, "claude-fable-5").usd - 1.0) < 1e-9);
   });
 
+  test("haiku 5.5: acima de 100 mil tokens no pedido vale a faixa mais cara", async () => {
+    const pequeno = resposta("m", 0, { ent: 50_000, sai: 1e6, modelo: "claude-haiku-5-5" }).message.usage;
+    assert.ok(Math.abs(custo(pequeno, "claude-haiku-5-5").usd - (0.05 * 0.1 + 0.5)) < 1e-9);
+    const grande = resposta("m", 0, { ent: 10_000, cl: 200_000, sai: 1e6, modelo: "claude-haiku-5-5" }).message.usage;
+    assert.ok(Math.abs(custo(grande, "claude-haiku-5-5").usd - (0.01 * 0.5 + 0.2 * 0.05 + 2.5)) < 1e-9);
+  });
+
   test("nome com sufixo e modelo desconhecido", async () => {
     assert.equal(familia("claude-opus-5-5[1m]"), "claude-opus-5-5");
     assert.equal(familia("claude-sonnet-5-5-20261001"), "claude-sonnet-5-5");
@@ -117,6 +124,42 @@ describe("contador", () => {
     assert.equal(c.agentesEntre(0, T + 99999, "conta-a"), 1);
     assert.equal(c.totais(0, T + 99999, (h) => h.conta === "conta-b").respostas, 1);
     assert.deepEqual(s.contas, ["conta-a", "conta-b"]);
+  });
+
+  // Relato do Paulo (03/11/2026): o painel somava os agentes das sessões que começaram no período, e as sessões de
+  // editor ficam abertas por semanas. Cada linha por hora leva os agentes que começaram nela.
+  test("agentes contados na linha da hora em que começaram, e enviados à nuvem", async () => {
+    escrever("s1.jsonl", [resposta("m1", T)]);
+    escrever(path.join("s1", "subagents", "agent-aaa.jsonl"), [resposta("m2", T + 10), resposta("m3", T + 4000)]);
+    escrever(path.join("s1", "subagents", "agent-bbb.jsonl"), [resposta("m4", T + 4000, { modelo: "claude-fable-5-1" })]);
+    await c.varrer();
+    const linhas = c.paraNuvem(() => "uuid").linhas;
+    const ag = (hora: number, modelo = "claude-opus-5-5") =>
+      linhas.find((l) => l.hora === new Date((hora - (hora % 3600)) * 1000).toISOString() && l.modelo === modelo)?.agentes;
+    assert.equal(ag(T), 1, "o aaa começou na hora de T");
+    assert.equal(ag(T + 4000), 0, "a segunda resposta do aaa não conta outro agente");
+    assert.equal(ag(T + 4000, "claude-fable-5-1"), 1, "o bbb começou depois, no modelo dele");
+    assert.equal(linhas.reduce((s, l) => s + l.agentes, 0), c.agentesEntre(0, T + 99999));
+  });
+
+  test("registro de antes (formato 1): os agentes já vistos vão para as linhas por hora e voltam a ser enviados", async () => {
+    escrever("s1.jsonl", [resposta("m1", T), resposta("m5", T + 30, { modelo: "claude-fable-5-1" })]);
+    escrever(path.join("s1", "subagents", "agent-aaa.jsonl"), [resposta("m2", T + 10), resposta("m3", T + 20)]);
+    escrever(path.join("s1", "subagents", "agent-bbb.jsonl"), [resposta("m4", T + 4000)]);
+    await c.varrer();
+    c.confirmarEnvio(c.paraNuvem(() => "uuid").chaves, []);
+    // como o registro de antes ficava: sem `ag` nas linhas e no formato 1
+    for (const h of Object.values(c.e.horas)) delete h.ag;
+    c.e.formato = 1;
+    c.salvar();
+    const depois = novo();
+    assert.equal(depois.e.formato, 2);
+    const linhas = depois.paraNuvem(() => "uuid").linhas;
+    assert.equal(linhas.length, 2, "só as linhas com agente voltam a ser enviadas");
+    assert.equal(linhas.reduce((s, l) => s + l.agentes, 0), 2);
+    const daHora = linhas.find((l) => l.hora === new Date((T - (T % 3600)) * 1000).toISOString())!;
+    assert.equal(daHora.modelo, "claude-opus-5-5", "vai para a linha da hora com mais respostas");
+    assert.equal(daHora.agentes, 1);
   });
 
   test("leitura incremental e linha pela metade fica para depois", async () => {
