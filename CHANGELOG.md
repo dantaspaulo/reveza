@@ -31,6 +31,9 @@ computador).
 - **Cartão para os stories:** em **Uso → Compartilhar**, escolha o número (tokens, custo em dólar ou real, respostas,
   agentes, sessões) e baixe um JPG de 1080 x 1920 com troféu e a marca reveza.ia.br; no celular, o botão
   **Compartilhar** abre a folha de compartilhar. Vai só o número agregado: nada de conta, e-mail ou projeto.
+- **A linha de status não se repete mais.** O mod refazia a linha a cada leitura de 30 s, mesmo sem mudança; no
+  terminal ela se redesenha no lugar, mas no Chat do Orca (o assistente pelo SDK) cada vez virava um bloco novo
+  ("conta contato · 5h 25%" sem parar, relato do Paulo). Agora a linha só é refeita quando o texto muda.
 - O custo equivalente foi conferido contra a tabela de preços da API (Opus 5.5 a US$ 4 e 20 por milhão, cache lido a
   US$ 0,20, gravado a 1,25 e 2 vezes a entrada): os números batem. O Haiku 5.5 passa a usar a faixa mais cara acima de
   100 mil tokens no pedido.

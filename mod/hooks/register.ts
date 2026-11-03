@@ -247,6 +247,9 @@ export const register: Register = (on, options) => {
   let contaLida: { valor: ContaSessao | null; versao: number | null; ate: number } | null = null
   // o agente disse que esta sessão está noutra conta: a linha de status diz isso, e o limite dela não pede troca
   let outraConta = false
+  // o último texto mostrado na linha de status (null: nada mostrado ainda). Relato do Paulo (03/11/2026): no Chat do
+  // Orca (pelo SDK) cada chamada vira um bloco novo, e a leitura de 30 s repetia "conta contato · 5h 25%" sem parar
+  let statusMostrado: string | undefined | null = null
   // de onde a sessão roda (entradaDaSessao), lido no começo dela; vai na medida e no limite
   let entrada: string | null = null
 
@@ -257,6 +260,14 @@ export const register: Register = (on, options) => {
       contaLida = { valor, versao, ate: agora + (valor ? CONTA_VALE_MS : CONTA_RECONFERE_MS) }
     }
     return contaLida.valor
+  }
+
+  /** O texto da linha de status quando mudou desde o último mostrado; null quando é o mesmo (não chama o host). */
+  function statusMudou(): { texto: string | undefined } | null {
+    const texto = textoStatus()
+    if (statusMostrado !== null && texto === statusMostrado) return null
+    statusMostrado = texto
+    return { texto }
   }
 
   function textoStatus(): string | undefined {
@@ -312,7 +323,8 @@ export const register: Register = (on, options) => {
         const aviso = ativa ? aplicarAtiva(ativa) : null
         // sessão noutra conta (o app de desktop): a troca da conta em uso não muda a dela, então não avisa
         if (aviso && !outraConta) $.ui.toast(aviso)
-        $.ui.status(textoStatus())
+        const status = statusMudou()
+        if (status) $.ui.status(status.texto)
 
         // conta sem o modelo da sessão e nenhuma troca em 2 minutos: não fica preso, segue no modelo padrão
         if (espera?.modelo && agora - espera.desde > ESPERA_MODELO_MS && !(ativa && ativa.versao > espera.referencia)) {
@@ -350,7 +362,8 @@ export const register: Register = (on, options) => {
       const janelas = janelasDaMedida(e.rateLimits)
       const cincoHoras = e.rateLimits.find(l => l.kind === 'five_hour')
       cinco = cincoHoras ? `5h ${Math.round(cincoHoras.percentUsed)}%` : ''
-      $.ui.status(textoStatus())
+      const status = statusMudou()
+      if (status) $.ui.status(status.texto)
       if (janelas.length > 0) {
         // o relógio do sistema: a validade da conta lida não precisa do relógio da sessão (que nem todo host tem aqui)
         const agora = Date.now()
@@ -365,7 +378,8 @@ export const register: Register = (on, options) => {
             if (releitura !== null && contaLida) contaLida.ate = Math.min(contaLida.ate, agora + releitura)
             if (dito !== outraConta) {
               outraConta = dito
-              $.ui.status(textoStatus())
+              const status = statusMudou()
+              if (status) $.ui.status(status.texto)
             }
           }
         } catch {
@@ -431,7 +445,8 @@ export const register: Register = (on, options) => {
       if (dito?.outraConta) {
         // a sessão está noutra conta (o app de desktop, por exemplo), ou voltou e não pegou a troca: o Reveza não insiste
         outraConta = true
-        $.ui.status(textoStatus())
+        const status = statusMudou()
+        if (status) $.ui.status(status.texto)
         $.ui.toast(dito.naoPegou ? x.toasts.naoPegou(dito.naoPegou) : x.toasts.outraConta)
         return next(e)
       }
@@ -472,7 +487,8 @@ export const register: Register = (on, options) => {
       // o limite é de outra conta (o app de desktop, por exemplo), ou a sessão voltou e não pegou a troca: trocar a conta
       // em uso não faz esta sessão voltar
       outraConta = true
-      $.ui.status(textoStatus())
+      const status = statusMudou()
+      if (status) $.ui.status(status.texto)
       $.ui.toast(resposta.naoPegou ? x.toasts.naoPegou(resposta.naoPegou) : x.toasts.outraConta)
     } else if (tipo === 'interativa') {
       // a troca que já aconteceu antes de a sessão reler o login conta como feita: volta na próxima leitura (a sessão

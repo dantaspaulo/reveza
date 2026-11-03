@@ -688,3 +688,24 @@ test('a espera que o agente pede vale em segundos, com teto de 10 minutos', () =
   expect(aguardarMs('35')).toBe(0)
   expect(aguardarMs(Number.NaN)).toBe(0)
 })
+
+// Relato do Paulo (03/11/2026): no Chat do Orca (pelo SDK) cada chamada da linha de status vira um bloco novo, e a
+// leitura de 30 s repetia "conta contato · 5h 25%" sem parar. A linha só é refeita quando o texto muda.
+test('a linha de status só é refeita quando o texto muda', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado, status } = agente(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await andar(relogio, 100_000)
+  expect(status.filter(s => s === 'conta a')).toHaveLength(1)
+  await $.session.measure(MEDIDA)
+  await $.session.measure(MEDIDA)
+  await andar(relogio, 65_000)
+  expect(status.filter(s => s === 'conta a · 5h 48%')).toHaveLength(1)
+  await $.session.measure({ ...MEDIDA, rateLimits: [{ kind: 'five_hour', percentUsed: 49 }] })
+  expect(status.at(-1)).toBe('conta a · 5h 49%')
+  estado.versao = 4
+  estado.email = 'b@exemplo.com'
+  await andar(relogio, 35_000)
+  expect(status.at(-1)).toBe('conta b')
+  expect(status.filter(s => s === 'conta b')).toHaveLength(1)
+})
