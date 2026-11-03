@@ -183,12 +183,92 @@ function repositorio() {
   return r;
 }
 
+/** O pacote e a pasta de um run do Dependabot, pelo título ("npm_and_yarn in /painel for minimatch - Update #1"). */
+export function pacoteDoDependabot(titulo) {
+  const m = /^\S+ in (\/\S*) for (\S+?) - Update #\d+$/.exec(String(titulo || "").trim());
+  return m ? { pasta: m[1], pacote: m[2] } : null;
+}
+
+function partesDaVersao3(v) {
+  return String(v).replace(/^v/, "").split(/[.+-]/).slice(0, 3).map((x) => Number(x) || 0);
+}
+function compararVersao(a, b) {
+  const [x, y] = [partesDaVersao3(a), partesDaVersao3(b)];
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  return 0;
+}
+
+/** A versão cai no intervalo vulnerável de um alerta do GitHub ("< 11.0.1", ">= 10.0.0, < 10.2.3", "= 1.2.3")? */
+export function dentroDoIntervalo(versao, intervalo) {
+  return String(intervalo)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .every((cond) => {
+      const m = /^(<=|>=|<|>|=)\s*(\S+)$/.exec(cond);
+      if (!m) return true; // condição que não sei ler: conta como dentro (o lançamento recusa, por segurança)
+      const c = compararVersao(versao, m[2]);
+      return { "<": c < 0, "<=": c <= 0, ">": c > 0, ">=": c >= 0, "=": c === 0 }[m[1]];
+    });
+}
+
+/** As versões de um pacote num package-lock.json (todas as cópias da árvore). */
+export function versoesNoLock(lock, pacote) {
+  return Object.entries(lock.packages ?? {})
+    .filter(([caminho]) => caminho === `node_modules/${pacote}` || caminho.endsWith(`/node_modules/${pacote}`))
+    .map(([, p]) => p.version)
+    .filter(Boolean);
+}
+
+/**
+ * O Dependabot vermelho que esta versão corrige: o run falhou porque não conseguiu atualizar um pacote, e o
+ * package-lock.json do HEAD já não tem nenhuma versão dele dentro dos alertas abertos. Sem isso, a correção nunca
+ * chegava à main (só o lançamento publica, e o lançamento recusava pelo vermelho). Relato de 03/11/2026: o minimatch.
+ */
+export function dependabotCorrigido(titulo, lock, intervalos) {
+  const alvo = pacoteDoDependabot(titulo);
+  if (!alvo || !lock || !intervalos.length) return false;
+  const versoes = versoesNoLock(lock, alvo.pacote);
+  return versoes.length > 0 && !versoes.some((v) => intervalos.some((i) => dentroDoIntervalo(v, i)));
+}
+
+function dependabotCorrigidoNoHead(repo) {
+  try {
+    const [run] = JSON.parse(
+      execFileSync("gh", ["run", "list", "-R", repo, "--branch", "main", "--workflow", "Dependabot Updates", "-L", "1", "--json", "displayTitle"], {
+        cwd: RAIZ,
+        encoding: "utf8",
+      })
+    );
+    const alvo = pacoteDoDependabot(run?.displayTitle);
+    if (!alvo) return false;
+    const base = alvo.pasta.replace(/^\/+|\/+$/g, "");
+    const manifesto = base ? `${base}/package-lock.json` : "package-lock.json";
+    const intervalos = JSON.parse(
+      execFileSync("gh", ["api", `repos/${repo}/dependabot/alerts?state=open&package=${encodeURIComponent(alvo.pacote)}&per_page=100`], {
+        cwd: RAIZ,
+        encoding: "utf8",
+      })
+    )
+      .filter((a) => a.dependency?.manifest_path === manifesto)
+      .map((a) => a.security_vulnerability?.vulnerable_version_range)
+      .filter(Boolean);
+    const lock = JSON.parse(git("show", `HEAD:${manifesto}`));
+    const ok = dependabotCorrigido(run.displayTitle, lock, intervalos);
+    if (ok) console.log(`o Dependabot vermelho (${alvo.pacote} em ${alvo.pasta}) fica corrigido por esta versão: o package-lock.json não tem mais a versão vulnerável`);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function conferirCi() {
-  const saida = execFileSync("gh", ["run", "list", "-R", repositorio(), "--branch", "main", "-L", "40", "--json", "workflowName,conclusion,status"], {
+  const repo = repositorio();
+  const saida = execFileSync("gh", ["run", "list", "-R", repo, "--branch", "main", "-L", "40", "--json", "workflowName,conclusion,status"], {
     cwd: RAIZ,
     encoding: "utf8",
   });
-  const vermelhos = workflowsVermelhos(JSON.parse(saida));
+  const vermelhos = workflowsVermelhos(JSON.parse(saida)).filter((w) => w !== "Dependabot Updates" || !dependabotCorrigidoNoHead(repo));
   if (vermelhos.length) throw new Error(`o último run de ${vermelhos.join(", ")} na main está vermelho: corrija e deixe verde antes de lançar`);
 }
 

@@ -1,6 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { conferir, maior, paraAtualizar, partesDaVersao, precisaVersao, primeiraDoChangelog, secaoDoChangelog, soArquivosDaVersao, versoes, workflowsVermelhos } from "./versao.mjs";
+import {
+  conferir,
+  dentroDoIntervalo,
+  dependabotCorrigido,
+  maior,
+  pacoteDoDependabot,
+  paraAtualizar,
+  partesDaVersao,
+  precisaVersao,
+  primeiraDoChangelog,
+  secaoDoChangelog,
+  soArquivosDaVersao,
+  versoes,
+  versoesNoLock,
+  workflowsVermelhos,
+} from "./versao.mjs";
 
 const CHANGELOG = `# Versões
 
@@ -96,4 +111,33 @@ test("o Para atualizar nunca diz que o painel vai junto com a nuvem sem a atuali
   assert.ok(soPainel.indexOf("Nuvem:") > -1 && soPainel.indexOf("Nuvem:") < soPainel.indexOf("Painel:"));
   assert.doesNotMatch(paraAtualizar({ nuvem: false, funcoes: false, painel: false, computadores: true }), /Painel|Nuvem/);
   assert.match(paraAtualizar({ nuvem: false, funcoes: false, painel: false, computadores: false }), /nada a fazer/);
+});
+
+// O Dependabot vermelho que a versão corrige (03/11/2026, minimatch): sem isso a correção nunca chegava à main.
+
+test("o pacote e a pasta pelo título do run do Dependabot", () => {
+  assert.deepEqual(pacoteDoDependabot("npm_and_yarn in /painel for minimatch - Update #1667469946"), { pasta: "/painel", pacote: "minimatch" });
+  assert.deepEqual(pacoteDoDependabot("npm_and_yarn in / for @vitest/mocker - Update #1"), { pasta: "/", pacote: "@vitest/mocker" });
+  assert.equal(pacoteDoDependabot("Dependabot Updates"), null);
+});
+
+test("intervalos vulneráveis do GitHub", () => {
+  assert.equal(dentroDoIntervalo("10.2.6", "< 11.0.1"), true);
+  assert.equal(dentroDoIntervalo("11.0.4", "< 11.0.1"), false);
+  assert.equal(dentroDoIntervalo("10.1.0", ">= 10.0.0, < 10.2.3"), true);
+  assert.equal(dentroDoIntervalo("10.2.3", ">= 10.0.0, < 10.2.3"), false);
+  assert.equal(dentroDoIntervalo("9.9.9", ">= 10.0.0, < 10.2.3"), false);
+  assert.equal(dentroDoIntervalo("1.2.3", "= 1.2.3"), true);
+  assert.equal(dentroDoIntervalo("1.2.3", "~> 1.2"), true, "o que não sei ler conta como vulnerável");
+});
+
+test("o Dependabot vermelho só fica para trás quando o package-lock.json do HEAD não tem a versão vulnerável", () => {
+  const titulo = "npm_and_yarn in /painel for minimatch - Update #1667469946";
+  const lock = (v) => ({ packages: { "": {}, "node_modules/minimatch": { version: v }, "node_modules/x/node_modules/minimatch": { version: "11.0.4" } } });
+  assert.deepEqual(versoesNoLock(lock("10.2.6"), "minimatch").sort(), ["10.2.6", "11.0.4"]);
+  assert.equal(dependabotCorrigido(titulo, lock("11.0.4"), ["< 11.0.1", ">= 10.0.0, < 10.2.3"]), true);
+  assert.equal(dependabotCorrigido(titulo, lock("10.2.6"), ["< 11.0.1"]), false, "uma cópia ainda vulnerável segura o lançamento");
+  assert.equal(dependabotCorrigido(titulo, { packages: {} }, ["< 11.0.1"]), false, "sem o pacote no lock, não dá para afirmar");
+  assert.equal(dependabotCorrigido(titulo, lock("11.0.4"), []), false, "sem alerta aberto para conferir, segue recusando");
+  assert.equal(dependabotCorrigido("título estranho", lock("11.0.4"), ["< 11.0.1"]), false);
 });
