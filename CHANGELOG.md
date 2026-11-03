@@ -34,6 +34,9 @@ computador).
 - **A linha de status não se repete mais.** O mod refazia a linha a cada leitura de 30 s, mesmo sem mudança; no
   terminal ela se redesenha no lugar, mas no Chat do Orca (o assistente pelo SDK) cada vez virava um bloco novo
   ("conta contato · 5h 25%" sem parar, relato do Paulo). Agora a linha só é refeita quando o texto muda.
+- O alerta do Dependabot do minimatch (negação de serviço por padrões, abaixo da 11.0.1) fecha: ele só vinha pelas
+  ferramentas de lint do painel, que ainda pedem a 10, e o painel passa a forçar a 11 (o lint inteiro passa nela); um
+  teste recusa a versão vulnerável de volta no package-lock.json.
 - O custo equivalente foi conferido contra a tabela de preços da API (Opus 5.5 a US$ 4 e 20 por milhão, cache lido a
   US$ 0,20, gravado a 1,25 e 2 vezes a entrada): os números batem. O Haiku 5.5 passa a usar a faixa mais cara acima de
   100 mil tokens no pedido.
