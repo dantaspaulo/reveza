@@ -71,6 +71,17 @@ const INTERACOES = [
     },
   ],
   [
+    "i-computadores-ligar-nome",
+    "/computadores",
+    async (p) => {
+      await p
+        .getByRole("button", { name: L("Ligar computador novo", "Link new computer") })
+        .first()
+        .click()
+      await p.getByLabel(L("Nome do computador novo", "Name of the new computer")).fill(L("Notebook da Ana", "Ana's laptop"))
+    },
+  ],
+  [
     "i-computadores-ligar",
     "/computadores",
     async (p) => {
@@ -78,7 +89,9 @@ const INTERACOES = [
         .getByRole("button", { name: L("Ligar computador novo", "Link new computer") })
         .first()
         .click()
+      await p.getByLabel(L("Nome do computador novo", "Name of the new computer")).fill(L("Notebook da Ana", "Ana's laptop"))
       await p.getByRole("button", { name: L("Gerar o código de acesso", "Generate the access code") }).click()
+      await p.getByText(L("Ligando Notebook da Ana", "Linking Ana's laptop")).waitFor()
       await p.getByText(L("Quando ele pedir, cole este código de acesso:", "When it asks, paste this access code:")).waitFor()
     },
   ],

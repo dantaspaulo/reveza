@@ -573,7 +573,16 @@ function LigarComputadorNovo() {
   const [pc, setPc] = React.useState(() => (liberam.find(online) ?? liberam[0])?.id ?? "")
   const [etapa, setEtapa] = React.useState<EtapaLigar>({ tipo: "inicio" })
   const [lig, setLig] = React.useState<EstadoLigacao | null>(null)
+  // o nome do computador novo (pedido do Paulo, 06/11/2026): dado aqui, ele já entra com esse nome; vazio, vale o do sistema
+  const [nome, setNome] = React.useState("")
   const pendente = React.useRef<string | null>(null)
+  const limpo = nome.replace(/\s+/g, " ").trim()
+  // como o banco (0029): dois computadores ativos não têm o mesmo nome. Só no início: enquanto cria, o próprio
+  // computador novo já aparece na lista com esse nome.
+  const repetido =
+    limpo && etapa.tipo === "inicio"
+      ? (estado.computadores.find((c) => !c.revogado && c.nome.toLowerCase() === limpo.toLowerCase()) ?? null)
+      : null
   const escolhido = liberam.find((c) => c.id === pc) ?? null
   const novoId = etapa.tipo === "acompanhar" ? etapa.computadorId : null
   const emCurso = !lig || FASES_EM_CURSO.has(lig.fase)
@@ -613,6 +622,8 @@ function LigarComputadorNovo() {
     const [ok, acesso] = await acao(() => fonte.criarAcessoComputador())
     if (!ok || !acesso.computadorId) return setEtapa({ tipo: "inicio" })
     pendente.current = acesso.computadorId
+    // o nome não segura o código: se não passar, o aviso aparece e o lápis da lista renomeia depois
+    if (limpo) await acao(() => fonte.renomearComputador(acesso.computadorId!, limpo))
     if (escolhido) await acao(() => fonte.escolherAprovador(acesso.computadorId!, escolhido.id))
     setEtapa({ tipo: "acompanhar", codigo: acesso.codigo, computadorId: acesso.computadorId })
   }
@@ -655,7 +666,35 @@ function LigarComputadorNovo() {
             </AlertDescription>
           </Alert>
         ) : (
-          <>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (etapa.tipo !== "criando" && !repetido) void gerar()
+            }}
+          >
+            <Field data-invalid={repetido ? true : undefined}>
+              <FieldLabel htmlFor="ligar-nome">{t("computadores.ligacao.nome")}</FieldLabel>
+              <Input
+                id="ligar-nome"
+                value={nome}
+                maxLength={60}
+                autoFocus
+                aria-invalid={repetido ? true : undefined}
+                placeholder={t("computadores.renomear.exemplo")}
+                onChange={(e) => setNome(e.target.value)}
+              />
+              <FieldDescription className={cn(repetido && "text-destructive")}>
+                {repetido
+                  ? t(
+                      repetido.sistema === "pendente"
+                        ? "computadores.ligacao.nomeRepetidoPendente"
+                        : "computadores.ligacao.nomeRepetido",
+                      { computador: repetido.nome }
+                    )
+                  : t("computadores.ligacao.nomeDica")}
+              </FieldDescription>
+            </Field>
             {seletor ? (
               <Field>
                 <FieldLabel htmlFor="ligar-pc">{t("computadores.ligacao.ondeDigitar")}</FieldLabel>
@@ -664,11 +703,11 @@ function LigarComputadorNovo() {
             ) : (
               <p className="text-sm">{t("computadores.ligacao.inicio", { computador: escolhido?.nome ?? "" })}</p>
             )}
-            <Button onClick={() => void gerar()} disabled={etapa.tipo === "criando"} className="self-start">
+            <Button type="submit" disabled={etapa.tipo === "criando" || !!repetido} className="self-start">
               {etapa.tipo === "criando" ? <Spinner /> : <KeyRoundIcon />}
               {t("computadores.ligacao.gerar")}
             </Button>
-          </>
+          </form>
         )}
       </div>
     )
@@ -681,6 +720,9 @@ function LigarComputadorNovo() {
   const nomeAprovador = escolhido?.nome ?? ""
   return (
     <div className="flex flex-col gap-4">
+      {novo?.nomeDoPainel ? (
+        <p className="text-sm font-medium">{t("computadores.ligacao.ligando", { computador: novo.nome })}</p>
+      ) : null}
       <ol className="flex flex-col gap-4 text-sm">
         <Passo n={1} feito={fase !== "esperando_pedido"}>
           <span>{t("computadores.ligacao.passoRodar")}</span>

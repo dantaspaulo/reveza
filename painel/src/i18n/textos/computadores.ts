@@ -235,6 +235,12 @@ export default secao({
         titulo: "Ligar um computador novo",
         descricao:
           "O computador novo mostra um código de 12 caracteres e você digita esse código num computador que já usa o Reveza AI. Nenhum segredo passa por esta tela: a chave do cofre vai cifrada só para o computador novo.",
+        nome: "Nome do computador novo",
+        nomeDica: "É o nome que aparece no painel e nos avisos. Vazio, fica o nome que o sistema dele manda.",
+        nomeRepetido: "Já existe um computador chamado {computador}. Escolha outro nome.",
+        nomeRepetidoPendente:
+          "Um código gerado antes, ainda sem uso, já tem o nome {computador}. Escolha outro nome ou revogue aquele na lista.",
+        ligando: "Ligando {computador}",
         ondeDigitar: "Onde você vai digitar o código",
         inicio: "A janela que pede o código vai abrir em {computador}.",
         foraDoAr: "{computador} (fora do ar)",
@@ -510,6 +516,12 @@ export default secao({
         titulo: "Link a new computer",
         descricao:
           "The new computer shows a 12-character code and you type that code on a computer that already uses Reveza AI. No secret goes through this screen: the vault key travels encrypted for the new computer only.",
+        nome: "Name of the new computer",
+        nomeDica: "The name shown in the panel and in alerts. Left empty, it uses the name its system sends.",
+        nomeRepetido: "There is already a computer called {computador}. Pick another name.",
+        nomeRepetidoPendente:
+          "A code generated earlier, not used yet, already has the name {computador}. Pick another name or revoke that one in the list.",
+        ligando: "Linking {computador}",
         ondeDigitar: "Where you'll type the code",
         inicio: "The window asking for the code will open on {computador}.",
         foraDoAr: "{computador} (offline)",

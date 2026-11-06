@@ -7,6 +7,19 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.14.0 · 06/11/2026
+
+O computador novo ganha nome na hora de gerar o código. Pedido do Paulo: "deve ter um jeito de adicionar novo pc na
+conta colocando o nome da máquina nova e gerar um código". Só o painel muda: no painel, **Computadores → Atualizar** na
+linha Nuvem e painel; a nuvem e os computadores não precisam mudar.
+
+- **Nome do computador novo:** em **Computadores → Ligar computador novo**, o primeiro campo é o nome da máquina (até
+  60 caracteres). O código sai com esse nome: o computador já aparece assim na lista enquanto espera e continua assim
+  depois de entrar. Vazio, fica o nome que o sistema dele manda, como antes.
+- O painel avisa antes de gerar se o nome já é de outro computador, inclusive de um código gerado antes e ainda sem
+  uso (aí é escolher outro nome ou revogar aquele na lista).
+- Enquanto o computador novo entra, a janela mostra "Ligando" com o nome dado.
+
 ## 0.13.0 · 06/11/2026
 
 Remover conta passa a ter **Desfazer**, a nuvem avisa **antes** de faltar conta, as barras de uso mudam de cor perto do
