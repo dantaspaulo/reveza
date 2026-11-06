@@ -19,6 +19,8 @@ linha Nuvem e painel; a nuvem e os computadores não precisam mudar.
 - O painel avisa antes de gerar se o nome já é de outro computador, inclusive de um código gerado antes e ainda sem
   uso (aí é escolher outro nome ou revogar aquele na lista).
 - Enquanto o computador novo entra, a janela mostra "Ligando" com o nome dado.
+- A lista da janela agora diz o que ela escolhe: qual computador seu vai **aprovar** o novo (a janela do código abre
+  nele). Antes ela se chamava "Onde você vai digitar o código" e parecia a lista do computador a adicionar.
 
 ## 0.13.0 · 06/11/2026
 
