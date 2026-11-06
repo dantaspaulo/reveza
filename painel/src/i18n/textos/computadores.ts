@@ -241,7 +241,8 @@ export default secao({
         nomeRepetidoPendente:
           "Um código gerado antes, ainda sem uso, já tem o nome {computador}. Escolha outro nome ou revogue aquele na lista.",
         ligando: "Ligando {computador}",
-        ondeDigitar: "Onde você vai digitar o código",
+        ondeDigitar: "Qual computador seu vai aprovar o novo",
+        ondeDigitarDica: "A janela que pede o código abre nele. O computador novo não aparece nesta lista: ele entra pelo código.",
         inicio: "A janela que pede o código vai abrir em {computador}.",
         foraDoAr: "{computador} (fora do ar)",
         semLigado: "Nenhum computador ligado para liberar o novo.",
@@ -522,7 +523,8 @@ export default secao({
         nomeRepetidoPendente:
           "A code generated earlier, not used yet, already has the name {computador}. Pick another name or revoke that one in the list.",
         ligando: "Linking {computador}",
-        ondeDigitar: "Where you'll type the code",
+        ondeDigitar: "Which of your computers approves the new one",
+        ondeDigitarDica: "The window asking for the code opens on it. The new computer is not in this list: it joins through the code.",
         inicio: "The window asking for the code will open on {computador}.",
         foraDoAr: "{computador} (offline)",
         semLigado: "No computer is linked to let the new one in.",

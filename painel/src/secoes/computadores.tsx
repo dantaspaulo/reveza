@@ -699,6 +699,7 @@ function LigarComputadorNovo() {
               <Field>
                 <FieldLabel htmlFor="ligar-pc">{t("computadores.ligacao.ondeDigitar")}</FieldLabel>
                 {seletor}
+                <FieldDescription>{t("computadores.ligacao.ondeDigitarDica")}</FieldDescription>
               </Field>
             ) : (
               <p className="text-sm">{t("computadores.ligacao.inicio", { computador: escolhido?.nome ?? "" })}</p>
