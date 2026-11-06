@@ -3,6 +3,7 @@
 
 import * as React from "react"
 import {
+  ArrowRightLeftIcon,
   SparklesIcon,
   BanIcon,
   BrainCircuitIcon,
@@ -15,15 +16,25 @@ import {
   PlayIcon,
   PlusIcon,
   Settings2Icon,
+  Trash2Icon,
 } from "lucide-react"
 
 import { BarraUso, NomeConta, PontoConta, SeloEstado } from "@/components/painel/conta"
+import { Confirmar } from "@/components/painel/confirmar"
 import { DialogoLogin } from "@/components/painel/dialogo-login"
 import { EditorAgenda, resumoFaixa, useDias } from "@/components/painel/editor-agenda"
 import { AvisoPermissao, Pagina } from "@/components/painel/pagina"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +53,7 @@ import {
   FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Slider } from "@/components/ui/slider"
@@ -50,6 +62,7 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useAcao, useAgora, useDados, useEstado, usePermissao } from "@/dados/contexto"
 import {
+  estadoComputador,
   estadoConta,
   FORMATO_MODELO,
   MODELOS_PRONTOS,
@@ -66,6 +79,7 @@ import { useT } from "@/i18n"
 import { N_CORES, corConta, indiceCor } from "@/lib/cores"
 import { fmtFuturo, fmtHora, fmtPct, fmtRelativo } from "@/lib/formato"
 import { cn } from "@/lib/utils"
+import { bloqueioDaConta, bloqueioUsar, computadoresParaUsar, podeUsarEmAlgum, type BloqueioUsar } from "@/lib/usar-agora"
 import { useDialogo } from "@/hooks/use-dialogo"
 
 export default function Contas() {
@@ -75,6 +89,8 @@ export default function Contas() {
   const { pode } = usePermissao()
   const editar = useDialogo<Conta>()
   const login = useDialogo<Conta>()
+  const usar = useDialogo<Conta>()
+  const remover = useDialogo<Conta>()
   const contas = [...estado.contas].sort((a, b) => a.prioridade - b.prioridade || a.email.localeCompare(b.email))
 
   return (
@@ -116,7 +132,7 @@ export default function Contas() {
                   <TableHead className="w-44">{t("contas.colunas.cinco")}</TableHead>
                   <TableHead className="w-44">{t("contas.colunas.semana")}</TableHead>
                   <TableHead>{t("contas.colunas.regras")}</TableHead>
-                  <TableHead className="w-12 pr-4 text-right">
+                  <TableHead className="w-40 pr-4 text-right">
                     <span className="sr-only">{t("contas.colunas.acoes")}</span>
                   </TableHead>
                 </TableRow>
@@ -140,7 +156,16 @@ export default function Contas() {
                       <Regras conta={c} estado={estado} />
                     </TableCell>
                     <TableCell className="pr-4 text-right">
-                      <MenuConta conta={c} aoEditar={() => editar.abrir(c)} aoEntrar={() => login.abrir(c)} />
+                      <div className="flex items-center justify-end gap-1">
+                        <BotaoUsar conta={c} estado={estado} aoUsar={() => usar.abrir(c)} />
+                        <MenuConta
+                          conta={c}
+                          aoEditar={() => editar.abrir(c)}
+                          aoEntrar={() => login.abrir(c)}
+                          aoUsar={() => usar.abrir(c)}
+                          aoRemover={() => remover.abrir(c)}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -153,12 +178,19 @@ export default function Contas() {
                 <CardContent className="flex flex-col gap-3 px-4">
                   <div className="flex items-start justify-between gap-2">
                     <InfoConta conta={c} estado={estado} agora={agora} />
-                    <MenuConta conta={c} aoEditar={() => editar.abrir(c)} aoEntrar={() => login.abrir(c)} />
+                    <MenuConta
+                      conta={c}
+                      aoEditar={() => editar.abrir(c)}
+                      aoEntrar={() => login.abrir(c)}
+                      aoUsar={() => usar.abrir(c)}
+                      aoRemover={() => remover.abrir(c)}
+                    />
                   </div>
                   <SeloEstado estado={estadoConta(c, estado.config, agora)} className="self-start" />
                   <Janela conta={c} tipo="five_hour" estado={estado} agora={agora} comRotulo />
                   <Janela conta={c} tipo="seven_day" estado={estado} agora={agora} comRotulo />
                   <Regras conta={c} estado={estado} />
+                  <BotaoUsar conta={c} estado={estado} aoUsar={() => usar.abrir(c)} className="self-start" />
                 </CardContent>
               </Card>
             ))}
@@ -167,6 +199,8 @@ export default function Contas() {
       )}
       <EditarConta key={editar.chave} conta={editar.valor ?? null} aberto={editar.aberto} aoFechar={editar.fechar} />
       <DialogoLogin key={`login-${login.chave}`} aberto={login.aberto} conta={login.valor} aoFechar={login.fechar} />
+      <DialogoUsarAgora key={`usar-${usar.chave}`} conta={usar.valor ?? null} aberto={usar.aberto} aoFechar={usar.fechar} />
+      <RemoverConta key={`remover-${remover.chave}`} conta={remover.valor ?? null} aberto={remover.aberto} aoFechar={remover.fechar} />
     </Pagina>
   )
 }
@@ -270,9 +304,22 @@ function Regras({ conta, estado }: { conta: Conta; estado: Instantaneo }) {
   )
 }
 
-function MenuConta({ conta, aoEditar, aoEntrar }: { conta: Conta; aoEditar: () => void; aoEntrar: () => void }) {
+function MenuConta({
+  conta,
+  aoEditar,
+  aoEntrar,
+  aoUsar,
+  aoRemover,
+}: {
+  conta: Conta
+  aoEditar: () => void
+  aoEntrar: () => void
+  aoUsar: () => void
+  aoRemover: () => void
+}) {
   const { t } = useT()
   const { fonte } = useDados()
+  const estado = useEstado()
   const acao = useAcao()
   const { pode } = usePermissao()
   return (
@@ -283,6 +330,10 @@ function MenuConta({ conta, aoEditar, aoEntrar }: { conta: Conta; aoEditar: () =
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuItem onSelect={aoUsar} disabled={!pode || !podeUsarEmAlgum(conta, estado)}>
+          <ArrowRightLeftIcon />
+          {t("contas.menu.usarAgora")}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={aoEditar} disabled={!pode}>
           <Settings2Icon />
           {t("contas.menu.editar")}
@@ -304,8 +355,144 @@ function MenuConta({ conta, aoEditar, aoEntrar }: { conta: Conta; aoEditar: () =
           {conta.pausada ? <PlayIcon /> : <PauseIcon />}
           {conta.pausada ? t("contas.menu.retomar") : t("contas.menu.pausar")}
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={aoRemover} disabled={!pode}>
+          <Trash2Icon />
+          {t("contas.menu.remover")}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/** O motivo de a conta não poder entrar, no texto da tela. */
+function useTextoBloqueio() {
+  const { t } = useT()
+  return (b: BloqueioUsar) =>
+    b.motivo === "pausada"
+      ? t("contas.usarAgora.pausada")
+      : b.motivo === "semLogin"
+        ? t("contas.usarAgora.semLogin")
+        : b.motivo === "jaUsa"
+          ? t("contas.usarAgora.jaUsa")
+          : t("contas.usarAgora.ocupada", { computador: b.computador })
+}
+
+/** O "Usar agora" à vista em cada conta: um clique abre a escolha do computador (com um só, já vem escolhido). */
+function BotaoUsar({ conta, estado, aoUsar, className }: { conta: Conta; estado: Instantaneo; aoUsar: () => void; className?: string }) {
+  const { t } = useT()
+  const { pode } = usePermissao()
+  const textoBloqueio = useTextoBloqueio()
+  const daConta = bloqueioDaConta(conta)
+  const livre = podeUsarEmAlgum(conta, estado)
+  const pcs = computadoresParaUsar(estado)
+  // sem nenhum computador onde ela possa entrar: o motivo do primeiro (já é a dele, ou está noutro) vai na dica
+  const dica = daConta ? textoBloqueio(daConta) : !livre && pcs[0] ? textoBloqueio(bloqueioUsar(conta, pcs[0], estado)!) : undefined
+  return (
+    <Button variant="outline" size="sm" className={className} disabled={!pode || !livre} title={dica} onClick={aoUsar}>
+      <ArrowRightLeftIcon />
+      {t("contas.menu.usarAgora")}
+    </Button>
+  )
+}
+
+function DialogoUsarAgora({ conta, aberto, aoFechar }: { conta: Conta | null; aberto: boolean; aoFechar: () => void }) {
+  // quem abre passa key={chave da abertura}: a escolha nasce de novo a cada vez
+  const { t, idioma } = useT()
+  const { fonte, atualizadoEm } = useDados()
+  const estado = useEstado()
+  const agora = useAgora(15_000)
+  const acao = useAcao()
+  const textoBloqueio = useTextoBloqueio()
+  const ordem = { online: 0, atrasado: 1, parado: 2, revogado: 3 } as const
+  const pcs = computadoresParaUsar(estado).sort(
+    (a, b) => ordem[estadoComputador(a, agora, atualizadoEm)] - ordem[estadoComputador(b, agora, atualizadoEm)] || a.nome.localeCompare(b.nome)
+  )
+  const possiveis = conta ? pcs.filter((pc) => bloqueioUsar(conta, pc, estado) === null) : []
+  const [escolha, setEscolha] = React.useState(possiveis.length === 1 ? possiveis[0]!.id : "")
+  const [enviando, setEnviando] = React.useState(false)
+  if (!conta) return null
+  return (
+    <Dialog open={aberto} onOpenChange={(v) => !v && aoFechar()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("contas.usarAgora.titulo", { conta: conta.email })}</DialogTitle>
+          <DialogDescription>{t("contas.usarAgora.descricao")}</DialogDescription>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground tabular-nums">
+          {t("contas.usarAgora.uso", { cinco: fmtPct(p5(conta, agora), idioma), semana: fmtPct(p7(conta, agora), idioma) })}
+        </p>
+        {pcs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("contas.usarAgora.semComputador")}</p>
+        ) : (
+          <RadioGroup value={escolha} onValueChange={setEscolha} aria-label={t("contas.usarAgora.computador")}>
+            {pcs.map((pc) => {
+              const bloqueio = bloqueioUsar(conta, pc, estado)
+              const situacao = estadoComputador(pc, agora, atualizadoEm)
+              return (
+                <FieldLabel key={pc.id} htmlFor={`usar-${pc.id}`} className={cn(bloqueio && "opacity-60")}>
+                  <Field orientation="horizontal">
+                    <RadioGroupItem id={`usar-${pc.id}`} value={pc.id} disabled={!!bloqueio} />
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                      <span className="truncate">{pc.nome}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {bloqueio ? textoBloqueio(bloqueio) : t(`estadoComputador.${situacao}`)}
+                      </span>
+                    </div>
+                  </Field>
+                </FieldLabel>
+              )
+            })}
+          </RadioGroup>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={aoFechar}>
+            {t("comum.cancelar")}
+          </Button>
+          <Button
+            disabled={!escolha || enviando}
+            onClick={async () => {
+              setEnviando(true)
+              const pc = pcs.find((x) => x.id === escolha)
+              const [ok] = await acao(
+                () => fonte.trocarAgora(escolha, conta.id),
+                t("contas.usarAgora.feito", { computador: pc?.nome ?? "", conta: conta.email })
+              )
+              setEnviando(false)
+              if (ok) aoFechar()
+            }}
+          >
+            {enviando ? <Spinner /> : <ArrowRightLeftIcon />}
+            {t("contas.usarAgora.botao")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RemoverConta({ conta, aberto, aoFechar }: { conta: Conta | null; aberto: boolean; aoFechar: () => void }) {
+  const { t } = useT()
+  const { fonte } = useDados()
+  const estado = useEstado()
+  const acao = useAcao()
+  if (!conta) return null
+  const emUso = computadoresParaUsar(estado).find((pc) => pc.atribuicao?.contaId === conta.id)
+  return (
+    <Confirmar
+      aberto={aberto}
+      aoFechar={aoFechar}
+      titulo={t("contas.remover.titulo", { conta: conta.email })}
+      texto={
+        <>
+          {t("contas.remover.texto")}
+          {emUso ? <span className="mt-2 block">{t("contas.remover.emUso", { computador: emUso.nome })}</span> : null}
+        </>
+      }
+      botao={t("contas.remover.botao")}
+      botaoSegurar={t("contas.remover.botaoSegurar")}
+      aoConfirmar={() => acao(() => fonte.removerConta(conta.id), t("contas.remover.feito", { conta: conta.email }))}
+    />
   )
 }
 

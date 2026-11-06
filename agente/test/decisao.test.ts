@@ -77,6 +77,53 @@ describe("decisão", () => {
     assert.equal(decidir(e(), agora())[0], "sem_livre");
   });
 
+  // relato do Paulo (06/11/2026): com as outras acima do aviso, a conta em uso ficou 47 minutos em 100%
+  test("no gatilho, sem livre abaixo do aviso: vai para a com mais folga abaixo do gatilho", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 95);
+    contaEstacionada(m, "B", 93);
+    const c = contaEstacionada(m, "C", 91);
+    contaEstacionada(m, "D", 96);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", c]);
+  });
+
+  test("em uso cheia: vai para a com mais folga abaixo de 100%, sem esperar a espera entre trocas", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 100);
+    const b = contaEstacionada(m, "B", 97);
+    contaEstacionada(m, "C", 98);
+    contaEstacionada(m, "D", 100);
+    e().trocadaEm = agora();
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b]);
+  });
+
+  test("abaixo de 100% e as outras com mais uso: fica (não troca à toa)", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 96);
+    contaEstacionada(m, "B", 98);
+    assert.equal(decidir(e(), agora())[0], "sem_livre");
+  });
+
+  test("conta em uso pausada sai na hora, mesmo com a troca automática desligada", async () => {
+    m = await montar();
+    const a = await ativaEm(m, "A", 30);
+    const b = contaEstacionada(m, "B", 92);
+    e().config.auto = false;
+    e().contas[a]!.pausada = true;
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b]);
+    await m.agente.agir();
+    assert.equal(e().ativa, b);
+    assert.match(e().eventos[0]!.texto, /a conta em uso foi pausada/);
+  });
+
+  test("conta em uso pausada e nenhuma outra: avisa que não há livre", async () => {
+    m = await montar();
+    const a = await ativaEm(m, "A", 30);
+    contaEstacionada(m, "B", 100);
+    e().contas[a]!.pausada = true;
+    assert.equal(decidir(e(), agora())[0], "sem_livre");
+  });
+
   test("reset que passou conta como zerada (mesmo com leitura velha)", async () => {
     m = await montar();
     await ativaEm(m, "A", 99);

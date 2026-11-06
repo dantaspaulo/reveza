@@ -187,6 +187,16 @@ export class NuvemRpc implements Nuvem {
     return { ok: r.ok === true, trocou: r.trocou === true, versao: numero(r.versao) };
   }
 
+  async contasRemovidas() {
+    const r = await this.rpc.chamar("agente_contas_removidas", {});
+    const lista: { conta_id: string; email: string }[] = [];
+    for (const x of Array.isArray(r) ? r : []) {
+      const c = x as Record<string, unknown> | null;
+      if (c && typeof c.conta_id === "string" && typeof c.email === "string") lista.push({ conta_id: c.conta_id, email: c.email });
+    }
+    return lista;
+  }
+
   async reservarComando(id: number) {
     const r = await this.chamar("agente_reservar_comando", { p_id: id });
     return { ok: r.ok === true, comando: comandoDe(r.comando) };

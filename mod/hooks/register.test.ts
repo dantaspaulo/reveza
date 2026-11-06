@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 
-import { aguardarMs, entradaDaSessao, hmacHex, janelasTexto, releituraDaConta, resumo, tipoDoLimite } from './register'
+import { aguardarMs, entradaDaSessao, hmacHex, janelasTexto, paradaDoTurno, releituraDaConta, resumo, tipoDoLimite } from './register'
 
 // Agente falso: responde /api/ativa com a versão do momento e guarda o que o mod mandou.
 // `instalacao` é o conteúdo do instalacao.json (o idioma da instalação); sem ele, o arquivo não existe (português).
@@ -18,6 +18,7 @@ function agente(on: On, instalacao?: string) {
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('classic.StopFailure', () => ({}) as never)
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('turn.complete', ($, e) => ({ text: e.answer }))
   const recebidos: { url: string; corpo: Record<string, unknown> | null; metodo: string; cabecalhos: Record<string, string> }[] = []
   const estado = {
     versao: 3,
@@ -708,4 +709,113 @@ test('a linha de status só é refeita quando o texto muda', async ($, on) => {
   await andar(relogio, 35_000)
   expect(status.at(-1)).toBe('conta b')
   expect(status.filter(s => s === 'conta b')).toHaveLength(1)
+})
+
+// Nas organizações Team e Enterprise o Claude Code põe o cc-plugin-sec-default na frente, e o classic.StopFailure não
+// chega ao mod ("its classic.StopFailure hook was skipped", 06/11/2026): o limite vem pelo fim do turno com erro.
+const FIM_NO_LIMITE = {
+  answer: "You've hit your 5-hour limit · resets 12:40pm (America/Fortaleza)",
+  reason: 'error' as const,
+  durationMs: 900,
+  isAborted: false,
+  turnId: 'turno-1',
+}
+
+test('Team (sem o StopFailure): o fim do turno no limite avisa o agente e a sessão continua quando a conta troca', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos, estado } = agente(on)
+  const enviados: string[] = []
+  on('prompt.submit', ($, e) => {
+    enviados.push(e.text)
+    return { text: e.text }
+  })
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await relogio.advance(5000)
+  await relogio.settle()
+  for (let i = 0; i < 5 && !recebidos.some(r => r.url.endsWith('/api/ativa')); i++) {
+    await relogio.advance(5000)
+    await relogio.settle()
+  }
+  await $.turn.complete(FIM_NO_LIMITE as never)
+  const limite = recebidos.filter(r => r.url.endsWith('/api/limite'))
+  expect(limite).toHaveLength(1)
+  expect(limite[0]?.corpo).toMatchObject({ erro: 'rate_limit', tipo: 'interativa', versao: 3, sessao: 'sessao-teste' })
+
+  estado.versao = 4
+  estado.email = 'b@exemplo.com'
+  for (let i = 0; i < 6 && enviados.length === 0; i++) {
+    await relogio.advance(5000)
+    await relogio.settle()
+  }
+  expect(enviados).toHaveLength(1)
+  expect(enviados[0]).toContain('trocou de conta')
+})
+
+test('o fim do turno chega sem o texto (como no Claude Code de verdade): o texto vem da última mensagem da sessão', async ($, on) => {
+  const { recebidos } = agente(on)
+  on('session.messages', () => ({ value: [{ role: 'user', text: 'oi', toolUses: [] }, { role: 'assistant', text: FIM_NO_LIMITE.answer, toolUses: [] }] }) as never)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.turn.complete({ ...FIM_NO_LIMITE, answer: '' } as never)
+  expect(recebidos.filter(r => r.url.endsWith('/api/limite'))).toHaveLength(1)
+})
+
+test('sem o texto e sem as mensagens: o uso em 100% que a resposta trouxe diz que foi o limite', async ($, on) => {
+  const { recebidos } = agente(on)
+  on('session.messages', () => ({ value: { deny: 'sem acesso' } }) as never)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 100 }] } }) as never)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.turn.complete({ ...FIM_NO_LIMITE, answer: '' } as never)
+  const limite = recebidos.filter(r => r.url.endsWith('/api/limite'))
+  expect(limite).toHaveLength(1)
+  expect(limite[0]?.corpo).toMatchObject({ erro: 'rate_limit' })
+})
+
+test('fim do turno com erro, sem texto de limite e com o uso abaixo de 100%: não mexe no agente', async ($, on) => {
+  const { recebidos } = agente(on)
+  on('session.messages', () => ({ value: [{ role: 'assistant', text: 'API Error: 500 Internal server error', toolUses: [] }] }) as never)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 42 }] } }) as never)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.turn.complete({ ...FIM_NO_LIMITE, answer: '' } as never)
+  expect(recebidos.some(r => r.url.endsWith('/api/limite'))).toBe(false)
+})
+
+test('o StopFailure e o fim do turno da mesma parada avisam o agente uma vez só', async ($, on) => {
+  const { recebidos } = agente(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.classic.StopFailure({ error: 'rate_limit', last_assistant_message: FIM_NO_LIMITE.answer } as never)
+  await $.turn.complete(FIM_NO_LIMITE as never)
+  expect(recebidos.filter(r => r.url.endsWith('/api/limite'))).toHaveLength(1)
+})
+
+test('fim de turno sem erro, com outro erro ou de um subagente não mexe no agente', async ($, on) => {
+  const { recebidos } = agente(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.turn.complete({ ...FIM_NO_LIMITE, reason: 'answer', answer: 'Pronto: o hit your limit do log foi corrigido.' } as never)
+  await $.turn.complete({ ...FIM_NO_LIMITE, answer: 'API Error: 500 {"type":"error","error":{"type":"api_error"}}' } as never)
+  await $.turn.complete({ ...FIM_NO_LIMITE, agentId: 'ajudante-1' } as never)
+  expect(recebidos.some(r => r.url.endsWith('/api/limite'))).toBe(false)
+})
+
+test('o fim do turno também traz a conta sem o modelo e a conversa longa demais', async ($, on) => {
+  const { recebidos, avisos } = agente(on)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: 615000, window: 1000000, percent: 61 }, rateLimits: [] } }) as never)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await $.turn.complete({ ...FIM_NO_LIMITE, answer: 'Prompt is too long' } as never)
+  expect(recebidos.find(r => r.url.endsWith('/api/sessao/erro'))?.corpo).toMatchObject({ tipo: 'contexto', tokens: 615000 })
+  expect(avisos.some(a => a.includes('/rewind'))).toBe(true)
+})
+
+test('as paradas que o fim do turno reconhece, pelo texto que a sessão mostrou', () => {
+  expect(paradaDoTurno("You've hit your 5-hour limit · resets 12:40pm (America/Fortaleza)")).toEqual({
+    erro: 'rate_limit',
+    mensagem: "You've hit your 5-hour limit · resets 12:40pm (America/Fortaleza)",
+  })
+  expect(paradaDoTurno("You've hit your weekly limit · resets 6am (America/Fortaleza)")?.erro).toBe('rate_limit')
+  expect(paradaDoTurno('Fable 5.1 requires usage credits. Switch to another model to continue.')?.erro).toBe('rate_limit')
+  expect(paradaDoTurno('API Error: Usage credits required for 1M context · run /usage-credits to turn them on')?.erro).toBe('rate_limit')
+  expect(paradaDoTurno('Prompt is too long')?.erro).toBe('invalid_request')
+  expect(paradaDoTurno('API Error: Request rejected (429) · this may be a temporary capacity issue.')).toBeNull()
+  expect(paradaDoTurno('API Error: 500 Internal server error')).toBeNull()
+  expect(paradaDoTurno('')).toBeNull()
+  expect(paradaDoTurno(undefined)).toBeNull()
 })

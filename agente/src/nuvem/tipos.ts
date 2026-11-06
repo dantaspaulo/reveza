@@ -174,6 +174,8 @@ export interface Nuvem {
   limite(contaId: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
   /** A conta em uso não roda o modelo da sessão (0028): fora da escolha deste computador por 6 horas, e decide na hora. */
   semModelo(contaId: string, modelo: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
+  /** As contas que o painel removeu (0031), para apagar a cópia do login que este computador guarda delas. */
+  contasRemovidas(): Promise<{ conta_id: string; email: string }[]>;
   reservarComando(id: number): Promise<{ ok: boolean; comando: ComandoNuvem | null }>;
   responderComando(id: number, http: number, resposta: Record<string, unknown>): Promise<{ ok: boolean }>;
   evento(tipo: string, texto: string, dados: Record<string, unknown>): Promise<{ ok: boolean }>;

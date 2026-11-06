@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { Computador } from "@/dados/tipos"
-import { ESPERA_PEDIDO_MS, linhasDoAssistente, versaoDoAssistente } from "./assistente"
+import { corpoDoPedido, ESPERA_PEDIDO_MS, linhasDoAssistente, versaoDoAssistente } from "./assistente"
 
 const pc = (id: string, diagnostico: Partial<NonNullable<Computador["diagnostico"]>> | null): Computador =>
   ({
@@ -53,5 +53,13 @@ describe("a versão do assistente de cada computador", () => {
   it("agente de antes da 0.8.0 não recebe o pedido", () => {
     const antigo = pc("a", { itens: [{ id: "assistente", ok: true, detalhe: "versão 2.1.290" }] })
     expect(linhasDoAssistente([novo("2.1.301"), antigo]).linhas[1]).toMatchObject({ estado: "atras", podeAtualizar: false })
+  })
+
+  it("o pedido leva a mais nova quando o agente sabe ir até ela (0.12.0); fora isso, só o pedido de atualizar", () => {
+    expect(corpoDoPedido(novo("2.1.293", { paraVersao: true }), "2.1.319")).toEqual({ assistente: true, versao: "2.1.319" })
+    expect(corpoDoPedido(novo("2.1.293"), "2.1.319"), "o agente de antes recusaria a versão no pedido").toEqual({ assistente: true })
+    expect(corpoDoPedido(novo("2.1.319", { paraVersao: true }), "2.1.319"), "já está nela").toEqual({ assistente: true })
+    expect(corpoDoPedido(novo("2.1.293", { paraVersao: true }), null)).toEqual({ assistente: true })
+    expect(corpoDoPedido(novo(null, { paraVersao: true }), "2.1.319")).toEqual({ assistente: true })
   })
 })

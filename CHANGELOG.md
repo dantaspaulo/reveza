@@ -7,6 +7,48 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.12.0 · 06/11/2026
+
+A troca não fica mais presa numa conta cheia, a conta pausada sai de uso na hora, e o painel ganha **Usar agora** e
+**Remover conta**. Relato do Paulo: a conta em uso chegou ao limite e o Reveza não trocou, porque todas as outras
+estavam acima do aviso; as sessões ficaram paradas por 47 minutos. Precisa da nuvem e dos computadores na 0.12.0 (no
+painel, **Computadores → Atualizar** na linha Nuvem e painel e em cada computador).
+
+- **A troca acha a conta com mais folga.** A nuvem só aceitava conta abaixo do aviso (85% na instalação do relato):
+  com todas as outras entre 85% e 93% (várias só pela semana), respondia "nenhuma conta livre" e o computador ficava
+  na conta em 100%. Agora, sem conta abaixo do aviso, a troca vai para a com mais folga abaixo do gatilho; com a conta
+  em uso cheia, para a com mais folga abaixo de 100%. As regras de cada conta continuam valendo (pausada, agenda, teto
+  da semana, conta sem o modelo, e a de reserva só depois das outras), e a troca da conta cheia não espera a espera
+  entre trocas. A conta que não roda o modelo da sessão não conta como cheia: sem outra abaixo do gatilho, a sessão
+  segue no modelo padrão nela, como antes.
+- **O limite volta a chegar ao Reveza nas contas Team e Enterprise.** Nessas organizações o Claude Code põe um plugin
+  de segurança próprio (cc-plugin-sec-default) na frente dos plugins que a pessoa instala, e ele não deixa os eventos
+  clássicos chegarem a eles: o aviso "a sessão bateu o limite" do mod nunca rodava ("its classic.StopFailure hook was
+  skipped"), a troca dependia só da leitura de uso, e a sessão não voltava sozinha depois da troca. O mod passa a ler
+  também o fim do turno com erro, que chega para todos, e reconhece o limite pela última mensagem da sessão ou pelo
+  uso em 100% que a resposta recusada trouxe. Provado com o Claude Code 2.1.312 numa sessão isolada, com o evento
+  clássico bloqueado.
+- **Conta pausada sai de uso na hora.** Pausar a conta em uso passa o computador para a melhor que houver, mesmo com a
+  troca automática desligada (antes, ele seguia nela até a próxima troca).
+- **Usar agora**, em cada conta da tela **Contas**: um clique escolhe a conta e o computador (com um computador só,
+  ele já vem escolhido). A janela mostra o uso de 5 horas e da semana; conta pausada, sem login ou em uso em outro
+  computador aparece travada, com o motivo. Na tela **Computadores**, o **Trocar agora** também mostra a semana e
+  trava as contas pausadas (antes dava para escolher, e a nuvem recusava).
+- **Remover conta**, no menu de cada conta (segure para confirmar): o computador que usa a conta passa antes para
+  outra (sem outra para ele, a remoção é recusada); o login sai da nuvem e de todos os computadores (cada um apaga a
+  cópia que guarda, também o que estava desligado na hora); o histórico de uso da conta sai; o uso em tokens fica nos
+  relatórios, sem o nome da conta. Para usar de novo, é só conectar a conta outra vez.
+- **Atualizar o assistente de código pelo painel agora atualiza.** Com o assistente instalado pelo npm e o serviço do
+  Reveza rodando com outro Node (o do Homebrew, por exemplo), o `claude update` instalava a versão nova na pasta desse
+  outro Node, e o assistente em uso seguia na versão antiga: o botão girava e o computador voltava a aparecer
+  atrasado. Agora o agente atualiza na pasta do assistente em uso e, quando o painel pede a versão do computador mais
+  adiantado (outro computador pode estar num canal à frente), instala essa versão. Se não chegar nela, o painel
+  mostra onde parou. Quem clicou em Atualizar antes desta versão pode ter sobrado com uma cópia do assistente na pasta
+  do outro Node: ela não é a que roda e pode ser apagada.
+- **Limite semanal das contas Team**, conferido na API de uso em 06/11/2026: as contas Team 5x lidas (inclusive as do
+  programa para startups) vêm com a janela de 5 horas e a semanal, com aviso a partir de 85%. O assento padrão do Team
+  tem uma janela de 5 horas bem menor (numa delas, de 0% a 100% em menos de 15 minutos): vale marcar como reserva.
+
 ## 0.11.0 · 03/11/2026
 
 A tela **Uso** revisada, com os agentes contados direito, o custo também em real, leituras do período e um cartão

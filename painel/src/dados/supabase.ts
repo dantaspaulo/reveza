@@ -198,6 +198,8 @@ const MENSAGENS: [RegExp, string][] = [
   [/em uso em outro computador|conta com outro computador/i, "conta_ocupada"],
   [/outro computador já prefere/i, "preferida_de_outro"],
   [/sem login guardado/i, "conta_precisa_login"],
+  [/conta pausada ou sem login/i, "conta_pausada"],
+  [/não tem outra para ir/i, "remover_sem_outra"],
   [/modelo inválido/i, "modelo_invalido"],
   [/já existe um computador com este nome/i, "nome_repetido"],
   [/nome inválido: até 60 caracteres/i, "nome_invalido"],
@@ -321,6 +323,7 @@ export function paraDiagnostico(bruto: unknown, versao: string): Computador["dia
           versao: semver(as.versao),
           autoDesligado: as.autoDesligado === "reveza" || as.autoDesligado === "pessoa" ? as.autoDesligado : null,
           atualizando: as.atualizando === true,
+          ...(as.paraVersao === true ? { paraVersao: true } : {}),
           ultima:
             ul && typeof ul === "object" && typeof ul.em === "string" && Number.isFinite(Date.parse(ul.em))
               ? {
@@ -329,6 +332,7 @@ export function paraDiagnostico(bruto: unknown, versao: string): Computador["dia
                   de: semver(ul.de),
                   para: semver(ul.para),
                   sozinho: ul.sozinho === true,
+                  ...(semver(ul.alvo) ? { alvo: semver(ul.alvo)! } : {}),
                   ...(curto(ul.erro, 200) ? { erro: curto(ul.erro, 200) } : {}),
                 }
               : null,
@@ -792,6 +796,10 @@ export class FonteSupabase implements Fonte {
 
   async trocarAgora(computadorId: string, contaId: string) {
     await rpc("painel_trocar_agora", { p_computador: computadorId, p_conta: contaId })
+  }
+
+  async removerConta(id: string) {
+    await rpc("painel_remover_conta", { p_conta: id })
   }
 
   async preferirConta(computadorId: string, contaId: string | null) {

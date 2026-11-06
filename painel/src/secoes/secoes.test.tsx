@@ -628,7 +628,7 @@ describe("Computadores: o cartão do assistente de código (a versão de cada co
     expect(erros).toEqual([])
     expect(lido.config.assistenteAtualizar).toBe("padrao")
     expect(html).toContain("Assistente de código")
-    expect(html).toContain("Versões diferentes: a mais nova aqui é a 2.1.301")
+    expect(html).toContain("Versões diferentes: a do computador mais adiantado é a 2.1.301")
     expect(html).toContain("2.1.293")
     expect(html).toContain("atrás")
     expect(html).toMatch(/Atualizar os atrasados \(1\)/)

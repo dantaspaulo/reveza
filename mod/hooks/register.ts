@@ -1,4 +1,4 @@
-import type { HttpInit, Register, SessionRateLimit } from 'claude-code'
+import type { HttpInit, HttpResponse, Register, RenderSurface, SessionAuthorization, SessionRateLimit, SessionUsage } from 'claude-code'
 
 import type { Idioma } from './textos'
 import { enxugarSaida } from './enxugar'
@@ -37,6 +37,39 @@ export function tipoDoLimite(detalhe: string | undefined, mensagem: string | und
   if (OUTRO_429.test(texto)) return 'outro'
   return LIMITE_DE_USO.test(texto) ? 'uso' : 'outro'
 }
+/**
+ * O fim do turno com erro (`turn.complete`, motivo `error`) que é uma parada que o Reveza trata, pelo texto que a sessão
+ * mostrou. Mais estrito que o `classic.StopFailure` (que diz se o erro foi `rate_limit`): aqui só o texto do limite de uso
+ * ("You've hit your 5-hour limit · resets 12:40pm"), o da conta sem o modelo, o da conversa longa sem crédito e o
+ * "Prompt is too long". Null para qualquer outro erro (rede, 500, 429 momentâneo).
+ */
+export function paradaDoTurno(texto: string | undefined): { erro: 'rate_limit' | 'invalid_request'; mensagem: string } | null {
+  const mensagem = (texto ?? '').trim()
+  if (!mensagem) return null
+  if (/^Prompt is too long/i.test(mensagem)) return { erro: 'invalid_request', mensagem }
+  if (CONTEXTO_LONGO_NO_TURNO.test(mensagem) || MODELO_SEM_CREDITO.test(mensagem) || LIMITE_NO_TURNO.test(mensagem)) {
+    return { erro: 'rate_limit', mensagem }
+  }
+  return null
+}
+const LIMITE_NO_TURNO = /hit your [^.·\n]*limit|usage limit reached|out of (extra )?usage/i
+const CONTEXTO_LONGO_NO_TURNO = /usage credits required for (1M|long) context/i
+/** A mesma parada chega pelos dois caminhos em milissegundos: dentro deste tempo, o fim do turno não repete o StopFailure. */
+const PARADA_REPETIDA_MS = 5000
+
+/** As chamadas do `$` que o tratamento da parada usa: o `$` não sai do hook, então cada hook monta estas com ele. */
+type Ferramentas = {
+  toast: (texto: string) => void
+  status: (texto: string | undefined) => void
+  superficies: () => Promise<readonly RenderSurface[]>
+  cwd: () => Promise<string>
+  modelo: () => Promise<string>
+  uso: () => Promise<SessionUsage>
+  agora: () => Promise<number>
+  autorizar: () => Promise<SessionAuthorization>
+  buscar: (url: string, init: HttpInit) => Promise<HttpResponse>
+}
+
 const ESPERA_MAXIMA_MS = 2 * 60 * 60 * 1000
 /** Conta sem o modelo da sessão: a espera pela troca (sem ela, a sessão vai para o modelo padrão, pedido do Paulo). */
 export const ESPERA_MODELO_MS = 2 * 60 * 1000
@@ -241,6 +274,8 @@ export const register: Register = (on, options) => {
   let enxugar = false
   // a última vez que esta sessão parou porque a conta não roda o modelo dela
   let semModeloEm = -Infinity
+  // o último StopFailure tratado (Date.now()): o fim do turno logo depois é a mesma parada
+  let paradaClassicaEm = -Infinity
   // O idioma da instalação, lido uma vez por sessão (o arquivo não muda no meio dela); null até a primeira leitura.
   let idioma: Idioma | null = null
   // a conta desta sessão (lerContaDaSessao) e até quando vale; refeita quando a conta em uso muda
@@ -390,32 +425,49 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('classic.StopFailure', async ($, e, next) => {
+  /**
+   * Uma sessão parou: o limite de uso, a conta sem o modelo da sessão, a conversa longa demais. Chega pelo
+   * `classic.StopFailure` e, desde a 0.12.0, pelo fim do turno com erro (`turn.complete`): nas organizações Team e
+   * Enterprise o Claude Code põe o cc-plugin-sec-default na frente dos plugins, e ele não deixa os eventos clássicos
+   * chegarem aos que a pessoa instala ("its classic.StopFailure hook was skipped"). Assim o limite só chegava ao Reveza
+   * pela leitura de uso, e a sessão não voltava sozinha depois da troca (relato do Paulo, 06/11/2026). Cada parada é
+   * tratada uma vez, venha por um caminho ou pelos dois. `f`: as chamadas do `$` que o hook passa (o `$` não sai dele).
+   */
+  async function tratarParada(
+    f: Ferramentas,
+    origem: 'classico' | 'turno',
+    erro: string,
+    detalhe: string | undefined,
+    mensagem: string | undefined,
+  ): Promise<void> {
+    // o StopFailure vem antes do fim do turno: o fim do turno logo depois de um StopFailure é a mesma parada
+    if (origem === 'turno' && Date.now() - paradaClassicaEm < PARADA_REPETIDA_MS) return
+    if (origem === 'classico') paradaClassicaEm = Date.now()
     const x = textos()
-    if (e.error === 'invalid_request' && /^Prompt is too long/i.test(e.last_assistant_message ?? '')) {
+    if (erro === 'invalid_request' && /^Prompt is too long/i.test(mensagem ?? '')) {
       // A conversa passou do limite e nem o /compact cabe mais (relato do Paulo, 13/10/2026): diz como sair e manda ao
       // agente o tamanho dela, que fica nos eventos (sem isso, só lendo as transcrições do computador).
-      $.ui.toast(x.toasts.limite)
-      const uso = await $.session.usage().catch(() => null)
-      await $.http
-        .fetch(
+      f.toast(x.toasts.limite)
+      const uso = await f.uso().catch(() => null)
+      await f
+        .buscar(
           `${BASE}/api/sessao/erro`,
           (await pedido('POST', '/api/sessao/erro', { sessao, tipo: 'contexto', tokens: uso?.context.tokens ?? null, janela: uso?.context.window ?? null })).init,
         )
         .catch(() => undefined)
-      return next(e)
+      return
     }
-    if (e.error !== 'rate_limit') return next(e)
-    const tipoLimite = tipoDoLimite(e.error_details, e.last_assistant_message)
+    if (erro !== 'rate_limit') return
+    const tipoLimite = tipoDoLimite(detalhe, mensagem)
     if (tipoLimite === 'contexto_longo') {
-      $.ui.toast(x.toasts.contexto)
-      return next(e)
+      f.toast(x.toasts.contexto)
+      return
     }
     if (tipoLimite === 'modelo') {
-      const modelo = (await $.session.model().catch(() => '')) || 'modelo'
-      const superficiesModelo = await $.session.surfaces().catch(() => [])
+      const modelo = (await f.modelo().catch(() => '')) || 'modelo'
+      const superficiesModelo = await f.superficies().catch(() => [])
       const tipoModelo = interativa || superficiesModelo.length > 0 ? 'interativa' : 'headless'
-      const agora = await $.clock.now()
+      const agora = await f.agora()
       // a conta para onde trocou também não roda (ou parou de novo logo): direto para o modelo padrão
       const repetiu = agora - semModeloEm < REPETIU_MODELO_MS
       semModeloEm = agora
@@ -424,10 +476,10 @@ export const register: Register = (on, options) => {
       let dito: { versao: number; trocou?: boolean; outraConta?: boolean; aguardarS?: number; naoPegou?: string } | null = null
       if (!repetiu) {
         try {
-          const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)), true)
+          const conta = await contaAtual(Date.now(), () => lerContaDaSessao(f.autorizar, f.buscar), true)
           const p = await pedido('POST', '/api/limite', {
             sessao,
-            cwd: await $.session.cwd(),
+            cwd: await f.cwd(),
             tipo: tipoModelo,
             erro: 'modelo',
             modelo,
@@ -435,7 +487,7 @@ export const register: Register = (on, options) => {
             ...(conta ? { conta } : {}),
             ...(entrada ? { entrada } : {}),
           })
-          const r = await $.http.fetch(`${BASE}/api/limite`, p.init)
+          const r = await f.buscar(`${BASE}/api/limite`, p.init)
           dito = (await doAgente(r, p.nonce)) ? lerJson(r) : null
           respondeu = !!dito
         } catch {
@@ -446,9 +498,9 @@ export const register: Register = (on, options) => {
         // a sessão está noutra conta (o app de desktop, por exemplo), ou voltou e não pegou a troca: o Reveza não insiste
         outraConta = true
         const status = statusMudou()
-        if (status) $.ui.status(status.texto)
-        $.ui.toast(dito.naoPegou ? x.toasts.naoPegou(dito.naoPegou) : x.toasts.outraConta)
-        return next(e)
+        if (status) f.status(status.texto)
+        f.toast(dito.naoPegou ? x.toasts.naoPegou(dito.naoPegou) : x.toasts.outraConta)
+        return
       }
       if (tipoModelo === 'interativa') {
         // a volta para o modelo padrão sai na próxima conferência de 5 s (dentro deste hook o comando é recusado); a troca
@@ -456,40 +508,40 @@ export const register: Register = (on, options) => {
         const referencia = dito?.trocou ? dito.versao - 1 : (antesModelo ?? -1)
         const aguardar = aguardarMs(dito?.aguardarS)
         espera = { referencia, desde: respondeu ? agora : agora - ESPERA_MODELO_MS - 1, modelo, ...(aguardar ? { apos: agora + aguardar } : {}) }
-        if (respondeu) $.ui.toast(aguardar ? x.toasts.atrasada : x.toasts.semModelo(modelo))
+        if (respondeu) f.toast(aguardar ? x.toasts.atrasada : x.toasts.semModelo(modelo))
       }
-      return next(e)
+      return
     }
-    if (tipoLimite !== 'uso') return next(e)
-    const superficies = await $.session.surfaces().catch(() => [])
+    if (tipoLimite !== 'uso') return
+    const superficies = await f.superficies().catch(() => [])
     const tipo = interativa || superficies.length > 0 ? 'interativa' : 'headless'
     const antes = versao
     let resposta: { ok: boolean; versao: number; trocou?: boolean; outraConta?: boolean; aguardarS?: number; naoPegou?: string } | null = null
     try {
-      const conta = await contaAtual(Date.now(), () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)), true)
+      const conta = await contaAtual(Date.now(), () => lerContaDaSessao(f.autorizar, f.buscar), true)
       const p = await pedido('POST', '/api/limite', {
         sessao,
-        cwd: await $.session.cwd(),
+        cwd: await f.cwd(),
         tipo,
         erro: 'rate_limit',
         versao: antes,
         ...(conta ? { conta } : {}),
         ...(entrada ? { entrada } : {}),
       })
-      const r = await $.http.fetch(`${BASE}/api/limite`, p.init)
+      const r = await f.buscar(`${BASE}/api/limite`, p.init)
       resposta = (await doAgente(r, p.nonce)) ? lerJson(r) : null
     } catch {
       resposta = null
     }
     if (!resposta) {
-      $.ui.toast(x.toasts.semAgente)
+      f.toast(x.toasts.semAgente)
     } else if (resposta.outraConta) {
       // o limite é de outra conta (o app de desktop, por exemplo), ou a sessão voltou e não pegou a troca: trocar a conta
       // em uso não faz esta sessão voltar
       outraConta = true
       const status = statusMudou()
-      if (status) $.ui.status(status.texto)
-      $.ui.toast(resposta.naoPegou ? x.toasts.naoPegou(resposta.naoPegou) : x.toasts.outraConta)
+      if (status) f.status(status.texto)
+      f.toast(resposta.naoPegou ? x.toasts.naoPegou(resposta.naoPegou) : x.toasts.outraConta)
     } else if (tipo === 'interativa') {
       // a troca que já aconteceu antes de a sessão reler o login conta como feita: volta na próxima leitura (a sessão
       // atrasada numa conta que já saiu de uso volta depois do tempo que o agente pede, para reler o login antes)
@@ -497,11 +549,63 @@ export const register: Register = (on, options) => {
       espera = {
         referencia: resposta.trocou ? resposta.versao - 1 : (antes ?? resposta.versao),
         desde: Date.now(),
-        ...(aguardar ? { apos: (await $.clock.now()) + aguardar } : {}),
+        ...(aguardar ? { apos: (await f.agora()) + aguardar } : {}),
       }
-      $.ui.toast(aguardar ? x.toasts.atrasada : x.toasts.troca)
+      f.toast(aguardar ? x.toasts.atrasada : x.toasts.troca)
+    }
+  }
+
+  on('classic.StopFailure', async ($, e, next) => {
+    const f: Ferramentas = {
+      toast: texto => $.ui.toast(texto),
+      status: texto => $.ui.status(texto),
+      superficies: () => $.session.surfaces(),
+      cwd: () => $.session.cwd(),
+      modelo: () => $.session.model(),
+      uso: () => $.session.usage(),
+      agora: () => $.clock.now(),
+      autorizar: () => $.session.authorize(),
+      buscar: (url, init) => $.http.fetch(url, init),
+    }
+    // só as paradas que o Reveza trata contam para a repetição: outro erro não segura o fim do turno
+    if (e.error === 'rate_limit' || (e.error === 'invalid_request' && /^Prompt is too long/i.test(e.last_assistant_message ?? ''))) {
+      await tratarParada(f, 'classico', e.error, e.error_details, e.last_assistant_message)
     }
     return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('turn.complete', async ($, e, next) => {
+    const r = await next(e)
+    // só o fim do turno principal com erro: o de um subagente não para a sessão
+    if (e.agentId !== undefined || e.reason !== 'error') return r
+    // o texto do erro não vem no `answer` (no 2.1.312 ele chega vazio, conferido numa sessão de verdade): vem da última
+    // mensagem da sessão; sem ela, o uso que a resposta recusada trouxe (100% numa janela) diz que foi o limite de uso
+    let parada = paradaDoTurno(e.answer)
+    if (!parada) {
+      const mensagens = await $.session.messages().catch(() => null)
+      const ultima = Array.isArray(mensagens) ? [...mensagens].reverse().find(m => m.role === 'assistant') : undefined
+      parada = paradaDoTurno(ultima?.text)
+    }
+    if (!parada) {
+      const uso = await $.session.usage().catch(() => null)
+      const cheia = uso?.rateLimits.some(l => (l.kind === 'five_hour' || l.kind === 'seven_day') && l.percentUsed >= 100)
+      // sem texto, o tipoDoLimite trata como limite de uso
+      if (cheia) parada = { erro: 'rate_limit', mensagem: '' }
+    }
+    if (!parada) return r
+    const f: Ferramentas = {
+      toast: texto => $.ui.toast(texto),
+      status: texto => $.ui.status(texto),
+      superficies: () => $.session.surfaces(),
+      cwd: () => $.session.cwd(),
+      modelo: () => $.session.model(),
+      uso: () => $.session.usage(),
+      agora: () => $.clock.now(),
+      autorizar: () => $.session.authorize(),
+      buscar: (url, init) => $.http.fetch(url, init),
+    }
+    await tratarParada(f, 'turno', parada.erro, undefined, parada.mensagem || undefined).catch(() => undefined)
+    return r
   }).catch(($, e, next) => next(e))
 
   on('turn.start', ($, e, next) => {

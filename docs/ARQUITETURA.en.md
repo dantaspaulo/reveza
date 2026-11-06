@@ -92,7 +92,16 @@ limit warning arrives. For each computer that is on:
 - it respects the preference order, the backup account (only when there is no other), the schedule, the weekly cap and
   the week plan (the week quota split over the remaining days);
 - a window counts as full by the highest of the 5-hour window, the week and the per-model-family week; a reset that has already passed counts as zero;
-- a minimum wait of 90 s between switches on the same computer, except when the session hit the limit;
+- a minimum wait of 90 s between switches on the same computer, except when the session hit the limit or the account
+  in use reached 100%;
+- when it is time to switch and no account is below the warning (0.12.0, `rvz_escolher`): the one with the most room
+  below the trigger and less usage than the one in use; then the reserve ones; with the account in use full (100% or
+  the session at the limit), the one with the most room below 100%. Report of 06/11/2026: with the others between 85%
+  and 93%, the cloud answered "no free account" and the computer stayed 47 minutes on the account at 100%. Paused,
+  schedule, weekly cap and account without the model still apply; an account that does not run the session's model
+  is not full (with no other below the trigger, the session goes on with the default model there);
+- an account in use that is paused (or signed out) leaves use at once, for the best one available, even with automatic
+  switching off; `painel_conta` decides at once when it pauses an account in use;
 - each computer's preferred account (an account is the preferred one of a single computer): for that computer it comes
   before the other candidates; with automatic switching on, the computer goes back to it when it becomes free, after the
   wait, unless the current account was picked by hand (panel or API), which stays until the rule's next switch; in

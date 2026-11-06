@@ -52,6 +52,38 @@ export function candidata(estado: EstadoLocal, t: number): string | null {
   return livres(estado, t)[0]?.[1] ?? null;
 }
 
+/** A conta com mais folga abaixo de `teto` (exclusivo) e com menos uso que `atual` (null: qualquer uso). */
+function comMaisFolga(estado: EstadoLocal, t: number, teto: number, atual: number | null): string | null {
+  const saida: [number, string][] = [];
+  for (const [id, c] of Object.entries(estado.contas)) {
+    if (id === estado.ativa || c.pausada || c.precisaLogin || !leituraValida(c, t)) continue;
+    if ((estado.semModelo?.[id]?.ate ?? 0) > t) continue;
+    const p = pctEfetivo(c, t);
+    if (p !== null && p < teto && (atual === null || p < atual)) saida.push([p, id]);
+  }
+  const email = (id: string) => estado.contas[id]?.email ?? id;
+  return saida.sort((a, b) => a[0] - b[0] || email(a[1]).localeCompare(email(b[1])))[0]?.[1] ?? null;
+}
+
+/**
+ * Para onde ir quando a conta em uso precisa sair (relato do Paulo, 06/11/2026: com todas as outras acima do aviso, a
+ * em uso ficou 47 minutos em 100%): a livre de sempre; sem ela, a com mais folga abaixo do gatilho; com a em uso cheia,
+ * pausada ou sem login (`cheia`), a com mais folga abaixo de 100%. `atual`: o uso da em uso (a nova tem menos).
+ */
+export function destinoDaTroca(estado: EstadoLocal, t: number, atual: number | null, cheia: boolean): string | null {
+  return (
+    candidata(estado, t) ??
+    comMaisFolga(estado, t, gatilhoDeTroca(estado), atual) ??
+    (cheia ? comMaisFolga(estado, t, 100, atual) : null)
+  );
+}
+
+/** A conta em uso não pode seguir: pausada ou sem login (sai de uso na hora, mesmo com a troca automática desligada). */
+export function ativaForaDeUso(estado: EstadoLocal): boolean {
+  const c = estado.ativa ? estado.contas[estado.ativa] : undefined;
+  return !!c && (c.pausada || c.precisaLogin);
+}
+
 export function escolherRodizio(estado: EstadoLocal, t: number, sorteio: (xs: string[]) => string): string | null {
   const l = livres(estado, t);
   if (!l.length) return null;
@@ -63,7 +95,12 @@ export const sorteioReal = (xs: string[]): string => xs[Math.floor(Math.random()
 
 export function decidir(estado: EstadoLocal, t: number, limite = false, sorteio = sorteioReal): Acao {
   const ativa = estado.ativa;
-  if (!estado.config.auto || !ativa || !estado.contas[ativa]) return ["nada", null];
+  if (!ativa || !estado.contas[ativa]) return ["nada", null];
+  if (ativaForaDeUso(estado)) {
+    const destino = destinoDaTroca(estado, t, null, true);
+    return destino ? ["trocar", destino] : ["sem_livre", null];
+  }
+  if (!estado.config.auto) return ["nada", null];
   const espera = estado.config.esperaEntreTrocasS ?? ESPERA_ENTRE_TROCAS_S;
   const p = pctEfetivo(estado.contas[ativa]!, t);
   if (
@@ -78,9 +115,12 @@ export function decidir(estado: EstadoLocal, t: number, limite = false, sorteio 
     return destino ? ["rodizio", destino] : ["reagendar", null];
   }
   if (limite || (p !== null && p >= gatilhoDeTroca(estado))) {
-    const cand = candidata(estado, t);
+    // cheia pelo uso (no limite da sessão a janela de 5 h já foi enchida); a conta sem o modelo da sessão não está
+    // cheia: sem outra abaixo do gatilho, a sessão segue no modelo padrão nela
+    const cheia = p !== null && p >= 100;
+    const cand = destinoDaTroca(estado, t, limite ? null : p, cheia);
     if (!cand) return ["sem_livre", null];
-    if (limite || t - (estado.trocadaEm || 0) >= espera) return ["trocar", cand];
+    if (limite || cheia || t - (estado.trocadaEm || 0) >= espera) return ["trocar", cand];
     return ["aviso", cand];
   }
   if (p !== null && p >= estado.config.aviso) return ["aviso", candidata(estado, t)];

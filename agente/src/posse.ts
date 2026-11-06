@@ -94,6 +94,13 @@ export class PosseCofre {
     return this.estado().contas[id];
   }
 
+  /** A conta saiu deste computador (removida pelo painel): nada dela fica para devolver ou soltar. */
+  esquecer(id: string): void {
+    this.posses.delete(id);
+    this.soltarDepois.delete(id);
+    this.versaoServidor.delete(id);
+  }
+
   porContaId(contaId: string): string | null {
     return Object.values(this.estado().contas).find((c) => c.contaId === contaId)?.id ?? null;
   }

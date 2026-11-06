@@ -136,7 +136,7 @@ export default secao({
         descricao:
           "A versão do assistente de código em cada computador. Sessões abertas seguem na versão em que começaram; a nova vale nas próximas.",
         todosIguais: "Todos na versão {versao}",
-        diferentes: "Versões diferentes: a mais nova aqui é a {versao}",
+        diferentes: "Versões diferentes: a do computador mais adiantado é a {versao}, e o Atualizar leva os outros até ela",
         semVersao: "sem a versão",
         maisNova: "a mais nova",
         atras: "atrás",
@@ -411,7 +411,7 @@ export default secao({
         descricao:
           "The coding assistant version on each computer. Open sessions keep the version they started with; the new one applies to the next ones.",
         todosIguais: "All on version {versao}",
-        diferentes: "Different versions: the newest here is {versao}",
+        diferentes: "Different versions: the most up-to-date computer has {versao}, and Update brings the others to it",
         semVersao: "no version",
         maisNova: "newest",
         atras: "behind",

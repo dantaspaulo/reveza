@@ -7,7 +7,7 @@ import { codigoDeAcesso } from "@/lib/ligacao"
 import { proximaCorLivre } from "@/lib/cores"
 import { versao as versaoDoInstalador } from "@/lib/instalador"
 import { localizarDemo } from "./demo-idioma"
-import { compararVersao, FORMATO_MODELO, normalizarModelo } from "./derivados"
+import { cheia, compararVersao, FORMATO_MODELO, normalizarModelo } from "./derivados"
 import { rotuloDestino } from "./rotulos"
 import {
   ErroPainel,
@@ -473,7 +473,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
     versaoNova: versao,
     assimQueSair: true,
     // os dois computadores com versões diferentes do assistente de código (o caso que pediu o cartão, 15/10/2026)
-    assistente: { versao: assistente, autoDesligado: null, atualizando: false, ultima: null },
+    assistente: { versao: assistente, autoDesligado: null, atualizando: false, paraVersao: true, ultima: null },
     itens: [
       { id: "agente", ok: true, detalhe: `versão ${doComputador}, Node 22.12.0` },
       { id: "servico", ok: true, detalhe: "rodando" },
@@ -1022,6 +1022,8 @@ export class FonteDemo implements Fonte {
       const destino = this.conta(contaId)
       if (destino.posse && destino.posse.computadorId !== computadorId) throw new ErroPainel("conta_ocupada")
       if (destino.precisaLogin) throw new ErroPainel("conta_precisa_login")
+      // como na nuvem: conta pausada não entra à mão (o decidir a tiraria de uso em seguida)
+      if (destino.pausada) throw new ErroPainel("conta_pausada")
       const de = pc.atribuicao?.contaId ?? null
       if (de) {
         const antiga = this.d.contas.find((c) => c.id === de)
@@ -1032,6 +1034,36 @@ export class FonteDemo implements Fonte {
       pc.atribuicao = { contaId, motivo: "manual", decididoEm: agora.toISOString() }
       this.evento("troca", "troca", { computador: computadorId, de, para: contaId, motivo: "manual" })
       this.auditar("trocar", `${pc.nome} → ${destino.email}`)
+    })
+  }
+
+  removerConta(id: string) {
+    return this.escrever(() => {
+      const c = this.conta(id)
+      const agora = this.agora()
+      const pc = this.d.computadores.find((q) => !q.revogado && q.atribuicao?.contaId === id)
+      if (pc) {
+        // como na nuvem (0031): o computador que estava nela vai antes para a com mais folga; sem outra, a conta fica
+        const livres = this.d.contas.filter(
+          (x) =>
+            x.id !== id &&
+            !x.pausada &&
+            !x.precisaLogin &&
+            !(x.posse && x.posse.computadorId !== pc.id) &&
+            !this.d.computadores.some((q) => q.id !== pc.id && q.atribuicao?.contaId === x.id) &&
+            (cheia(x, agora) ?? 0) < 100
+        )
+        const outra = livres.sort((a, b) => Number(a.reserva) - Number(b.reserva) || (cheia(a, agora) ?? 0) - (cheia(b, agora) ?? 0))[0]
+        if (!outra) throw new ErroPainel("remover_sem_outra")
+        const motivo = "a conta em uso foi removida"
+        c.posse = null
+        outra.posse = { computadorId: pc.id, motivo: "uso", expiraEm: new Date(agora.getTime() + 2 * MIN).toISOString() }
+        pc.atribuicao = { contaId: outra.id, motivo, decididoEm: agora.toISOString() }
+        this.evento("troca", "troca", { computador: pc.id, de: id, para: outra.id, motivo })
+      }
+      for (const q of this.d.computadores) if (q.contaPreferidaId === id) q.contaPreferidaId = null
+      this.d.contas = this.d.contas.filter((x) => x.id !== id)
+      this.auditar("remover_conta", c.email)
     })
   }
 

@@ -147,6 +147,36 @@ export class Trocador {
     this.ganchos.aoEvento?.(tipo, texto, dados);
   }
 
+  /**
+   * Conta removida pelo painel (0.12.0, `contas_removidas` da nuvem): sai da lista deste computador e o login guardado
+   * dela é apagado, junto com a pasta da conta (sem isso, a recuperação da partida a traria de volta pelo `.claude.json`
+   * da pasta). Nunca a conta em uso: a nuvem passa o computador para outra antes de remover, e ela espera essa troca.
+   */
+  async esquecer(id: string): Promise<boolean> {
+    return this.geral.com(() =>
+      this.travaConta(id).com(async () => {
+        const c = this.estado.contas[id];
+        if (!c || id === this.estado.ativa) return false;
+        await this.cred.apagar(c.pasta).catch((e: Error) => this.log.erro(`apagar o login de ${c.email}: ${e.message}`));
+        // só a pasta da própria conta, direto dentro de ~/.reveza/contas
+        const dentro = path.relative(this.c.contas, c.pasta);
+        if (dentro && dentro !== ".." && !dentro.startsWith(`..${path.sep}`) && !path.isAbsolute(dentro) && !dentro.includes(path.sep)) {
+          fs.rmSync(c.pasta, { recursive: true, force: true });
+        }
+        delete this.estado.contas[id];
+        delete this.estado.historico[id];
+        if (this.estado.semModelo) delete this.estado.semModelo[id];
+        delete this.recuo[id];
+        delete this.ultimaLeitura[id];
+        delete this.tropecoDesde[id];
+        if (this.estado.proxima === id) this.estado.proxima = null;
+        this.evento("info", `A conta ${c.email} saiu do Reveza pelo painel; o login dela guardado neste computador foi apagado.`, { conta: id });
+        this.salvar();
+        return true;
+      }),
+    );
+  }
+
   travaConta(id: string): Trava {
     return this.travasConta.de(id);
   }

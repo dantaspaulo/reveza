@@ -249,6 +249,8 @@ create table auditoria (
 -- agente_evento(tipo, texto, dados)                             -> {ok}
 --     (erro com dados.motivo = 'troca_falhou' e os ids de conta de/para: a nuvem escreve o alerta com o texto dela,
 --      no máximo um por computador por hora, 0023; o texto do computador nunca sai pelos canais)
+-- agente_contas_removidas()                                    -> [{conta_id, email}]  (removidas pelo painel nos
+--     últimos 180 dias, 0031: o computador apaga a cópia do login que guarda delas)
 -- agente_ligacao_publicar(embrulho bytea, sal bytea)            -> {ok, expira_em}  (frase de emergência, 10 min)
 -- agente_ligacao_buscar()                                       -> {embrulho, sal}  (computador já ativo, uma vez)
 -- agente_ligacoes_abertas()                                     -> {pedidos: [{computador_id, publica, expira_em, para_mim, idioma}]}
@@ -265,6 +267,8 @@ create table auditoria (
 -- painel_config(chave, valor)
 -- painel_conta(conta_id, campos jsonb)           cor, prioridade, reserva, pausada, agenda, teto_semana
 -- painel_trocar_agora(computador_id, conta_id)   força atribuição (respeita posse)
+-- painel_remover_conta(conta_id)                tira a conta (0031): o computador que está nela vai antes para outra;
+--                                               sem outra para ele, recusa; fica o registro em contas_removidas
 -- painel_comando(computador_id, acao, corpo)     enfileira para o computador (a ação ligar saiu na 0.2.0)
 -- painel_convidar(email, papel) / painel_revogar_membro(user_id) / painel_mudar_papel(user_id, papel)
 -- painel_revogar_computador(computador_id)
@@ -278,3 +282,5 @@ create table auditoria (
 -- decidir(computador_id default null) -> roda a regra da seção 6 da ARQUITETURA para um ou todos os computadores;
 -- chamada pelo pg_cron a cada minuto, por agente_relatar_uso e agente_limite. Grava atribuicao e eventos.
 -- A conta preferida de cada computador vem primeiro para ele e por último para os outros (seção 6).
+-- Na hora de trocar sem conta abaixo do aviso, vai para a com mais folga abaixo do gatilho; com a em uso cheia, pausada
+-- ou sem login, abaixo de 100% (rvz_escolher, 0031). A conta em uso pausada sai de uso na hora.

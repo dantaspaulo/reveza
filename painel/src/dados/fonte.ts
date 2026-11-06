@@ -72,6 +72,11 @@ export interface Fonte {
   /** Grava a ordem de preferência: a primeira da lista é a preferida. */
   ordenarContas(ids: string[]): Promise<void>
   trocarAgora(computadorId: string, contaId: string): Promise<void>
+  /**
+   * Tira a conta do Reveza (0.12.0): o computador que estiver nela vai antes para outra (sem outra, recusa); o login dela
+   * sai da nuvem e dos computadores; o uso em tokens fica nos relatórios, sem o nome da conta.
+   */
+  removerConta(id: string): Promise<void>
   /** A conta que este computador usa sempre que ela estiver livre (null tira). Se estiver livre agora, ele passa para ela. */
   preferirConta(computadorId: string, contaId: string | null): Promise<void>
   /** Liga ou desliga a saída enxuta neste computador (o mod do Reveza lê em até 30 s). */

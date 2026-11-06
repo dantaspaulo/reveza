@@ -469,7 +469,8 @@ function DialogoTrocar({ pc, aberto, aoFechar }: { pc: Computador; aberto: boole
         </DialogHeader>
         <RadioGroup value={escolha} onValueChange={setEscolha} aria-label={t("computadores.trocar.conta")}>
           {opcoes.map((c) => {
-            const bloqueada = ocupada(c.id) || c.precisaLogin
+            // como na nuvem (painel_trocar_agora): pausada e sem login não entram à mão
+            const bloqueada = ocupada(c.id) || c.precisaLogin || c.pausada
             return (
               <FieldLabel key={c.id} htmlFor={`trocar-${c.id}`} className={cn(bloqueada && "opacity-60")}>
                 <Field orientation="horizontal">
@@ -481,7 +482,12 @@ function DialogoTrocar({ pc, aberto, aoFechar }: { pc: Computador; aberto: boole
                         ? t("computadores.trocar.ocupada")
                         : c.precisaLogin
                           ? t("estadoConta.precisa_login")
-                          : `${t(`estadoConta.${estadoConta(c, estado.config, agora)}`)} · ${fmtPct(p5(c, agora), idioma)}`}
+                          : c.pausada
+                            ? t("estadoConta.pausada")
+                            : `${t(`estadoConta.${estadoConta(c, estado.config, agora)}`)} · ${t("contas.usarAgora.uso", {
+                                cinco: fmtPct(p5(c, agora), idioma),
+                                semana: fmtPct(p7(c, agora), idioma),
+                              })}`}
                     </span>
                   </div>
                 </Field>

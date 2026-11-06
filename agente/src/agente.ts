@@ -167,6 +167,9 @@ export const ERROS_DO_LOG_POR_HORA = 10;
 export const TROCA_FALHOU_APOS_S = 300;
 export const TROCA_FALHOU_TENTATIVAS = 3;
 
+/** De quanto em quanto tempo o agente confere as contas removidas pelo painel (0.12.0). */
+export const REMOVIDAS_S = 300;
+
 export class Agente {
   estado: EstadoLocal;
   trocador: Trocador;
@@ -624,8 +627,20 @@ export class Agente {
           }
         }
       } else if (acao === "trocar" || acao === "rodizio") {
+        const c = ativa ? this.estado.contas[ativa] : undefined;
+        const p = c ? pctEfetivo(c, t) : null;
         const motivo =
-          acao === "rodizio" ? "rodízio" : limite ? "a sessão bateu o limite" : `chegou a ${gatilhoDeTroca(this.estado).toFixed(0)}%`;
+          acao === "rodizio"
+            ? "rodízio"
+            : c?.pausada
+              ? "a conta em uso foi pausada"
+              : c?.precisaLogin
+                ? "a conta em uso precisa entrar de novo"
+                : limite
+                  ? "a sessão bateu o limite"
+                  : p !== null && p >= 100
+                    ? "chegou a 100%"
+                    : `chegou a ${gatilhoDeTroca(this.estado).toFixed(0)}%`;
         // esperando memória, o ciclo seguinte decide de novo (e o rodízio não é reagendado)
         if (!(await this.esperarMemoriaParaTrocar(motivo))) {
           const r = await this.trocador.trocarDentro(alvo, motivo);
@@ -789,6 +804,7 @@ export class Agente {
       if (r.atribuicao) await this.aplicarAtribuicao(r.atribuicao);
       for (const cmd of r.comandos) await this.comando(cmd.id);
       await this.vigiarLigacoes(r.ligacoes ?? []);
+      if (!this.d.sombra) await this.esquecerRemovidas();
       await this.relatarUso();
     } catch (e) {
       const msg = (e as Error).message;
@@ -797,6 +813,27 @@ export class Agente {
       this.ultimaFalhaNuvem = msg;
     } finally {
       this.emBusca = false;
+    }
+  }
+
+  /** Quando o agente leu as contas removidas pela última vez (epoch em segundos). */
+  private removidasLidasEm = 0;
+
+  /**
+   * Contas removidas pelo painel (0.12.0): o login delas que este computador guarda é apagado. De 5 em 5 minutos, para
+   * o computador que estava desligado na hora também limpar; a conta em uso fica até a troca que a nuvem fez antes.
+   */
+  async esquecerRemovidas(): Promise<void> {
+    const nuvem = this.d.nuvem;
+    const t = this.d.relogio.agora();
+    if (!nuvem || !this.posse || t - this.removidasLidasEm < REMOVIDAS_S) return;
+    this.removidasLidasEm = t;
+    // nuvem de antes da 0031 não tem a função: fica para a próxima volta
+    const lista = await nuvem.contasRemovidas().catch(() => null);
+    for (const r of lista ?? []) {
+      const id = this.posse.porContaId(r.conta_id);
+      if (!id || id === this.estado.ativa) continue;
+      if (await this.trocador.esquecer(id)) this.posse.esquecer(id);
     }
   }
 
@@ -852,17 +889,21 @@ export class Agente {
     this.fundo(this.atualizarAssistente(true));
   }
 
-  /** Roda o `claude update` e guarda o resultado, que vai ao painel no diagnóstico. Nunca dois ao mesmo tempo. */
-  async atualizarAssistente(sozinho: boolean): Promise<UltimaAtualizacaoAssistente | null> {
+  /**
+   * Roda o `claude update` e guarda o resultado, que vai ao painel no diagnóstico. Nunca dois ao mesmo tempo. `alvo`: a
+   * versão que o painel pediu (a do computador mais adiantado); sem chegar nela, o resultado diz onde parou.
+   */
+  async atualizarAssistente(sozinho: boolean, alvo?: string): Promise<UltimaAtualizacaoAssistente | null> {
     if (this.assistenteAtualizando) return null;
     this.assistenteAtualizando = true;
     try {
       const de = await this.d.cli.versao().catch(() => null);
-      const r = await this.d.cli.atualizar().catch((e: Error) => ({ codigo: -1, saida: "", erro: e.message }));
+      const r = await this.d.cli.atualizar(alvo).catch((e: Error) => ({ codigo: -1, saida: "", erro: e.message }));
       const para = await this.d.cli.versao().catch(() => null);
-      const ok = r.codigo === 0 && para !== null;
-      const ultima: UltimaAtualizacaoAssistente = { em: this.d.relogio.agora(), ok, de, para, sozinho };
-      if (!ok) ultima.erro = erroDoUpdate(r.saida, r.erro, r.codigo);
+      const longe = !!alvo && para !== null && compararVersao(para, alvo) < 0;
+      const ok = r.codigo === 0 && para !== null && !longe;
+      const ultima: UltimaAtualizacaoAssistente = { em: this.d.relogio.agora(), ok, de, para, sozinho, ...(alvo ? { alvo } : {}) };
+      if (!ok) ultima.erro = r.codigo === 0 && longe ? `não chegou na ${alvo}: ficou na ${para}` : erroDoUpdate(r.saida, r.erro, r.codigo);
       this.estado.assistenteUltima = ultima;
       this.salvar();
       if (!ok) this.d.log.erro(`assistente de código: o claude update não deu (${ultima.erro})`);
@@ -883,8 +924,18 @@ export class Agente {
       modo: modoAssistente(this.configNuvem.assistente_atualizar),
       autoDesligado: autoDesligado(this.arquivoSettings(), this.estado.assistenteDesligouAuto === true),
       atualizando: this.assistenteAtualizando,
+      // 0.12.0: o pedido do painel pode levar a versão a alcançar ({ assistente: true, versao })
+      paraVersao: true,
       ultima: u
-        ? { em: new Date(u.em * 1000).toISOString(), ok: u.ok, de: u.de, para: u.para, sozinho: u.sozinho, ...(u.erro ? { erro: u.erro } : {}) }
+        ? {
+            em: new Date(u.em * 1000).toISOString(),
+            ok: u.ok,
+            de: u.de,
+            para: u.para,
+            sozinho: u.sozinho,
+            ...(u.alvo ? { alvo: u.alvo } : {}),
+            ...(u.erro ? { erro: u.erro } : {}),
+          }
         : null,
     };
   }
@@ -1846,8 +1897,8 @@ export class Agente {
             if (this.assistenteAtualizando) return recusa(409, "o assistente de código já está atualizando neste computador");
             const de = await this.d.cli.versao().catch(() => null);
             // o `claude update` pode levar minutos (baixa o programa): responde já, e o painel vê o fim no diagnóstico
-            this.fundo(this.atualizarAssistente(false));
-            return { status: 200, corpo: { ok: true, assistente: true, atualizando: true, de } };
+            this.fundo(this.atualizarAssistente(false, p.alvo));
+            return { status: 200, corpo: { ok: true, assistente: true, atualizando: true, de, ...(p.alvo ? { alvo: p.alvo } : {}) } };
           }
           if ("conferir" in p) {
             const c = await this.conferirAgora();

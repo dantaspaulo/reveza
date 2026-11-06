@@ -34,6 +34,19 @@ export function versaoDoAssistente(pc: Computador): string | null {
   return /(\d{1,4}\.\d{1,4}\.\d{1,4})/.exec(item.detalhe ?? "")?.[1] ?? null
 }
 
+/**
+ * O corpo do pedido de atualizar o assistente de um computador. Com o agente 0.12.0 em diante (`paraVersao`) e o
+ * computador atrás, leva a versão do mais adiantado: o `claude update` sozinho só vai até a mais nova do canal daquele
+ * computador, e o Atualizar girava sem chegar na do outro (relato do Paulo, 06/11/2026: o Mac mini na 2.1.312 e o
+ * MacBook na 2.1.319). Agente de antes recusa corpo com a versão, então vai só `{ assistente: true }`.
+ */
+export function corpoDoPedido(pc: Computador, maisNova: string | null): { assistente: true; versao?: string } {
+  const versao = versaoDoAssistente(pc)
+  if (pc.diagnostico?.assistente?.paraVersao === true && maisNova && versao && compararVersao(versao, maisNova) < 0)
+    return { assistente: true, versao: maisNova }
+  return { assistente: true }
+}
+
 /** O agente deste computador entende o pedido de atualizar o assistente (0.8.0 em diante). */
 export function atualizaPeloPainel(pc: Computador): boolean {
   return !!pc.diagnostico?.assistente

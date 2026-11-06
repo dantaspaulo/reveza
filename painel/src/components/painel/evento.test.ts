@@ -11,6 +11,18 @@ describe("traduzirMotivo", () => {
     expect(traduzirMotivo("conta preferida deste computador", { t })).toBe("[motivo.preferida]")
     expect(traduzirMotivo("devolvendo a conta preferida de outro computador", { t })).toBe("[motivo.devolvendo]")
   })
+  it("os motivos da 0.12.0 têm texto nos dois idiomas", async () => {
+    const { en, pt } = await import("@/i18n/dicionario")
+    const { traduzir } = await import("@/i18n/traduzir")
+    // sem reserva: a chave que faltar volta como veio (motivo.x) e o teste pega
+    const tr = (dic: unknown) => ((k: string, v?: Record<string, string | number>) => traduzir(dic, {}, k, v)) as never
+    for (const m of ["a conta em uso foi pausada", "a conta em uso precisa entrar de novo", "a conta em uso foi removida", "chegou a 100%"]) {
+      expect(traduzirMotivo(m, { t: tr(pt) })).not.toMatch(/^motivo\./)
+      expect(traduzirMotivo(m, { t: tr(en) })).not.toMatch(/^motivo\./)
+      // em português o texto é o que o banco grava; em inglês, só sai traduzido se o motivo estiver no mapa
+      expect(traduzirMotivo(m, { t: tr(en) })).not.toBe(m)
+    }
+  })
   it("nome de propriedade herdada não vira chave de tradução (não derruba a tela)", () => {
     for (const m of ["constructor", "__proto__", "toString", "hasOwnProperty"]) expect(traduzirMotivo(m, { t })).toBe(m)
   })

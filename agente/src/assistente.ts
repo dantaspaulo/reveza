@@ -104,6 +104,51 @@ export function autoDesligado(arquivo: string, escritoPeloAgente: boolean): "rev
   return null;
 }
 
+/** A versão do assistente que o painel pode pedir (0.12.0): só X.Y.Z. */
+export const VERSAO_ASSISTENTE = /^(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,3})\.(0|[1-9]\d{0,4})$/;
+
+/**
+ * A pasta de instalação do npm (o "prefixo") quando o assistente veio pelo `npm install -g`: o programa de verdade fica
+ * em `<prefixo>/lib/node_modules/@anthropic-ai/claude-code/` (macOS e Linux) ou `<prefixo>\node_modules\@anthropic-ai\
+ * claude-code\` (Windows). Null para a instalação nativa, a do Homebrew e qualquer outra.
+ *
+ * Relato do Paulo (06/11/2026): o Atualizar do painel girava e o computador seguia na 2.1.312. O serviço do Reveza roda
+ * com o Node do Homebrew, e o `claude update` de uma instalação pelo npm usa o npm que acha no caminho: o do Homebrew,
+ * que instalou a 2.1.318 na pasta dele, e não na `~/.local` de onde o assistente roda. Com o prefixo certo no ambiente
+ * (`npm_config_prefix`), qualquer npm instala no lugar do assistente que está em uso.
+ */
+export function prefixoNpm(caminhoReal: string): string | null {
+  const unix = /^(.+)\/lib\/node_modules\/@anthropic-ai\/claude-code\//.exec(caminhoReal);
+  if (unix) return unix[1]!;
+  const windows = /^(.+)[\\/]node_modules[\\/]@anthropic-ai[\\/]claude-code[\\/]/i.exec(caminhoReal);
+  return windows ? windows[1]! : null;
+}
+
+/** A instalação nativa do assistente (`~/.local/share/claude/versions/<versão>`), que `claude install <versão>` troca. */
+export function instalacaoNativa(caminhoReal: string): boolean {
+  return /[\\/]\.local[\\/]share[\\/]claude[\\/]versions[\\/]/.test(caminhoReal);
+}
+
+/**
+ * O programa do npm que vem com o Node que roda o agente, chamado pelo próprio Node (sem shell; no Windows o npm.cmd
+ * pediria o interpretador de comandos). Null quando não está no lugar de sempre.
+ */
+export function npmDoNode(execPath: string, plataforma: NodeJS.Platform = process.platform): string | null {
+  const dir = path.dirname(execPath);
+  const candidatos =
+    plataforma === "win32"
+      ? [path.join(dir, "node_modules", "npm", "bin", "npm-cli.js")]
+      : [path.join(dir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"), path.join(dir, "node_modules", "npm", "bin", "npm-cli.js")];
+  for (const c of candidatos) {
+    try {
+      if (fs.statSync(c).isFile()) return c;
+    } catch {
+      // segue
+    }
+  }
+  return null;
+}
+
 /** Uma linha curta do erro do `claude update` para o painel (a última que diz algo). */
 export function erroDoUpdate(saida: string, erro: string, codigo: number): string {
   const linhas = `${erro}\n${saida}`

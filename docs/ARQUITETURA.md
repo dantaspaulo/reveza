@@ -95,7 +95,16 @@ aviso de limite. Para cada computador ligado:
   chama `agente_sem_modelo(conta, modelo, sessao)` e a conta fica fora das candidatas daquele computador por 6 horas
   (`contas_sem_modelo`, 0028). Com outra livre, troca na hora e a sessão continua no mesmo modelo; sem troca em 2
   minutos (ou parando de novo logo), o mod passa a sessão para o modelo padrão (`/model default`) e ela continua;
-- espera mínima de 90 s entre trocas do mesmo computador, menos quando a sessão bateu o limite;
+- espera mínima de 90 s entre trocas do mesmo computador, menos quando a sessão bateu o limite ou a conta em uso
+  chegou a 100%;
+- na hora de trocar, sem conta abaixo do aviso (0.12.0, `rvz_escolher`): a com mais folga abaixo do gatilho e com
+  menos uso que a em uso; depois as de reserva; com a em uso cheia (100% ou a sessão no limite), a com mais folga
+  abaixo de 100%. Relato de 06/11/2026: com as outras entre 85% e 93%, a nuvem respondia "nenhuma conta livre" e o
+  computador ficou 47 minutos na conta em 100%. Pausada, agenda, teto da semana e conta sem o modelo valem também
+  aqui; a conta sem o modelo da sessão não conta como cheia (sem outra abaixo do gatilho, a sessão segue no modelo
+  padrão nela);
+- a conta em uso pausada (ou sem login) sai de uso na hora, para a melhor que houver, mesmo com a troca automática
+  desligada; o `painel_conta` decide na hora quando pausa uma conta em uso;
 - conta preferida de cada computador (uma conta é preferida de um computador só): para ele vem antes das outras
   candidatas; com a troca automática ligada, ele volta para ela quando ela fica livre, depois da espera, menos se a
   conta atual foi pedida à mão (painel ou API), que fica até a próxima troca da regra; no rodízio ele fica nela; no
@@ -191,6 +200,16 @@ reserva, e o login que o Reveza põe nele não vale nas sessões. O agente confe
 erro quando liga; o `reveza doctor` (e a Saúde) mostra a conferência `login-windows`. O suporte (ler e gravar o login no
 Gerenciador) depende de conhecer o formato que o assistente usa lá, que não está no pacote do macOS.
 
+**O limite nas organizações Team e Enterprise (0.12.0).** Nessas organizações o Claude Code põe o plugin de segurança
+dele (`cc-plugin-sec-default`) na frente dos plugins que a pessoa instala, e ele manda os eventos clássicos (`classic.*`)
+direto para baixo, sem passar por eles: o `classic.StopFailure` do mod era pulado ("its classic.StopFailure hook was
+skipped") e, de 13/10 a 06/11/2026, nenhum limite chegou ao agente pelo mod. O mod passa a ouvir também o
+`turn.complete` (fim do turno principal com `reason: "error"`), que não é clássico. O `answer` dele vem vazio no
+erro de API (conferido no 2.1.312): o limite é reconhecido pela última mensagem da sessão (`$.session.messages()`,
+"You've hit your 5-hour limit · resets ...") ou, sem ela, pelo uso em 100% que a resposta recusada trouxe
+(`$.session.usage().rateLimits`). Quando os dois caminhos chegam (fora das organizações), o StopFailure vem antes e o
+fim do turno logo depois não repete.
+
 **O estado no disco (0.10.3).** Relato de um usuário (Windows, desligamento brusco em 22/10/2026): o `estado.json`
 voltou com bytes nulos e o agente subiu só com a conta em uso, sem aviso. A gravação atômica manda o conteúdo ao disco
 antes da troca de nome (e a pasta depois, onde o sistema deixa; uns 8 ms por gravação do estado, de 15 em 15 s; o
@@ -247,7 +266,12 @@ a dele, pelo instalador da própria versão nova, num processo separado, com a c
   liberar` (a desinstalação chama) devolve o dele. O painel pede pelo `atualizar` com `{ assistente: true }`: o agente
   responde na hora e roda o `claude update` solto (pode levar minutos); o agente de antes da 0.8.0 recusa o corpo ("só
   leva a versão") sem mexer em nada. O diagnóstico leva `assistente: { versao, modo, autoDesligado, atualizando,
-  ultima }`; a versão vem do doctor (`Conferencia.valor`), não do texto.
+  ultima }`; a versão vem do doctor (`Conferencia.valor`), não do texto. Desde a 0.12.0 (`paraVersao: true` no
+  diagnóstico) o pedido pode levar a versão do computador mais adiantado, `{ assistente: true, versao }`: o agente roda
+  o `claude update` e, se não chegou nela, instala essa versão (npm: `npm install -g @anthropic-ai/claude-code@X` pelo
+  npm do Node do agente; instalação nativa: `claude install X`); `ultima` leva `alvo` e, sem chegar, `ok: false` com
+  onde parou. Na instalação pelo npm, o agente põe `npm_config_prefix` com a pasta do assistente em uso (o caminho
+  real do programa): com o serviço rodando com outro Node, o `claude update` instalava na pasta desse outro Node.
 
 ## 7e. Atualizar a nuvem e o painel (0.3.0)
 

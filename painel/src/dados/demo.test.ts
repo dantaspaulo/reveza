@@ -76,6 +76,28 @@ describe("FonteDemo", () => {
     expect((await f.auditoria(1))[0].acao).toBe("trocar")
   })
 
+  it("trocar agora: conta pausada não entra à mão, como na nuvem", async () => {
+    const f = nova()
+    await f.salvarConta("conta-reserva", { pausada: true })
+    await expect(f.trocarAgora("pc-notebook", "conta-reserva")).rejects.toMatchObject({ codigo: "conta_pausada" })
+  })
+
+  it("remover conta: a parada só sai; a em uso passa o computador para outra antes; sem outra, recusa e fica", async () => {
+    const f = nova()
+    await f.removerConta("conta-cliente")
+    expect((await f.carregar()).contas.map((c) => c.id)).not.toContain("conta-cliente")
+    expect((await f.auditoria(1))[0].acao).toBe("remover_conta")
+    // a única fora de uso, com login e abaixo de 100% é a reserva: vai para ela
+    await f.removerConta("conta-trabalho")
+    const e = await f.carregar()
+    const notebook = e.computadores.find((c) => c.id === "pc-notebook")
+    expect(notebook?.atribuicao).toMatchObject({ contaId: "conta-reserva", motivo: "a conta em uso foi removida" })
+    expect(notebook?.contaPreferidaId, "a preferida removida sai do computador").toBe(null)
+    expect(e.eventos[0]).toMatchObject({ tipo: "troca", dados: { de: "conta-trabalho", para: "conta-reserva" } })
+    await expect(f.removerConta("conta-reserva")).rejects.toMatchObject({ codigo: "remover_sem_outra" })
+    expect((await f.carregar()).contas.map((c) => c.id)).toContain("conta-reserva")
+  })
+
   it("chave de API no formato do banco, mostrada uma vez", async () => {
     const f = nova()
     const { chave } = await f.criarChave("teste", ["ler"])

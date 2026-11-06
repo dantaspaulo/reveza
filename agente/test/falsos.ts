@@ -174,8 +174,11 @@ export class CliFalsa implements Cli {
   async versao() {
     return this.versaoAtual;
   }
-  async atualizar() {
+  /** A versão que o painel pediu em cada `claude update` (undefined: sem versão). */
+  alvos: (string | undefined)[] = [];
+  async atualizar(alvo?: string) {
     this.atualizacoes++;
+    this.alvos.push(alvo);
     if (this.segurarAtualizacao) await this.segurarAtualizacao;
     const { para, ...r } = this.aoAtualizar();
     if (para) this.versaoAtual = para;
@@ -254,6 +257,8 @@ export class BancoFalso {
   vez: { pc: string; de: string; para: string; desde: number; estado: string } | null = null;
   versoes = new Map<string, string>();
   alertas: { texto: string; dados: Record<string, unknown> }[] = [];
+  /** As contas que o painel removeu (contas_removidas, 0031). */
+  removidas: { conta_id: string; email: string }[] = [];
   /** O registro das migrações aplicadas (reveza_migracoes): null = sem registro; o agente_migracoes devolve os nomes. */
   migracoes: string[] | null = [...MIGRACOES_DO_PACOTE];
   /** O resumo de cada uma (0.3.1); null = nuvem de antes, que só devolve os nomes. */
@@ -513,6 +518,11 @@ export class NuvemFalsa implements Nuvem {
     this.registrarChamada("semModelo", contaId, modelo, sessao);
     const a = this.banco.atribuicao.get(this.pc);
     return { ok: true, trocou: a?.conta !== contaId, versao: a?.versao ?? null };
+  }
+
+  async contasRemovidas() {
+    this.registrarChamada("contasRemovidas");
+    return [...this.banco.removidas];
   }
 
   async reservarComando(id: number) {

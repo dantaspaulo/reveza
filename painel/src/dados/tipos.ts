@@ -121,8 +121,10 @@ export interface AssistenteDoComputador {
   autoDesligado: "reveza" | "pessoa" | null
   /** O computador está rodando a atualização do assistente agora. */
   atualizando: boolean
-  /** A última atualização que o agente rodou (a pedido do painel ou sozinho). */
-  ultima: { em: string; ok: boolean; de: string | null; para: string | null; sozinho: boolean; erro?: string } | null
+  /** O agente aceita a versão a alcançar no pedido (0.12.0): `{ assistente: true, versao }`. */
+  paraVersao?: boolean
+  /** A última atualização que o agente rodou (a pedido do painel ou sozinho); `alvo`: a versão que o painel pediu. */
+  ultima: { em: string; ok: boolean; de: string | null; para: string | null; sozinho: boolean; alvo?: string; erro?: string } | null
 }
 
 export interface Atribuicao {

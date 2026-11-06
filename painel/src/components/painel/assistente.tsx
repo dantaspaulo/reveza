@@ -16,7 +16,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { useAcao, useAgora, useDados, useEstado, usePermissao } from "@/dados/contexto"
 import type { Computador, ModoAssistente } from "@/dados/tipos"
 import { useT } from "@/i18n"
-import { linhasDoAssistente, momentoDoPedido, type EstadoAssistente } from "@/lib/assistente"
+import { corpoDoPedido, linhasDoAssistente, momentoDoPedido, type EstadoAssistente } from "@/lib/assistente"
 import { cn } from "@/lib/utils"
 
 export const MODOS_ASSISTENTE: ModoAssistente[] = ["padrao", "sozinho", "manual"]
@@ -48,7 +48,10 @@ export function CartaoAssistente() {
   const atrasados = linhas.filter((l) => l.estado === "atras" && l.podeAtualizar)
 
   const pedir = async (pc: Computador) => {
-    const [ok] = await acao(() => fonte.comando(pc.id, "atualizar", { assistente: true }), t("computadores.assistente.pedido", { computador: pc.nome }))
+    const [ok] = await acao(
+      () => fonte.comando(pc.id, "atualizar", corpoDoPedido(pc, maisNova)),
+      t("computadores.assistente.pedido", { computador: pc.nome })
+    )
     if (ok) setPedidos((p) => ({ ...p, [pc.id]: momentoDoPedido() }))
   }
 
@@ -57,7 +60,7 @@ export function CartaoAssistente() {
     const feitos: Record<string, number> = {}
     for (const { pc } of atrasados) {
       try {
-        await fonte.comando(pc.id, "atualizar", { assistente: true })
+        await fonte.comando(pc.id, "atualizar", corpoDoPedido(pc, maisNova))
         feitos[pc.id] = momentoDoPedido()
       } catch {
         // segue para os outros; o aviso diz quantos foram

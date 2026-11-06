@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { RENOVAR_PASSO_S, sistemaAtual, type Sistema } from "./config.js";
 import { aspasSh } from "./navegador.js";
 import { envDaPasta, type Executor, type Processo, type Resultado } from "./util/executor.js";
-import { ASSISTENTE_UPDATE_MS } from "./assistente.js";
+import { ASSISTENTE_UPDATE_MS, VERSAO_ASSISTENTE, instalacaoNativa, npmDoNode, prefixoNpm } from "./assistente.js";
+import { compararVersao } from "./doctor.js";
 
 /** O "navegador" do login (abrir-login.js), compilado ao lado deste arquivo. */
 const ABRIR_LOGIN = fileURLToPath(new URL("./abrir-login.js", import.meta.url));
@@ -23,8 +24,11 @@ export interface Cli {
   renovar(pasta: string, tentativa: 0 | 1): Promise<Resultado | void>;
   login(pasta: string, email: string | null): Processo;
   retomar(sessao: string, cwd: string, texto: string, saida: number): void;
-  /** `claude update`: o próprio assistente se atualiza (instalação nativa, npm ou Homebrew), sem terminal. */
-  atualizar(): Promise<Resultado>;
+  /**
+   * `claude update`: o próprio assistente se atualiza (instalação nativa, npm ou Homebrew), sem terminal. Com `alvo`
+   * (X.Y.Z, pedido do painel para igualar os computadores), instala essa versão quando o `claude update` não chegou nela.
+   */
+  atualizar(alvo?: string): Promise<Resultado>;
 }
 
 // No Windows, o "claude.cmd" do npm é um script de lote: rodá-lo exigiria o interpretador de comandos (e o Node novo
@@ -117,12 +121,36 @@ export class ClaudeCli implements Cli {
     this.exec.iniciar([this.bin, "--resume", sessao, "-p", texto], { cwd, env, solto: { saida } });
   }
 
-  async atualizar(): Promise<Resultado> {
+  async atualizar(alvo?: string): Promise<Resultado> {
     // a configuração padrão do usuário (sem CLAUDE_CONFIG_DIR), como na retomada; o npm de quem instalou pelo npm mora
     // ao lado do Node que roda o agente, e o serviço nem sempre tem essa pasta no PATH
     const env = envDaPasta("", process.env);
     delete env.CLAUDE_CONFIG_DIR;
     env.PATH = [path.dirname(process.execPath), env.PATH].filter(Boolean).join(path.delimiter);
-    return this.exec.rodar([this.bin, "update"], { env, timeoutMs: ASSISTENTE_UPDATE_MS });
+    let real = this.bin;
+    try {
+      real = fs.realpathSync(this.bin);
+    } catch {
+      // segue com o caminho como veio
+    }
+    // instalação pelo npm: o npm que rodar instala na pasta do assistente em uso, não na do Node do serviço
+    const prefixo = prefixoNpm(real);
+    if (prefixo) env.npm_config_prefix = prefixo;
+    const r = await this.exec.rodar([this.bin, "update"], { env, timeoutMs: ASSISTENTE_UPDATE_MS });
+    if (!alvo || !VERSAO_ASSISTENTE.test(alvo) || r.codigo !== 0) return r;
+    const agora = await this.versao().catch(() => null);
+    if (agora && compararVersao(agora, alvo) >= 0) return r;
+    if (prefixo) {
+      const npm = npmDoNode(process.execPath, this.sistema === "windows" ? "win32" : process.platform);
+      const argv = npm
+        ? [process.execPath, npm, "install", "-g", `@anthropic-ai/claude-code@${alvo}`]
+        : this.sistema === "windows"
+          ? null
+          : ["npm", "install", "-g", `@anthropic-ai/claude-code@${alvo}`];
+      if (!argv) return { codigo: 1, saida: "", erro: "não achei o npm ao lado do Node do Reveza para instalar a versão pedida" };
+      return this.exec.rodar(argv, { env, timeoutMs: ASSISTENTE_UPDATE_MS });
+    }
+    if (instalacaoNativa(real)) return this.exec.rodar([this.bin, "install", alvo], { env, timeoutMs: ASSISTENTE_UPDATE_MS });
+    return { codigo: 1, saida: "", erro: `esta instalação do assistente só se atualiza pelo jeito dela; a ${alvo} não veio no claude update` };
   }
 }

@@ -6,8 +6,9 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { aplicarAutoUpdater, ASSISTENTE_CONFERIR_S, autoDesligado, erroDoUpdate, modoAssistente } from "../src/assistente.js";
+import { aplicarAutoUpdater, ASSISTENTE_CONFERIR_S, autoDesligado, erroDoUpdate, instalacaoNativa, modoAssistente, prefixoNpm } from "../src/assistente.js";
 import { lerPedido } from "../src/atualizar.js";
+import { ClaudeCli } from "../src/claudecli.js";
 import { executarCli, type Ambiente } from "../src/cli.js";
 import { carregarEstado, salvarEstado } from "../src/estado.js";
 import { CredenciaisFalsas } from "../src/credenciais/falsa.js";
@@ -106,10 +107,90 @@ describe("a atualização automática do assistente no settings.json", () => {
     assert.equal(erroDoUpdate("x".repeat(500), "", 1).length, 200);
   });
 
-  test("o pedido do painel: só { assistente: true }; com outra chave junto, recusado (não vira atualizar o Reveza)", () => {
+  test("o pedido do painel: { assistente: true }, com a versão a alcançar ou sem; outra chave junto, recusado", () => {
     assert.deepEqual(lerPedido({ assistente: true }), { ok: true, assistente: true });
+    assert.deepEqual(lerPedido({ assistente: true, versao: "2.1.319" }), { ok: true, assistente: true, alvo: "2.1.319" });
     assert.equal(lerPedido({ assistente: false }).ok, false);
     assert.equal(lerPedido({ assistente: true, versao: "mais_nova" }).ok, false);
+    assert.equal(lerPedido({ assistente: true, versao: "2.1.319; rm -rf ~" }).ok, false);
+    assert.equal(lerPedido({ assistente: true, versao: "2.1.319", url: "https://exemplo.com" }).ok, false);
+  });
+
+  // relato do Paulo (06/11/2026): o serviço roda com o Node do Homebrew e o claude update instalava a versão nova na
+  // pasta do Homebrew, enquanto o assistente em uso (o da ~/.local) seguia na 2.1.312
+  test("a pasta do npm do assistente em uso, pelo caminho real do programa", () => {
+    assert.equal(prefixoNpm("/Users/p/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe"), "/Users/p/.local");
+    assert.equal(prefixoNpm("/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js"), "/opt/homebrew");
+    assert.equal(prefixoNpm("C:\\Users\\p\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"), "C:\\Users\\p\\AppData\\Roaming\\npm");
+    assert.equal(prefixoNpm("/Users/p/.local/share/claude/versions/2.1.319"), null);
+    assert.equal(instalacaoNativa("/Users/p/.local/share/claude/versions/2.1.319"), true);
+    assert.equal(instalacaoNativa("/opt/homebrew/Caskroom/claude-code/2.1.319/claude"), false);
+  });
+});
+
+describe("o claude update na pasta certa e na versão pedida", () => {
+  // executor que guarda cada comando com o ambiente e responde como o assistente
+  function executor(versoes: string[]) {
+    const chamadas: { argv: string[]; env: NodeJS.ProcessEnv | undefined }[] = [];
+    let i = 0;
+    const exec = {
+      async rodar(argv: string[], op: { env?: NodeJS.ProcessEnv } = {}) {
+        chamadas.push({ argv, env: op.env });
+        if (argv[1] === "--version") return { codigo: 0, saida: `${versoes[Math.min(i++, versoes.length - 1)]} (Claude Code)`, erro: "" };
+        return { codigo: 0, saida: "", erro: "" };
+      },
+      iniciar() {
+        throw new Error("não usado");
+      },
+    };
+    return { exec, chamadas };
+  }
+  // a pasta do npm global: <prefixo>/lib/node_modules no macOS e no Linux, <prefixo>\node_modules no Windows
+  function instalacaoNpm() {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "reveza-npm-"));
+    temporarias.push(d);
+    const modulos = process.platform === "win32" ? path.join(d, "node_modules") : path.join(d, "lib", "node_modules");
+    const real = path.join(modulos, "@anthropic-ai", "claude-code", "bin", "claude.exe");
+    fs.mkdirSync(path.dirname(real), { recursive: true });
+    fs.writeFileSync(real, "");
+    return { prefixo: fs.realpathSync(d), bin: real };
+  }
+
+  test("instalação pelo npm: o claude update roda com o prefixo da pasta do assistente em uso", async () => {
+    const { prefixo, bin } = instalacaoNpm();
+    const { exec, chamadas } = executor(["2.1.318"]);
+    await new ClaudeCli(exec as never, bin, "macos").atualizar();
+    const update = chamadas.find((c) => c.argv[1] === "update")!;
+    assert.equal(update.env?.npm_config_prefix, prefixo);
+  });
+
+  test("com a versão pedida e o claude update parado antes dela: instala a versão pelo npm, na mesma pasta", async () => {
+    const { prefixo, bin } = instalacaoNpm();
+    const { exec, chamadas } = executor(["2.1.312", "2.1.319"]);
+    const r = await new ClaudeCli(exec as never, bin, "macos").atualizar("2.1.319");
+    assert.equal(r.codigo, 0);
+    const instalar = chamadas.find((c) => c.argv.includes("install"))!;
+    assert.ok(instalar, JSON.stringify(chamadas.map((c) => c.argv)));
+    assert.deepEqual(instalar.argv.slice(-3), ["install", "-g", "@anthropic-ai/claude-code@2.1.319"]);
+    assert.equal(instalar.env?.npm_config_prefix, prefixo);
+  });
+
+  test("o claude update já chegou na versão pedida: não instala mais nada", async () => {
+    const { bin } = instalacaoNpm();
+    const { exec, chamadas } = executor(["2.1.319"]);
+    await new ClaudeCli(exec as never, bin, "macos").atualizar("2.1.319");
+    assert.equal(chamadas.some((c) => c.argv.includes("install")), false);
+  });
+
+  test("instalação que não é do npm nem a nativa: diz que não chega na versão pedida", async () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "reveza-outra-"));
+    temporarias.push(d);
+    const bin = path.join(d, "claude");
+    fs.writeFileSync(bin, "");
+    const { exec } = executor(["2.1.312"]);
+    const r = await new ClaudeCli(exec as never, bin, "macos").atualizar("2.1.319");
+    assert.notEqual(r.codigo, 0);
+    assert.match(r.erro, /2\.1\.319/);
   });
 });
 
@@ -203,7 +284,29 @@ describe("o agente e o assistente de código", () => {
   test("o que vai ao painel: a escolha, quem desligou, se está atualizando e a última atualização", async () => {
     await preparar({ assistente_atualizar: "manual" });
     const info = m!.agente.infoAssistente();
-    assert.deepEqual(info, { modo: "manual", autoDesligado: "reveza", atualizando: false, ultima: null });
+    assert.deepEqual(info, { modo: "manual", autoDesligado: "reveza", atualizando: false, paraVersao: true, ultima: null });
+  });
+
+  test("o Atualizar com a versão do computador mais adiantado: o claude update leva a versão, e o resultado diz qual era", async () => {
+    await preparar();
+    m!.cli.aoAtualizar = () => ({ codigo: 0, saida: "", erro: "", para: "2.1.319" });
+    const cmd = await pedir(1, { assistente: true, versao: "2.1.319" });
+    assert.equal(cmd.estado, "feito", JSON.stringify(cmd.resposta));
+    assert.deepEqual(cmd.resposta, { ok: true, assistente: true, atualizando: true, de: "2.1.293", alvo: "2.1.319" });
+    await m!.agente.esperar();
+    assert.deepEqual(m!.cli.alvos, ["2.1.319"]);
+    const u = m!.agente.estado.assistenteUltima!;
+    assert.deepEqual({ ok: u.ok, para: u.para, alvo: u.alvo }, { ok: true, para: "2.1.319", alvo: "2.1.319" });
+  });
+
+  test("não chegou na versão pedida: fica como falha, com onde parou", async () => {
+    await preparar();
+    m!.cli.aoAtualizar = () => ({ codigo: 0, saida: "Claude Code is up to date (2.1.312)", erro: "", para: "2.1.312" });
+    await pedir(1, { assistente: true, versao: "2.1.319" });
+    await m!.agente.esperar();
+    const u = m!.agente.estado.assistenteUltima!;
+    assert.equal(u.ok, false);
+    assert.equal(u.erro, "não chegou na 2.1.319: ficou na 2.1.312");
   });
 });
 

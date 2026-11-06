@@ -122,6 +122,8 @@ export interface UltimaAtualizacaoAssistente {
   de: string | null;
   para: string | null;
   sozinho: boolean;
+  /** A versão que o painel pediu (0.12.0), quando pediu uma. */
+  alvo?: string;
   erro?: string;
 }
 
