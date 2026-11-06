@@ -32,6 +32,7 @@ export default secao({
         retomar: "Retomar",
         usarAgora: "Usar agora",
         remover: "Remover conta",
+        desfazer: "Desfazer a remoção",
       },
       usarAgora: {
         titulo: "Usar {conta} agora",
@@ -49,11 +50,18 @@ export default secao({
       remover: {
         titulo: "Remover {conta}?",
         texto:
-          "A conta sai do Reveza. O login dela guardado na nuvem e nos computadores é apagado, e o histórico de uso dela (as porcentagens) também. O uso em tokens continua nos relatórios, sem o nome da conta. Para usar de novo, é só conectar a conta outra vez.",
+          "A conta fica pausada e sai do Reveza em 10 minutos; até lá dá para desfazer. Depois, o login dela guardado na nuvem e nos computadores é apagado, e o histórico de uso dela (as porcentagens) também. O uso em tokens continua nos relatórios, sem o nome da conta. Para usar de novo, é só conectar a conta outra vez.",
         emUso: "{computador} está usando esta conta agora e passa antes para outra.",
         botao: "Remover conta",
         botaoSegurar: "Segure para remover",
-        feito: "{conta} saiu do Reveza",
+        feito: "{conta} sai do Reveza em 10 minutos",
+        desfazer: "Desfazer",
+        saindo: "Sai do Reveza {quando}",
+        desfeita: "{conta} voltou ao Reveza",
+      },
+      ritmo: {
+        acima: "Gastando rápido",
+        dica: "No ritmo desta semana, acaba {quando}, antes de renovar. A troca já deixa esta conta por último.",
       },
       pausada: "{conta} pausada",
       retomada: "{conta} de volta ao revezamento",
@@ -179,6 +187,7 @@ export default secao({
         retomar: "Resume",
         usarAgora: "Use now",
         remover: "Remove account",
+        desfazer: "Undo the removal",
       },
       usarAgora: {
         titulo: "Use {conta} now",
@@ -196,11 +205,18 @@ export default secao({
       remover: {
         titulo: "Remove {conta}?",
         texto:
-          "The account leaves Reveza. Its sign-in kept in the cloud and on the computers is deleted, and so is its usage history (the percentages). Token usage stays in the reports, without the account's name. To use it again, just connect the account again.",
+          "The account is paused and leaves Reveza in 10 minutes; until then you can undo it. After that, its sign-in kept in the cloud and on the computers is deleted, and so is its usage history (the percentages). Token usage stays in the reports, without the account's name. To use it again, just connect the account again.",
         emUso: "{computador} is using this account now and switches to another one first.",
         botao: "Remove account",
         botaoSegurar: "Hold to remove",
-        feito: "{conta} left Reveza",
+        feito: "{conta} leaves Reveza in 10 minutes",
+        desfazer: "Undo",
+        saindo: "Leaves Reveza {quando}",
+        desfeita: "{conta} is back in Reveza",
+      },
+      ritmo: {
+        acima: "Burning fast",
+        dica: "At this week's pace it runs out {quando}, before the reset. Switching already leaves this account for last.",
       },
       pausada: "{conta} paused",
       retomada: "{conta} is back in rotation",

@@ -16,8 +16,12 @@ import {
   PlayIcon,
   PlusIcon,
   Settings2Icon,
+  TimerIcon,
   Trash2Icon,
+  TrendingUpIcon,
+  Undo2Icon,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { BarraUso, NomeConta, PontoConta, SeloEstado } from "@/components/painel/conta"
 import { Confirmar } from "@/components/painel/confirmar"
@@ -78,6 +82,7 @@ import type { Conta, Instantaneo } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import { N_CORES, corConta, indiceCor } from "@/lib/cores"
 import { fmtFuturo, fmtHora, fmtPct, fmtRelativo } from "@/lib/formato"
+import { planoSemana } from "@/lib/plano"
 import { cn } from "@/lib/utils"
 import { bloqueioDaConta, bloqueioUsar, computadoresParaUsar, podeUsarEmAlgum, type BloqueioUsar } from "@/lib/usar-agora"
 import { useDialogo } from "@/hooks/use-dialogo"
@@ -209,6 +214,9 @@ function InfoConta({ conta, estado, agora }: { conta: Conta; estado: Instantaneo
   const { t, idioma } = useT()
   const plano = nomePlano(conta)
   const pc = conta.posse ? estado.computadores.find((c) => c.id === conta.posse?.computadorId) : undefined
+  // o ritmo da semana (era a tela Plano até a 0.12.0): só quando, nesse ritmo, a conta acaba antes de renovar
+  const semana = planoSemana({ p7: p7(conta, agora), resetEm: resetDe(conta, "seven_day"), agora, teto: conta.tetoSemana })
+  const esgotaEm = semana?.ritmo === "acima" && !conta.saiEm ? semana.esgotaEm : null
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <NomeConta conta={conta} mostrarOrg className="font-medium" />
@@ -218,6 +226,16 @@ function InfoConta({ conta, estado, agora }: { conta: Conta; estado: Instantaneo
             {plano}
           </Badge>
         ) : null}
+        {esgotaEm ? (
+          <Badge
+            variant="outline"
+            className="h-4.5 gap-1 border-atencao-borda bg-atencao-fundo px-1.5 text-[11px] text-atencao"
+            title={t("contas.ritmo.dica", { quando: fmtFuturo(esgotaEm, agora, idioma) })}
+          >
+            <TrendingUpIcon className="size-3" />
+            {t("contas.ritmo.acima")}
+          </Badge>
+        ) : null}
         <span>
           {conta.lidoEm
             ? t("contas.lido", { quando: fmtRelativo(conta.lidoEm, agora, idioma) })
@@ -225,7 +243,35 @@ function InfoConta({ conta, estado, agora }: { conta: Conta; estado: Instantaneo
         </span>
         {pc && conta.posse?.motivo === "uso" ? <span>· {t("contas.emUsoEm", { computador: pc.nome })}</span> : null}
       </div>
+      {conta.saiEm ? <SaindoDoReveza conta={conta} saiEm={conta.saiEm} agora={agora} /> : null}
     </div>
+  )
+}
+
+/** A conta removida no prazo de desfazer (0.13.0): quando sai de vez e o botão que a traz de volta. */
+function SaindoDoReveza({ conta, saiEm, agora }: { conta: Conta; saiEm: string; agora: Date }) {
+  const { t, idioma } = useT()
+  const desfazer = useDesfazerRemocao()
+  const { pode } = usePermissao()
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-[18px] text-xs text-erro">
+      <TimerIcon className="size-3.5" aria-hidden />
+      <span>{t("contas.remover.saindo", { quando: fmtFuturo(saiEm, agora, idioma) })}</span>
+      <Button size="xs" variant="outline" disabled={!pode} onClick={() => void desfazer(conta)}>
+        <Undo2Icon />
+        {t("contas.remover.desfazer")}
+      </Button>
+    </div>
+  )
+}
+
+function useDesfazerRemocao() {
+  const { t } = useT()
+  const { fonte } = useDados()
+  const acao = useAcao()
+  return React.useCallback(
+    (conta: Conta) => acao(() => fonte.desfazerRemocao(conta.id), t("contas.remover.desfeita", { conta: conta.email })),
+    [acao, fonte, t]
   )
 }
 
@@ -252,6 +298,7 @@ function Janela({
       cor={conta.cor}
       aviso={tipo === "five_hour" ? estado.config.aviso : undefined}
       troca={tipo === "five_hour" && estado.config.modo !== "limite" ? estado.config.troca : undefined}
+      alerta={estado.config.aviso}
       rotulo={
         comRotulo
           ? t(`janela.${tipo}`)
@@ -321,7 +368,28 @@ function MenuConta({
   const { fonte } = useDados()
   const estado = useEstado()
   const acao = useAcao()
+  const desfazer = useDesfazerRemocao()
   const { pode } = usePermissao()
+  if (conta.saiEm)
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label={`${t("contas.colunas.acoes")}: ${conta.email}`}>
+            <MoreHorizontalIcon />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuItem onSelect={() => void desfazer(conta)} disabled={!pode}>
+            <Undo2Icon />
+            {t("contas.menu.desfazer")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={aoEditar} disabled={!pode}>
+            <Settings2Icon />
+            {t("contas.menu.editar")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -476,6 +544,7 @@ function RemoverConta({ conta, aberto, aoFechar }: { conta: Conta | null; aberto
   const { fonte } = useDados()
   const estado = useEstado()
   const acao = useAcao()
+  const desfazer = useDesfazerRemocao()
   if (!conta) return null
   const emUso = computadoresParaUsar(estado).find((pc) => pc.atribuicao?.contaId === conta.id)
   return (
@@ -491,7 +560,14 @@ function RemoverConta({ conta, aberto, aoFechar }: { conta: Conta | null; aberto
       }
       botao={t("contas.remover.botao")}
       botaoSegurar={t("contas.remover.botaoSegurar")}
-      aoConfirmar={() => acao(() => fonte.removerConta(conta.id), t("contas.remover.feito", { conta: conta.email }))}
+      aoConfirmar={async () => {
+        const [ok] = await acao(() => fonte.removerConta(conta.id))
+        if (ok)
+          toast.success(t("contas.remover.feito", { conta: conta.email }), {
+            duration: 20_000,
+            action: { label: t("contas.remover.desfazer"), onClick: () => void desfazer(conta) },
+          })
+      }}
     />
   )
 }

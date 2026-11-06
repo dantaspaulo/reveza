@@ -205,10 +205,17 @@ function CartaoComputador({ pc, estado, agora }: { pc: Computador; estado: Insta
                 cor={conta.cor}
                 aviso={estado.config.aviso}
                 troca={estado.config.modo === "limite" ? undefined : estado.config.troca}
+                alerta={estado.config.aviso}
                 rotulo={t("janela.five_hour")}
                 compacta
               />
-              <BarraUso pct={p7(conta, agora)} cor={conta.cor} rotulo={t("janela.seven_day")} compacta />
+              <BarraUso
+                pct={p7(conta, agora)}
+                cor={conta.cor}
+                alerta={estado.config.aviso}
+                rotulo={t("janela.seven_day")}
+                compacta
+              />
             </>
           ) : (
             <span className="text-muted-foreground">{t("computadores.semConta")}</span>

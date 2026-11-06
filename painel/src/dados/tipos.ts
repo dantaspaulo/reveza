@@ -69,6 +69,11 @@ export interface Conta {
    */
   modelo: string | null
   precisaLogin: boolean
+  /**
+   * Removida no painel (0.13.0): fica pausada e sai de vez nesta hora; até lá dá para desfazer. null: a conta fica.
+   * Nuvem de antes da 0032: sempre null.
+   */
+  saiEm: string | null
   criadaEm: string
   janelas: Janela[]
   lidoEm: string | null
@@ -277,6 +282,7 @@ export type EventoAlerta =
   | "limite"
   | "atualizacao_falhou"
   | "troca_falhou"
+  | "folga_acabando"
 
 export interface Alerta {
   id: string

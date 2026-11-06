@@ -149,3 +149,41 @@ describe("textoEvento da troca que não firmou (0.4.5)", () => {
     expect(s.detalhe).toBeNull()
   })
 })
+
+describe("textoEvento da conta saindo e da folga acabando (0.13.0)", () => {
+  const t = ((k: string, v?: Record<string, unknown>) => `[${k}${v ? ` ${JSON.stringify(v)}` : ""}]`) as never
+  const i = { t, tx: t, idioma: "pt-BR" } as never
+  const estado = { contas: [{ id: "c1", email: "a@exemplo.com" } as never], computadores: [] }
+  const evento = (tipo: "info" | "alerta", dados: Record<string, unknown>) => ({ id: 1, em: "2026-11-06T20:00:00.000Z", tipo, texto: "x", dados })
+  it("saindo, de volta e removida, com o e-mail do evento quando a conta já não está na lista", async () => {
+    const { textoEvento } = await import("./evento")
+    expect(textoEvento(evento("info", { conta: "c1", email: "a@exemplo.com", saindo: true, minutos: 10 }), estado, i).titulo).toBe(
+      '[evento.contaSaindo {"conta":"a@exemplo.com","minutos":10}]'
+    )
+    expect(textoEvento(evento("info", { conta: "c1", saindo: false }), estado, i).titulo).toBe('[evento.contaVoltou {"conta":"a@exemplo.com"}]')
+    expect(textoEvento(evento("info", { conta: "c1", restaurada: true }), estado, i).titulo).toBe('[evento.contaVoltou {"conta":"a@exemplo.com"}]')
+    expect(textoEvento(evento("info", { conta: "sumiu", email: "b@exemplo.com", removida: true }), estado, i).titulo).toBe(
+      '[evento.contaRemovida {"conta":"b@exemplo.com"}]'
+    )
+  })
+  it("folga acabando: com uma conta, sem nenhuma, e a próxima que libera no detalhe", async () => {
+    const { textoEvento } = await import("./evento")
+    const uma = textoEvento(
+      evento("alerta", { motivo: "folga_acabando", email: "a@exemplo.com", pct: 32, proxima_email: "b@exemplo.com", libera_em: "2026-11-06T22:00:00.000Z" }),
+      estado,
+      i
+    )
+    expect(uma.titulo).toBe('[evento.folgaUma {"conta":"a@exemplo.com"}]')
+    expect(uma.detalhe).toMatch(/^\[evento\.folgaProxima \{"conta":"b@exemplo\.com","quando":".+"\}\]$/)
+    const nenhuma = textoEvento(evento("alerta", { motivo: "folga_acabando", email: null, proxima_email: null }), estado, i)
+    expect(nenhuma.titulo).toBe("[evento.folgaNenhuma]")
+    expect(nenhuma.detalhe).toBe(null)
+  })
+  it("os textos novos existem nos dois idiomas", async () => {
+    const { en, pt } = await import("@/i18n/dicionario")
+    const { traduzir } = await import("@/i18n/traduzir")
+    for (const dic of [pt, en])
+      for (const k of ["evento.contaSaindo", "evento.contaVoltou", "evento.contaRemovida", "evento.folgaUma", "evento.folgaNenhuma", "evento.folgaProxima"])
+        expect(traduzir(dic, {}, k, { conta: "x", minutos: 10, quando: "y" })).not.toBe(k)
+  })
+})

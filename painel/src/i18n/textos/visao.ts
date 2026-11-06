@@ -15,6 +15,18 @@ export default secao({
           texto: "Todas estão no limite, pausadas ou em outro computador. A conta atual segue até bater no limite.",
           botao: "Ver contas",
         },
+        folga_acabando: {
+          titulo: "Folga acabando: só {conta} ainda tem folga",
+          texto: "{proxima}",
+          botao: "Ver contas",
+        },
+        sem_folga: {
+          titulo: "Folga acabando: nenhuma conta com folga agora",
+          texto: "{proxima} Até lá, o Reveza usa a conta com mais folga até 100%.",
+          botao: "Ver contas",
+        },
+        proxima: "A próxima libera {quando}: {conta}.",
+        semPrevisao: "Ainda sem a hora em que a próxima libera.",
         computador_parado: {
           titulo: "{computador} parou de responder",
           texto: "Visto {quando}. Sem conversar com a nuvem, ela não troca a conta dele.",
@@ -95,6 +107,18 @@ export default secao({
             "All of them are at the limit, paused or on another computer. The current account stays until it hits the limit.",
           botao: "See accounts",
         },
+        folga_acabando: {
+          titulo: "Running low: only {conta} still has room",
+          texto: "{proxima}",
+          botao: "See accounts",
+        },
+        sem_folga: {
+          titulo: "Running low: no account has room right now",
+          texto: "{proxima} Until then, Reveza uses the account with the most room up to 100%.",
+          botao: "See accounts",
+        },
+        proxima: "Next to free up {quando}: {conta}.",
+        semPrevisao: "No time yet for when the next one frees up.",
         computador_parado: {
           titulo: "{computador} stopped responding",
           texto: "Seen {quando}. Without talking to the cloud, it can't switch its account.",

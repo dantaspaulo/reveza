@@ -56,7 +56,10 @@ create table contas (
   agenda jsonb not null default '[]',        -- [{dias:[1..7], de:"08:00", ate:"18:00"}] fora disso a conta não é usada
   teto_semana numeric check (teto_semana between 1 and 100),  -- % máximo da semana que o rodízio pode gastar
   precisa_login boolean not null default false,
-  criado_em timestamptz not null default now()
+  criado_em timestamptz not null default now(),
+  sai_em timestamptz,                        -- removida no painel: sai de vez nesta hora (0032); até lá dá para desfazer
+  pausada_antes boolean,                     -- a pausa de antes da remoção, que o desfazer devolve
+  saida_por uuid                             -- quem removeu
 );
 
 create table cofre (
@@ -268,7 +271,9 @@ create table auditoria (
 -- painel_conta(conta_id, campos jsonb)           cor, prioridade, reserva, pausada, agenda, teto_semana
 -- painel_trocar_agora(computador_id, conta_id)   força atribuição (respeita posse)
 -- painel_remover_conta(conta_id)                tira a conta (0031): o computador que está nela vai antes para outra;
---                                               sem outra para ele, recusa; fica o registro em contas_removidas
+--                                               sem outra para ele, recusa. Desde a 0032 a conta fica pausada com
+--                                               sai_em (10 min) e só então sai de vez (registro em contas_removidas)
+-- painel_desfazer_remocao(conta_id)            dentro do prazo, a conta volta como estava (a pausa de antes)
 -- painel_comando(computador_id, acao, corpo)     enfileira para o computador (a ação ligar saiu na 0.2.0)
 -- painel_convidar(email, papel) / painel_revogar_membro(user_id) / painel_mudar_papel(user_id, papel)
 -- painel_revogar_computador(computador_id)

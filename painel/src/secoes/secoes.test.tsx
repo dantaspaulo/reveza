@@ -255,7 +255,6 @@ const TELAS: Record<IdSecao, () => Promise<{ default: React.ComponentType }>> = 
   contas: () => import("./contas"),
   computadores: () => import("./computadores"),
   uso: () => import("./uso"),
-  plano: () => import("./plano"),
   troca: () => import("./troca"),
   alertas: () => import("./alertas"),
   integracoes: () => import("./integracoes"),
@@ -660,10 +659,10 @@ describe("Computadores: o cartão do assistente de código (a versão de cada co
   })
 })
 
-describe("Contas e Plano: a conta sem o modelo de um computador e a semana do Fable (relato de 22/10/2026)", () => {
+describe("Contas: a conta sem o modelo de um computador e a semana do Fable (relato de 22/10/2026)", () => {
   const H = 3_600_000
   const daqui = (ms: number) => new Date(Date.now() + ms).toISOString()
-  async function desenharCom(tela: "contas" | "plano") {
+  async function desenharCom(tela: "contas") {
     const antes = { janelas: linhas.tabelas.uso_janelas, semModelo: linhas.tabelas.contas_sem_modelo }
     linhas.tabelas.contas_sem_modelo = [
       { conta_id: "c2", computador_id: "pc1", modelo: "claude-fable-5-1", ate: daqui(3 * H) },
@@ -696,14 +695,6 @@ describe("Contas e Plano: a conta sem o modelo de um computador e a semana do Fa
     expect(html).toContain("semana do Fable: 21%")
   })
 
-  it("Plano: sem a semana geral, mostra a do Fable com o aviso; sem nenhuma semana, diz que a conta não informa", async () => {
-    const { html, erros } = await desenharCom("plano")
-    expect(erros).toEqual([])
-    expect(html).toContain("Esta é a semana do Fable, que só conta para as sessões no Fable.")
-    expect(html).toContain("Esta conta não informa cota semanal agora: só a janela de 5 horas.")
-    // a conta sem leitura nenhuma (c6) segue com o aviso de antes
-    expect(html).toContain("Esta conta ainda não tem leitura da semana.")
-  })
 })
 
 describe("Computadores: renomear (pedido de um usuário, 22/10/2026)", () => {
@@ -727,6 +718,30 @@ describe("Computadores: renomear (pedido de um usuário, 22/10/2026)", () => {
       expect(lido.computadores.find((c) => c.id === "pc2")!.nomeDoPainel).toBe(false)
     } finally {
       linhas.tabelas.computadores = antes
+    }
+  })
+})
+
+describe("Contas: a conta saindo do Reveza e o ritmo da semana (0.13.0)", () => {
+  it("a conta removida mostra quando sai e o botão de desfazer; a que gasta rápido na semana ganha o selo", async () => {
+    const antes = linhas.tabelas.contas
+    const saiEm = new Date(Date.now() + 9 * 60_000).toISOString()
+    linhas.tabelas.contas = antes.map((c) => (c.id === "c2" ? { ...c, pausada: true, sai_em: saiEm } : c))
+    try {
+      const lido = await fonte.carregar()
+      expect(lido.contas.find((c) => c.id === "c2")!.saiEm).toBe(saiEm)
+      expect(lido.contas.find((c) => c.id === "c1")!.saiEm).toBe(null)
+      const { default: Tela } = await TELAS.contas()
+      const { html, erros } = await desenhar(Tela, fonte, { ...lido, contas: pintarPorWorkspace(lido.contas) })
+      expect(erros).toEqual([])
+      // a tabela e o cartão do celular, da mesma conta
+      expect(html.match(/Sai do Reveza /g)).toHaveLength(2)
+      expect(html.match(/>Desfazer</g)).toHaveLength(2)
+      expect(html).toContain("Saindo")
+      // c5: 66% da semana com 52% dela passada; nesse ritmo acaba antes de renovar
+      expect(html.match(/Gastando rápido/g)).toHaveLength(2)
+    } finally {
+      linhas.tabelas.contas = antes
     }
   })
 })

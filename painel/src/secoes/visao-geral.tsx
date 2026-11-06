@@ -123,6 +123,8 @@ function Faixas({ estado, agora }: { estado: Instantaneo; agora: Date }) {
   const destino: Record<FaixaAlerta["tipo"], string> = {
     precisa_login: "/contas",
     sem_livre: "/contas",
+    folga_acabando: "/contas",
+    sem_folga: "/contas",
     computador_parado: "/saude",
     login_vence: "/contas",
     versao_antiga: "/saude",
@@ -144,6 +146,10 @@ function Faixas({ estado, agora }: { estado: Instantaneo; agora: Date }) {
                 : "",
           versao: pc(f.computadorId)?.versao ?? "",
           nova,
+          proxima:
+            f.proximaId && f.liberaEm
+              ? t("visao.faixa.proxima", { conta: nomeConta(f.proximaId), quando: fmtFuturo(f.liberaEm, agora, idioma) })
+              : t("visao.faixa.semPrevisao"),
         }
         const Icone = f.nivel === "erro" ? CircleAlertIcon : f.nivel === "atencao" ? TriangleAlertIcon : InfoIcon
         return (
@@ -366,12 +372,14 @@ function CartaoComputador({ pc, estado, agora }: { pc: Computador; estado: Insta
             cor={conta.cor}
             aviso={estado.config.aviso}
             troca={estado.config.modo === "limite" ? undefined : estado.config.troca}
+            alerta={estado.config.aviso}
             rotulo={t("janela.five_hour")}
             detalhe={r5 ? t("visao.emUso.renova", { quando: fmtFuturo(r5, agora, idioma) }) : undefined}
           />
           <BarraUso
             pct={p7(conta, agora)}
             cor={conta.cor}
+            alerta={estado.config.aviso}
             rotulo={t("janela.seven_day")}
             detalhe={r7 ? t("visao.emUso.renova", { quando: fmtFuturo(r7, agora, idioma) }) : undefined}
             compacta
@@ -415,7 +423,9 @@ function ResumoContas({ estado, agora }: { estado: Instantaneo; agora: Date }) {
                 <NomeConta conta={c} />
                 <SeloEstado estado={estadoConta(c, estado.config, agora)} />
               </div>
-              {j ? <BarraUso pct={j.pct} cor={c.cor} rotulo={t(`janela.${j.tipo}`)} compacta /> : null}
+              {j ? (
+                <BarraUso pct={j.pct} cor={c.cor} alerta={estado.config.aviso} rotulo={t(`janela.${j.tipo}`)} compacta />
+              ) : null}
             </div>
           )
         })}

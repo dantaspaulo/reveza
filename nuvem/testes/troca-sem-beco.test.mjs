@@ -161,7 +161,7 @@ test("pausar uma conta que não está em uso não mexe em ninguém", async () =>
   assert.equal(await motivo(b, pc), "pedido pelo painel");
 });
 
-test("remover conta: o computador vai antes para outra; a conta, o cofre e as janelas saem; o uso em tokens fica", async () => {
+test("remover conta: o computador vai antes para outra; depois do prazo a conta, o cofre e as janelas saem; o uso em tokens fica", async () => {
   const { b, admin } = await cenario();
   const pc = await b.computador("mini");
   const atual = await b.conta(pc, "atual@exemplo.com", 30);
@@ -173,6 +173,12 @@ test("remover conta: o computador vai antes para outra; a conta, o cofre e as ja
   assert.equal(r.ok, true);
   assert.equal(await b.atribuida(pc), outra);
   assert.equal(await motivo(b, pc), "a conta em uso foi removida");
+  // 0032: no prazo de desfazer a conta fica, pausada, com o cofre; nenhum computador apaga a cópia do login
+  const [saindo] = await b.sql("select pausada, sai_em > now() as no_prazo from public.contas where id = $1", [atual]);
+  assert.deepEqual(saindo, { pausada: true, no_prazo: true });
+  assert.deepEqual(await b.rpc(pc, "agente_contas_removidas", {}), []);
+  await b.sql("update public.contas set sai_em = now() - interval '1 second' where id = $1", [atual]);
+  await b.sql("select public.vigiar()");
   const [contas] = await b.sql("select count(*)::int n from public.contas where id = $1", [atual]);
   assert.equal(contas.n, 0);
   const [cofre] = await b.sql("select count(*)::int n from public.cofre where conta_id = $1", [atual]);
@@ -196,8 +202,8 @@ test("remover a conta em uso sem outra para o computador: recusa e não mexe em 
   assert.equal(r.ok, false);
   assert.match(r.erro, /não tem outra para ir/);
   assert.equal(await b.atribuida(pc), unica);
-  const [contas] = await b.sql("select count(*)::int n from public.contas where id = $1", [unica]);
-  assert.equal(contas.n, 1);
+  const [contas] = await b.sql("select count(*)::int n, bool_and(not pausada and sai_em is null) as intacta from public.contas where id = $1", [unica]);
+  assert.deepEqual(contas, { n: 1, intacta: true });
 });
 
 test("remover conta é só de administrador com duas etapas; a lista de removidas é só de computador", async () => {
@@ -206,6 +212,7 @@ test("remover conta é só de administrador com duas etapas; a lista de removida
   const conta = await b.conta(pc, "conta@exemplo.com", 30);
   const leitor = { id: await b.usuario("leitura", "leitor@exemplo.com"), aal: "aal2" };
   await assert.rejects(b.rpc(leitor, "painel_remover_conta", { p_conta: conta }), /só administrador/);
+  await assert.rejects(b.rpc(leitor, "painel_desfazer_remocao", { p_conta: conta }), /só administrador/);
   // administrador que ativou as duas etapas precisa do código na sessão (aal2)
   await b.sql("insert into auth.mfa_factors (user_id, status) values ($1, 'verified')", [admin.id]);
   await assert.rejects(b.rpc({ id: admin.id, aal: "aal1" }, "painel_remover_conta", { p_conta: conta }), /duas etapas/);

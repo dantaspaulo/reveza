@@ -18,7 +18,8 @@ alter table public.config add constraint config_chave_check check (chave in ('au
 
 alter table public.alertas drop constraint if exists alertas_eventos_check;
 alter table public.alertas add constraint alertas_eventos_check check (eventos <@ array['sem_livre', 'precisa_login',
-  'computador_parado', 'login_vence', 'resumo_dia', 'troca', 'limite', 'atualizacao_falhou', 'troca_falhou']);
+  'computador_parado', 'login_vence', 'resumo_dia', 'troca', 'limite', 'atualizacao_falhou', 'troca_falhou',
+  'folga_acabando']);
 
 create or replace function public.painel_config(p_chave text, p_valor jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$

@@ -329,17 +329,24 @@ waiting for the publication, failed with the reason, cloud from before 0.3.0).
 A side menu, nothing piled up on a single screen:
 1. **Overview**: account in use per computer, pace, forecast, alert bands.
 2. **Accounts**: list, color, priority, backup, schedule, weekly cap, connect (generates the request to the computer),
-   sign in again, pause.
+   sign in again, pause, use now and remove. Removing (0.13.0, migration 0032) keeps the account paused for 10 minutes
+   (`sai_em`) with an **Undo** button; only then `vigiar` writes the mark in `contas_removidas` and deletes the account,
+   and each computer deletes its copy of the sign-in. An account that, at this week's pace, runs out before the reset
+   gets the **Burning fast** badge. Usage bars turn amber from 15 points below the warning up to it, and red from it up.
 3. **Computers**: list, system, version, last seen, account in use, preferred account, link a new computer (the code shows up on it and is
    typed on a computer that already uses Reveza; the panel only follows it), revoke; updates (the Cloud and panel line
    with Update the cloud, section 7e; Check for updates, Update all, how to update by itself and the progress,
    section 7d).
 4. **Usage**: equivalent cost, tokens, agents, sessions per day, account, model, project and computer; heat map;
    ranking; forecast of running out; export spreadsheet.
-5. **Week plan**: weekly quota per account split over the days, how much is gone, pace alert.
+5. **Week plan** (up to 0.12.0): left the menu in 0.13.0. The weekly pace became the **Burning fast** badge on the
+   Accounts screen, and the `/plano` address opens Accounts.
 6. **Auto switch**: on and off, mode (only at the limit, threshold, rotation), thresholds, interval, order, schedule.
 7. **Alerts**: channels (Telegram, e-mail, webhook, phone notification), which events, a test button; and, per browser,
-   the account switch warning with a notification and a sound while the panel is open.
+   the account switch warning with a notification and a sound while the panel is open. Running low (0.13.0, migration
+   0032) warns before you run out: with two or more active accounts and at most one below the warning, `vigiar` writes
+   the alert with the account that frees up first and when (at most one every 6 hours), and the Overview shows the same
+   banner.
    The switch that did not stick (0.4.5) is one of those events: the computer writes an error with
    `motivo: troca_falhou` and the account ids when the switch does not stick after 3 attempts, or when the account the
    cloud assigned does not sign in for 5 minutes and 3 polls; a cloud trigger (migration 0023) reads the ids only and

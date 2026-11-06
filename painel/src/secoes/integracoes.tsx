@@ -48,6 +48,7 @@ const EVENTOS_WEBHOOK = [
   "troca",
   "limite",
   "sem_livre",
+  "folga_acabando",
   "troca_falhou",
   "precisa_login",
   "computador_parado",

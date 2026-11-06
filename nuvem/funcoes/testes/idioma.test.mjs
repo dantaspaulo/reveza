@@ -193,3 +193,16 @@ test("alertas: o teste de canal e de webhook saem na língua da instalação; a 
     delete globalThis.Deno;
   }
 });
+
+test("em inglês: a folga acabando (0032), com uma conta, sem nenhuma e sem leitura", () => {
+  const ev = (dados) => ({ tipo: "alerta", texto: "Folga acabando: ...", dados: { motivo: "folga_acabando", ...dados } });
+  const proxima = { proxima_email: "b@exemplo.com", libera_txt: "06/11 19:00" };
+  assert.equal(textoDoEvento(ev({ email: "a@exemplo.com", pct: 32.4, ...proxima }), "en"),
+    "Running low: only a@exemplo.com still has room (32%). Next to free up: b@exemplo.com on Nov 6, 19:00.");
+  assert.equal(textoDoEvento(ev({ email: null, pct: null, ...proxima }), "en"),
+    "Running low: no account has room right now. Next to free up: b@exemplo.com on Nov 6, 19:00.");
+  assert.equal(textoDoEvento(ev({ email: "a@exemplo.com", pct: null, proxima_email: null, libera_txt: null }), "en"),
+    "Running low: only a@exemplo.com may have room (no reading right now).");
+  // em português vale o texto da nuvem, byte a byte
+  assert.equal(textoDoEvento(ev({ email: "a@exemplo.com" }), "pt-BR"), "Folga acabando: ...");
+});

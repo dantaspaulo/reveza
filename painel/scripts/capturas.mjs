@@ -30,7 +30,6 @@ const PAGINAS = [
   ["contas", "/contas"],
   ["computadores", "/computadores"],
   ["uso", "/uso"],
-  ["plano", "/plano"],
   ["troca", "/troca"],
   ["alertas", "/alertas"],
   ["integracoes", "/integracoes"],

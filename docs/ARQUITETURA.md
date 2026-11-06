@@ -392,7 +392,10 @@ botão e procurou o que levasse o painel junto).
 Menu lateral, nada empilhado numa tela só:
 1. **Visão geral**: conta em uso por computador, ritmo, previsão, faixas de alerta.
 2. **Contas**: lista, cor, prioridade, reserva, agenda, teto semanal, conectar (gera o pedido ao computador), entrar
-   de novo, pausar.
+   de novo, pausar, usar agora e remover. O remover (0.13.0, migração 0032) deixa a conta pausada por 10 minutos
+   (`sai_em`) com o botão **Desfazer**; só depois o `vigiar` grava a marca em `contas_removidas` e apaga a conta, e cada
+   computador apaga a cópia do login. A conta que, no ritmo da semana, acaba antes de renovar ganha o selo **Gastando
+   rápido**. As barras de uso ficam âmbar dos 15 pontos antes do aviso até ele e vermelhas do aviso para cima.
 3. **Computadores**: lista, sistema, versão, visto há, conta em uso, conta preferida, ligar computador novo (o código aparece nele e é
    digitado num computador que já usa o Reveza; o painel só acompanha), revogar; atualizações (a linha Nuvem e painel
    com o Atualizar a nuvem, seção 7e; Verificar atualização, Atualizar todos, como atualizar sozinho e o andamento,
@@ -404,9 +407,13 @@ Menu lateral, nada empilhado numa tela só:
    hora em que cada um começou (coluna `agentes` de `uso_tokens`, 0030): antes, o painel somava os agentes das sessões
    que começaram no período, e a sessão de editor fica aberta por semanas (em 30 dias, 1.089 agentes no lugar de
    1.615 no Mac do Paulo). As sessões são as com uso no período, também as que começaram antes.
-5. **Plano da semana**: cota semanal por conta dividida pelos dias, quanto já foi, alerta de ritmo.
+5. **Plano da semana** (até a 0.12.0): saiu do menu na 0.13.0. O ritmo da semana virou o selo **Gastando rápido** na tela
+   Contas, e o endereço `/plano` abre Contas.
 6. **Troca automática**: liga e desliga, modo (só no limite, limiar, rodízio), limiares, intervalo, ordem, agenda.
 7. **Alertas**: canais (Telegram, e-mail, webhook, notificação no celular), quais eventos, botão de teste; e, por navegador, o aviso de troca de conta com notificação e som enquanto o painel está aberto.
+   A folga acabando (0.13.0, migração 0032) avisa antes de faltar conta: com duas ou mais contas em atividade e no
+   máximo uma abaixo do aviso, o `vigiar` grava o alerta com a conta que libera primeiro e a hora (no máximo um a cada
+   6 horas), e a Visão geral mostra a mesma faixa.
    A troca que não firmou (0.4.5) é um desses eventos: o computador grava um erro com `motivo: troca_falhou` e os ids
    das contas quando a troca não firma depois de 3 tentativas, ou quando a conta que a nuvem atribuiu não entra há 5
    minutos e 3 buscas; um gatilho da nuvem (migração 0023) lê só os ids e escreve o alerta com o nome do computador e

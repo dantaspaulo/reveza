@@ -7,6 +7,31 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.13.0 · 06/11/2026
+
+Remover conta passa a ter **Desfazer**, a nuvem avisa **antes** de faltar conta, as barras de uso mudam de cor perto do
+limite, e a tela **Plano da semana** sai do menu. Pedidos do Paulo: uma conta saiu por engano e o computador apagou a
+cópia do login dela dois minutos depois; e "falta algo mais inteligente sobre o uso das contas, aviso de que já está
+chegando no limite, mudar cores para vermelho". Precisa da nuvem na 0.13.0 (no painel, **Computadores → Atualizar** na
+linha Nuvem e painel); nos computadores nada muda, e atualizar deixa todos na mesma versão.
+
+- **Desfazer o Remover conta.** A conta removida fica pausada por 10 minutos e mostra, na tela **Contas**, quando sai
+  e o botão **Desfazer** (também no aviso que aparece logo depois de remover). Nesse tempo nada se apaga: o login, as
+  janelas e o histórico ficam, e nenhum computador apaga a cópia do login. Desfeita, a conta volta como estava, com a
+  pausa de antes. Passado o prazo, a remoção segue como na 0.12.0. Enquanto ela sai, a pausa não muda pelo painel
+  (desfazer é o caminho).
+- **Aviso de folga acabando.** Com duas ou mais contas em atividade e no máximo uma abaixo do aviso, a nuvem manda o
+  alerta "Folga acabando" com a conta que libera primeiro e a hora (no máximo um a cada 6 horas). Antes, o único aviso
+  era o "nenhuma conta livre", que chega quando a troca já não acha para onde ir. Os canais que já recebiam esse aviso
+  passam a receber também a folga acabando; dá para tirar em **Alertas**. A **Visão geral** mostra a mesma faixa.
+- **Cores por nível nas barras de uso.** A barra fica âmbar dos 15 pontos antes do aviso até ele (75% a 90% com o
+  aviso em 90%) e vermelha do aviso para cima; o número ao lado muda junto. Antes, só a conta esgotada mudava de cor.
+- **A tela Plano da semana saiu do menu.** O que ela tinha de útil, o ritmo da semana, virou o selo **Gastando rápido**
+  em cada conta que, nesse ritmo, acaba antes de renovar (passe o mouse para ver quando). A previsão de esgotar segue
+  na Visão geral e no Uso, e o endereço antigo (`/plano`) abre Contas.
+- **Eventos com nome.** A conta saindo, a remoção desfeita e a conta que saiu de vez aparecem com o e-mail na lista de
+  eventos (antes, a remoção aparecia como "Aviso do sistema").
+
 ## 0.12.0 · 06/11/2026
 
 A troca não fica mais presa numa conta cheia, a conta pausada sai de uso na hora, e o painel ganha **Usar agora** e

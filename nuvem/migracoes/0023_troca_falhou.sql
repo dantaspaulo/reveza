@@ -9,7 +9,8 @@
 
 alter table public.alertas drop constraint if exists alertas_eventos_check;
 alter table public.alertas add constraint alertas_eventos_check check (eventos <@ array['sem_livre', 'precisa_login',
-  'computador_parado', 'login_vence', 'resumo_dia', 'troca', 'limite', 'atualizacao_falhou', 'troca_falhou']);
+  'computador_parado', 'login_vence', 'resumo_dia', 'troca', 'limite', 'atualizacao_falhou', 'troca_falhou',
+  'folga_acabando']);
 
 -- Canais e webhooks que já avisam quando falta conta livre passam a avisar também a troca que não firmou. Só na
 -- primeira vez: quem tirar depois pelo painel não ganha de volta quando esta migração rodar de novo.

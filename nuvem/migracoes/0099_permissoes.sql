@@ -31,7 +31,7 @@ grant execute on function
   public.agente_ligacao_entregar(uuid, jsonb, jsonb), public.agente_ligacao_recusar(uuid, text),
   public.painel_ligacao_aprovador(uuid, uuid, text),
   public.painel_config(text, jsonb), public.painel_conta(uuid, jsonb), public.painel_trocar_agora(uuid, uuid),
-  public.painel_remover_conta(uuid),
+  public.painel_remover_conta(uuid), public.painel_desfazer_remocao(uuid),
   public.painel_comando(uuid, text, jsonb), public.painel_convidar(text, public.papel, text), public.painel_convite_cancelar(uuid), public.painel_minhas_sessoes(), public.painel_encerrar_sessao(uuid),
   public.painel_membros(), public.painel_validade_logins(),
   public.painel_mudar_papel(uuid, public.papel), public.painel_revogar_membro(uuid),

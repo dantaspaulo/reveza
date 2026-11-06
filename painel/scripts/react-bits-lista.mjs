@@ -6,7 +6,7 @@
 export const COMPONENTES = [
   {
     nome: "CountUp",
-    onde: "números da Visão geral, do Uso e do Plano da semana",
+    onde: "números da Visão geral e do Uso",
     sha256: "abf8eef48056b0d2284d493421c4f2fb4f14edaf437696b956a30b5543759eaf",
   },
   {

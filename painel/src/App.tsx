@@ -28,7 +28,6 @@ const SECOES: Record<IdSecao, React.LazyExoticComponent<React.ComponentType>> = 
   contas: telaPreguicosa(() => import("@/secoes/contas")),
   computadores: telaPreguicosa(() => import("@/secoes/computadores")),
   uso: telaPreguicosa(() => import("@/secoes/uso")),
-  plano: telaPreguicosa(() => import("@/secoes/plano")),
   troca: telaPreguicosa(() => import("@/secoes/troca")),
   alertas: telaPreguicosa(() => import("@/secoes/alertas")),
   integracoes: telaPreguicosa(() => import("@/secoes/integracoes")),

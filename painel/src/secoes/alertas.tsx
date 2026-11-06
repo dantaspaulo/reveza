@@ -61,6 +61,7 @@ export const ICONE_CANAL: Record<CanalAlerta, typeof BellIcon> = {
 const CANAIS: CanalAlerta[] = ["push", "telegram", "email", "webhook"]
 export const EVENTOS: EventoAlerta[] = [
   "sem_livre",
+  "folga_acabando",
   "troca_falhou",
   "precisa_login",
   "computador_parado",

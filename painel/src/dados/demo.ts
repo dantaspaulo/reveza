@@ -51,6 +51,8 @@ const ASSISTENTE_MAIS_NOVO_DEMO = "2.1.301"
 
 const H = 3_600_000
 const MIN = 60_000
+/** O prazo para desfazer o remover conta, como na nuvem (0032). */
+export const ESPERA_REMOVER_MIN = 10
 const DIA = 24 * H
 
 /** PRNG pequeno e determinístico (mulberry32). */
@@ -384,6 +386,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
       tetoSemana: m.tetoSemana ?? null,
       modelo: m.modelo ?? null,
       precisaLogin: !!m.precisaLogin,
+      saiEm: null,
       criadaEm: iso(t0 - m.conectadaDias * DIA),
       janelas,
       lidoEm: m.precisaLogin ? iso(t0 - 26 * H) : iso(t0 - (20 + Math.floor(sorteio() * 60)) * 1000),
@@ -764,6 +767,8 @@ export class FonteDemo implements Fonte {
   private idioma: Idioma = "pt-BR"
   /** Ligações de computador novo encenadas: quando o código foi criado e onde a janela abre. */
   private ligacoesDemo = new Map<string, { criadoEm: number; aprovador: string | null }>()
+  /** A pausa de cada conta antes do remover, que o desfazer devolve. */
+  private pausadaAntes = new Map<string, boolean>()
 
   constructor(opcoes: OpcoesDemo = {}) {
     this.agora = opcoes.agora ?? (() => new Date())
@@ -829,6 +834,7 @@ export class FonteDemo implements Fonte {
   }
 
   async carregar(): Promise<Instantaneo> {
+    this.purgarSaindo()
     const copia = this.l(structuredClone(this.d))
     return {
       agora: this.agora().toISOString(),
@@ -994,6 +1000,7 @@ export class FonteDemo implements Fonte {
   salvarConta(id: string, campos: CamposConta) {
     return this.escrever(() => {
       const c = this.conta(id)
+      if (campos.pausada !== undefined && c.saiEm) throw new ErroPainel("conta_saindo")
       if (campos.tetoSemana != null && (campos.tetoSemana < 1 || campos.tetoSemana > 100))
         throw new ErroPainel("teto_invalido")
       // como na nuvem (0025): minúsculo e sem espaço; vazio tira; fora do formato recusa sem mudar nada
@@ -1040,6 +1047,7 @@ export class FonteDemo implements Fonte {
   removerConta(id: string) {
     return this.escrever(() => {
       const c = this.conta(id)
+      if (c.saiEm) return
       const agora = this.agora()
       const pc = this.d.computadores.find((q) => !q.revogado && q.atribuicao?.contaId === id)
       if (pc) {
@@ -1061,10 +1069,38 @@ export class FonteDemo implements Fonte {
         pc.atribuicao = { contaId: outra.id, motivo, decididoEm: agora.toISOString() }
         this.evento("troca", "troca", { computador: pc.id, de: id, para: outra.id, motivo })
       }
-      for (const q of this.d.computadores) if (q.contaPreferidaId === id) q.contaPreferidaId = null
-      this.d.contas = this.d.contas.filter((x) => x.id !== id)
+      // como na nuvem (0032): pausada, ela sai de vez depois do prazo; até lá dá para desfazer
+      this.pausadaAntes.set(id, c.pausada)
+      c.pausada = true
+      c.saiEm = new Date(agora.getTime() + ESPERA_REMOVER_MIN * MIN).toISOString()
+      this.evento("info", "saindo", { conta: id, email: c.email, saindo: true, sai_em: c.saiEm, minutos: ESPERA_REMOVER_MIN })
       this.auditar("remover_conta", c.email)
     })
+  }
+
+  desfazerRemocao(id: string) {
+    return this.escrever(() => {
+      const c = this.d.contas.find((x) => x.id === id)
+      if (!c) throw new ErroPainel("conta_ja_saiu")
+      if (!c.saiEm) return
+      c.pausada = this.pausadaAntes.get(id) ?? false
+      this.pausadaAntes.delete(id)
+      c.saiEm = null
+      this.evento("info", "voltou", { conta: id, email: c.email, saindo: false })
+      this.auditar("desfazer_remocao", c.email)
+    })
+  }
+
+  /** Como o vigiar da nuvem (0032): a conta com o prazo vencido sai de vez, se nenhum computador estiver nela. */
+  private purgarSaindo() {
+    const agora = this.agora().getTime()
+    for (const c of this.d.contas.filter((x) => x.saiEm && new Date(x.saiEm).getTime() <= agora)) {
+      if (this.d.computadores.some((q) => !q.revogado && q.atribuicao?.contaId === c.id)) continue
+      for (const q of this.d.computadores) if (q.contaPreferidaId === c.id) q.contaPreferidaId = null
+      this.d.contas = this.d.contas.filter((x) => x.id !== c.id)
+      this.pausadaAntes.delete(c.id)
+      this.evento("info", "removida", { conta: c.id, email: c.email, removida: true })
+    }
   }
 
   preferirConta(computadorId: string, contaId: string | null) {
@@ -1235,6 +1271,7 @@ export class FonteDemo implements Fonte {
             tetoSemana: null,
             modelo: null,
             precisaLogin: false,
+            saiEm: null,
             criadaEm: this.agora().toISOString(),
             janelas: [],
             semModelo: [],

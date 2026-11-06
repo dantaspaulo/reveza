@@ -1,9 +1,8 @@
-// As 12 seções do painel (docs/ARQUITETURA.md, seção 9), na ordem do menu.
+// As 11 seções do painel (docs/ARQUITETURA.md, seção 9), na ordem do menu.
 
 import {
   ActivityIcon,
   BellIcon,
-  CalendarRangeIcon,
   ChartColumnIcon,
   LaptopIcon,
   LayoutDashboardIcon,
@@ -21,7 +20,6 @@ export type IdSecao =
   | "contas"
   | "computadores"
   | "uso"
-  | "plano"
   | "troca"
   | "alertas"
   | "integracoes"
@@ -45,7 +43,6 @@ export const SECOES: Secao[] = [
   { id: "computadores", caminho: "/computadores", icone: LaptopIcon, grupo: "operacao" },
   { id: "troca", caminho: "/troca", icone: ShuffleIcon, grupo: "operacao" },
   { id: "uso", caminho: "/uso", icone: ChartColumnIcon, grupo: "consumo" },
-  { id: "plano", caminho: "/plano", icone: CalendarRangeIcon, grupo: "consumo" },
   { id: "alertas", caminho: "/alertas", icone: BellIcon, grupo: "configuracao" },
   { id: "integracoes", caminho: "/integracoes", icone: PlugIcon, grupo: "configuracao" },
   { id: "time", caminho: "/time", icone: UsersIcon, grupo: "configuracao" },
@@ -56,9 +53,13 @@ export const SECOES: Secao[] = [
 
 export const GRUPOS: Grupo[] = ["operacao", "consumo", "configuracao", "ajuda"]
 
+/** Endereços de telas que saíram, para quem guardou o link: a tela Plano saiu na 0.13.0 (o ritmo da semana foi para Contas). */
+const ANTIGOS: Record<string, string> = { "/plano": "/contas" }
+
 export function secaoDoCaminho(caminho: string): Secao | undefined {
   const limpo = caminho.replace(/\/+$/, "") || "/"
-  return SECOES.find((s) => s.caminho === limpo)
+  const atual = Object.hasOwn(ANTIGOS, limpo) ? ANTIGOS[limpo]! : limpo
+  return SECOES.find((s) => s.caminho === atual)
 }
 
 /** Telas fora do menu: entrada, convite, senha e verificação em duas etapas. */

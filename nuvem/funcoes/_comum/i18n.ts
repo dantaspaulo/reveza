@@ -59,6 +59,16 @@ function emIngles(e: EventoTexto): string | null {
   switch (d.motivo) {
     case "sem_livre":
       return "No free account to switch to.";
+    case "folga_acabando": {
+      const pct = typeof d.pct === "number" ? ` (${Math.round(d.pct)}%)` : "";
+      const inicio = typeof d.email === "string" && d.email
+        ? (typeof d.pct === "number" ? `Running low: only ${d.email} still has room${pct}.` : `Running low: only ${d.email} may have room (no reading right now).`)
+        : "Running low: no account has room right now.";
+      const proxima = typeof d.proxima_email === "string" && d.proxima_email && typeof d.libera_txt === "string" && d.libera_txt
+        ? ` Next to free up: ${d.proxima_email} on ${dataEmIngles(d.libera_txt)}.`
+        : "";
+      return inicio + proxima;
+    }
     case "computador_parado": {
       const m = /^O computador (.+) não dá notícia desde (.+)\.$/s.exec(texto);
       if (!m) return "A computer has stopped checking in.";

@@ -10,7 +10,6 @@ import computadores from "./textos/computadores"
 import contas from "./textos/contas"
 import integracoes from "./textos/integracoes"
 import minhaConta from "./textos/minha-conta"
-import plano from "./textos/plano"
 import saude from "./textos/saude"
 import time from "./textos/time"
 import troca from "./textos/troca"
@@ -24,7 +23,6 @@ export const pt = {
   ...contas.pt,
   ...computadores.pt,
   ...uso.pt,
-  ...plano.pt,
   ...troca.pt,
   ...alertas.pt,
   ...integracoes.pt,
@@ -43,7 +41,6 @@ export const en: Dicionario = {
   ...contas.en,
   ...computadores.en,
   ...uso.en,
-  ...plano.en,
   ...troca.en,
   ...alertas.en,
   ...integracoes.en,

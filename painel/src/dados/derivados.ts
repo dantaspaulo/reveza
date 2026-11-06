@@ -53,9 +53,10 @@ export function cheia(c: Conta, agora: Date): number | null {
   return valores.length ? Math.max(...valores) : null
 }
 
-export type EstadoConta = "precisa_login" | "pausada" | "esgotada" | "em_uso" | "aviso" | "reserva" | "livre"
+export type EstadoConta = "saindo" | "precisa_login" | "pausada" | "esgotada" | "em_uso" | "aviso" | "reserva" | "livre"
 
 export function estadoConta(c: Conta, config: ConfigTroca, agora: Date): EstadoConta {
+  if (c.saiEm) return "saindo"
   if (c.precisaLogin) return "precisa_login"
   if (c.pausada) return "pausada"
   const v = cheia(c, agora)
@@ -138,13 +139,64 @@ export function compararVersao(a: string, b: string): number {
 }
 
 export type TipoFaixa =
-  "precisa_login" | "sem_livre" | "computador_parado" | "login_vence" | "auto_desligada" | "versao_antiga"
+  | "precisa_login"
+  | "sem_livre"
+  | "folga_acabando"
+  | "sem_folga"
+  | "computador_parado"
+  | "login_vence"
+  | "auto_desligada"
+  | "versao_antiga"
 
 export interface FaixaAlerta {
   tipo: TipoFaixa
   nivel: "erro" | "atencao" | "info"
   contaId?: string
   computadorId?: string
+  /** Folga acabando: a conta que libera primeiro e quando. */
+  proximaId?: string
+  liberaEm?: string
+}
+
+export interface Folga {
+  /** Contas em atividade: sem pausa, com login e fora da remoção. */
+  ativas: Conta[]
+  /** As em atividade abaixo do aviso e do teto da semana (sem leitura conta como com folga). */
+  comFolga: Conta[]
+  /** A que libera primeiro: quando renovam todas as janelas que a seguram. */
+  proxima: { conta: Conta; em: Date } | null
+}
+
+/** A folga das contas, a mesma conta da nuvem (rvz_folga_contas, 0032), menos a agenda e o cofre. */
+export function folgaDasContas(contas: Conta[], aviso: number, agora: Date): Folga {
+  const ativas = contas.filter((c) => !c.pausada && !c.precisaLogin && !c.saiEm)
+  const comFolga = ativas.filter((c) => {
+    const v = cheia(c, agora)
+    return (v === null || v < aviso) && (c.tetoSemana === null || (p7(c, agora) ?? 0) < c.tetoSemana)
+  })
+  let proxima: Folga["proxima"] = null
+  for (const c of ativas) {
+    if (comFolga.includes(c)) continue
+    const resets = c.janelas
+      .filter(
+        (j) =>
+          j.pct !== null &&
+          j.resetEm !== null &&
+          new Date(j.resetEm).getTime() > agora.getTime() &&
+          ((JANELAS_DA_CONTA.includes(j.tipo) && j.pct >= aviso) ||
+            (j.tipo === "seven_day" && c.tetoSemana !== null && j.pct >= c.tetoSemana))
+      )
+      .map((j) => new Date(j.resetEm!).getTime())
+    if (!resets.length) continue
+    const em = new Date(Math.max(...resets))
+    if (!proxima || em.getTime() < proxima.em.getTime()) proxima = { conta: c, em }
+  }
+  return { ativas, comFolga, proxima }
+}
+
+/** Folga acabando: duas ou mais contas em atividade e no máximo uma com folga (como o alerta da nuvem). */
+export function folgaAcabando(f: Folga): boolean {
+  return f.ativas.length >= 2 && f.comFolga.length <= 1
 }
 
 /** As faixas de alerta da visão geral, da mais grave para a mais leve. */
@@ -156,7 +208,18 @@ export function faixasDeAlerta(e: Instantaneo, agora: Date, lidoEm?: Date | null
       faixas.push({ tipo: "sem_livre", nivel: "erro", computadorId: pc.id })
   }
   for (const c of e.contas) {
-    if (c.precisaLogin) faixas.push({ tipo: "precisa_login", nivel: "erro", contaId: c.id })
+    if (c.precisaLogin && !c.saiEm) faixas.push({ tipo: "precisa_login", nivel: "erro", contaId: c.id })
+  }
+  const folga = folgaDasContas(e.contas, e.config.aviso, agora)
+  if (folgaAcabando(folga)) {
+    const uma = folga.comFolga[0]
+    faixas.push({
+      tipo: uma ? "folga_acabando" : "sem_folga",
+      nivel: "atencao",
+      contaId: uma?.id,
+      proximaId: folga.proxima?.conta.id,
+      liberaEm: folga.proxima?.em.toISOString(),
+    })
   }
   for (const pc of ativos) {
     if (estadoComputador(pc, agora, lidoEm) === "parado")

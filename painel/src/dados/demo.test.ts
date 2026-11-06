@@ -82,20 +82,48 @@ describe("FonteDemo", () => {
     await expect(f.trocarAgora("pc-notebook", "conta-reserva")).rejects.toMatchObject({ codigo: "conta_pausada" })
   })
 
-  it("remover conta: a parada só sai; a em uso passa o computador para outra antes; sem outra, recusa e fica", async () => {
-    const f = nova()
+  it("remover conta: fica pausada e sai depois do prazo; a em uso passa o computador para outra antes; sem outra, recusa e fica", async () => {
+    let agora = AGORA.getTime()
+    const f = new FonteDemo({ agora: () => new Date(agora), atrasoMs: 0, relogio: false })
     await f.removerConta("conta-cliente")
-    expect((await f.carregar()).contas.map((c) => c.id)).not.toContain("conta-cliente")
+    const cliente = (await f.carregar()).contas.find((c) => c.id === "conta-cliente")
+    expect(cliente).toMatchObject({ pausada: true, saiEm: new Date(agora + 10 * 60_000).toISOString() })
     expect((await f.auditoria(1))[0].acao).toBe("remover_conta")
     // a única fora de uso, com login e abaixo de 100% é a reserva: vai para ela
     await f.removerConta("conta-trabalho")
-    const e = await f.carregar()
+    let e = await f.carregar()
     const notebook = e.computadores.find((c) => c.id === "pc-notebook")
     expect(notebook?.atribuicao).toMatchObject({ contaId: "conta-reserva", motivo: "a conta em uso foi removida" })
-    expect(notebook?.contaPreferidaId, "a preferida removida sai do computador").toBe(null)
-    expect(e.eventos[0]).toMatchObject({ tipo: "troca", dados: { de: "conta-trabalho", para: "conta-reserva" } })
+    expect(e.eventos.find((x) => x.tipo === "troca")).toMatchObject({ dados: { de: "conta-trabalho", para: "conta-reserva" } })
     await expect(f.removerConta("conta-reserva")).rejects.toMatchObject({ codigo: "remover_sem_outra" })
-    expect((await f.carregar()).contas.map((c) => c.id)).toContain("conta-reserva")
+    // passado o prazo, as duas saem de vez, e a preferida removida sai do computador
+    agora += 10 * 60_000
+    e = await f.carregar()
+    expect(e.contas.map((c) => c.id)).not.toContain("conta-cliente")
+    expect(e.contas.map((c) => c.id)).not.toContain("conta-trabalho")
+    expect(e.contas.map((c) => c.id)).toContain("conta-reserva")
+    expect(e.computadores.find((c) => c.id === "pc-notebook")?.contaPreferidaId).toBe(null)
+    expect(e.eventos[0]).toMatchObject({ tipo: "info", dados: { removida: true } })
+  })
+
+  it("desfazer no prazo devolve a conta com a pausa de antes; a pausa não muda enquanto ela sai; depois do prazo, já saiu", async () => {
+    let agora = AGORA.getTime()
+    const f = new FonteDemo({ agora: () => new Date(agora), atrasoMs: 0, relogio: false })
+    await f.salvarConta("conta-cliente", { pausada: true })
+    await f.removerConta("conta-cliente")
+    await f.removerConta("conta-reserva")
+    await expect(f.salvarConta("conta-reserva", { pausada: false })).rejects.toMatchObject({ codigo: "conta_saindo" })
+    await f.desfazerRemocao("conta-cliente")
+    await f.desfazerRemocao("conta-reserva")
+    const e = await f.carregar()
+    expect(e.contas.find((c) => c.id === "conta-cliente")).toMatchObject({ pausada: true, saiEm: null })
+    expect(e.contas.find((c) => c.id === "conta-reserva")).toMatchObject({ pausada: false, saiEm: null })
+    expect((await f.auditoria(1))[0].acao).toBe("desfazer_remocao")
+    expect(e.eventos[0]).toMatchObject({ tipo: "info", dados: { saindo: false } })
+    await f.removerConta("conta-cliente")
+    agora += 11 * 60_000
+    await f.carregar()
+    await expect(f.desfazerRemocao("conta-cliente")).rejects.toMatchObject({ codigo: "conta_ja_saiu" })
   })
 
   it("chave de API no formato do banco, mostrada uma vez", async () => {

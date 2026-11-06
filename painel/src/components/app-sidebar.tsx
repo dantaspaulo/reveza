@@ -1,5 +1,5 @@
 // Menu lateral. Adaptado do bloco oficial "sidebar-07" do shadcn/ui (barra que recolhe para ícones; no celular vira
-// gaveta): a troca de time virou a marca da instalação, o menu virou os 4 grupos das 12 seções, e o usuário ganhou
+// gaveta): a troca de time virou a marca da instalação, o menu virou os 4 grupos das seções, e o usuário ganhou
 // tema, idioma e sair.
 
 import * as React from "react"

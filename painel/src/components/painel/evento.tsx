@@ -78,6 +78,8 @@ export function textoEvento(e: Evento, estado: Pick<Instantaneo, "contas" | "com
   const pc = (id: unknown) =>
     id ? (estado.computadores.find((c) => c.id === id)?.nome ?? String(id).slice(0, 8)) : t("evento.alguem")
   const vars = { computador: pc(d.computador), conta: conta(d.conta), de: conta(d.de), para: conta(d.para) }
+  // a conta que já saiu do Reveza não está mais na lista: o evento traz o e-mail (0.13.0)
+  const contaOuEmail = typeof d.email === "string" && d.email ? d.email : vars.conta
   // nos eventos de atualização, de e para são versões (X.Y.Z), não contas
   const versao = (v: unknown) => (typeof v === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(v) ? v : "?")
   // a nuvem e o painel (0.3.0): a nuvem atualizada, funções e painel publicados, a atualização completa ligada ou não
@@ -149,6 +151,12 @@ export function textoEvento(e: Evento, estado: Pick<Instantaneo, "contas" | "com
         // o texto que foi pelos canais é da nuvem; aqui o painel monta o seu com as contas que ele conhece
         titulo = d.para ? t("evento.trocaFalhou", vars) : t("evento.trocaFalhouSemConta", vars)
         detalhe = d.de ? t("evento.trocaFalhouContinua", vars) : null
+      } else if (d.motivo === "folga_acabando") {
+        titulo = typeof d.email === "string" && d.email ? t("evento.folgaUma", { conta: d.email }) : t("evento.folgaNenhuma")
+        detalhe =
+          typeof d.proxima_email === "string" && d.proxima_email && typeof d.libera_em === "string"
+            ? t("evento.folgaProxima", { conta: d.proxima_email, quando: fmtDataHora(d.libera_em, new Date(e.em), idioma) })
+            : null
       } else if (d.motivo === "sem_livre") titulo = t("evento.semLivre", vars)
       else if (d.motivo === "teste") titulo = t("evento.teste", { canal: canal(d.canal) })
       else titulo = t("evento.alertaEnviado", { canal: canal(d.canal) })
@@ -160,6 +168,10 @@ export function textoEvento(e: Evento, estado: Pick<Instantaneo, "contas" | "com
       else if (d.motivo === "revogado") titulo = t("evento.revogado", vars)
       else if (d.motivo === "teste_webhook") titulo = t("evento.testeWebhook")
       else if (d.motivo === "leitura") titulo = t("evento.leitura", vars)
+      else if (d.saindo === true)
+        titulo = t("evento.contaSaindo", { conta: contaOuEmail, minutos: typeof d.minutos === "number" ? d.minutos : 10 })
+      else if (d.saindo === false || d.restaurada === true) titulo = t("evento.contaVoltou", { conta: contaOuEmail })
+      else if (d.removida === true) titulo = t("evento.contaRemovida", { conta: contaOuEmail })
       else if (d.conserto === true) {
         titulo = t("evento.conserto", vars)
         const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0)

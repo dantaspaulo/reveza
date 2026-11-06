@@ -200,6 +200,8 @@ const MENSAGENS: [RegExp, string][] = [
   [/sem login guardado/i, "conta_precisa_login"],
   [/conta pausada ou sem login/i, "conta_pausada"],
   [/não tem outra para ir/i, "remover_sem_outra"],
+  [/desfaça a remoção antes/i, "conta_saindo"],
+  [/já saiu do Reveza/i, "conta_ja_saiu"],
   [/modelo inválido/i, "modelo_invalido"],
   [/já existe um computador com este nome/i, "nome_repetido"],
   [/nome inválido: até 60 caracteres/i, "nome_invalido"],
@@ -372,6 +374,7 @@ function paraConta(l: Linha, janelas: Linha[], posse: Linha | undefined, validad
     tetoSemana: numero(l.teto_semana),
     modelo: texto(l.modelo),
     precisaLogin: Boolean(l.precisa_login),
+    saiEm: texto(l.sai_em),
     criadaEm: String(l.criado_em),
     janelas: janelas.map((j): Janela => ({
       tipo: j.tipo as Janela["tipo"],
@@ -800,6 +803,10 @@ export class FonteSupabase implements Fonte {
 
   async removerConta(id: string) {
     await rpc("painel_remover_conta", { p_conta: id })
+  }
+
+  async desfazerRemocao(id: string) {
+    await rpc("painel_desfazer_remocao", { p_conta: id })
   }
 
   async preferirConta(computadorId: string, contaId: string | null) {

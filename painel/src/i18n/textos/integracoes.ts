@@ -57,6 +57,7 @@ export default secao({
           conexao: "conta conectada",
           troca_falhou: "troca que não firmou",
           atualizacao_falhou: "atualização parou",
+          folga_acabando: "folga acabando",
         },
         testado: "Teste enviado para {url}",
         dialogo: {
@@ -147,6 +148,7 @@ export default secao({
           conexao: "account connected",
           troca_falhou: "switch that didn't take",
           atualizacao_falhou: "update stopped",
+          folga_acabando: "running low",
         },
         testado: "Test sent to {url}",
         dialogo: {

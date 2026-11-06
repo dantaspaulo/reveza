@@ -8,6 +8,7 @@ import {
   KeyRoundIcon,
   LifeBuoyIcon,
   OctagonMinusIcon,
+  TimerIcon,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -54,6 +55,7 @@ export function NomeConta({
 }
 
 const ESTILO: Record<EstadoConta, string> = {
+  saindo: "border-erro-borda bg-erro-fundo text-erro",
   precisa_login: "border-erro-borda bg-erro-fundo text-erro",
   esgotada: "border-erro-borda bg-erro-fundo text-erro",
   aviso: "border-atencao-borda bg-atencao-fundo text-atencao",
@@ -64,6 +66,7 @@ const ESTILO: Record<EstadoConta, string> = {
 }
 
 const ICONE: Record<EstadoConta, typeof KeyRoundIcon> = {
+  saindo: TimerIcon,
   precisa_login: KeyRoundIcon,
   esgotada: OctagonMinusIcon,
   aviso: AlertTriangleIcon,
@@ -84,15 +87,31 @@ export function SeloEstado({ estado, className }: { estado: EstadoConta; classNa
   )
 }
 
+/** Quantos pontos antes do aviso a barra já fica âmbar. */
+export const FAIXA_ATENCAO = 15
+
 /**
- * Barra de uso de uma janela: a cor é a da conta (identidade); esgotada vira vermelho clarinho. As marcas finas são o
- * aviso e a troca. O número fica ao lado, em texto, nunca só na cor.
+ * O nível do uso (0.13.0): "atencao" dos 15 pontos antes do aviso até ele, "alerta" do aviso para cima. Sem o aviso
+ * (`alerta` ausente), fica no normal.
+ */
+export function nivelUso(pct: number | null, alerta?: number): "normal" | "atencao" | "alerta" {
+  if (pct === null || alerta === undefined) return "normal"
+  if (pct >= Math.min(alerta, 100)) return "alerta"
+  if (pct >= alerta - FAIXA_ATENCAO) return "atencao"
+  return "normal"
+}
+
+/**
+ * Barra de uso de uma janela: a cor é a da conta (identidade) até perto do aviso; daí fica âmbar e, do aviso para
+ * cima, vermelha (0.13.0, `alerta` = o aviso da instalação). As marcas finas são o aviso e a troca. O número fica ao
+ * lado, em texto e com a mesma cor, nunca só na cor.
  */
 export function BarraUso({
   pct,
   cor,
   aviso,
   troca,
+  alerta,
   rotulo,
   detalhe,
   compacta = false,
@@ -101,6 +120,7 @@ export function BarraUso({
   cor: number
   aviso?: number
   troca?: number
+  alerta?: number
   rotulo?: string
   detalhe?: string
   compacta?: boolean
@@ -108,13 +128,22 @@ export function BarraUso({
   const { idioma } = useT()
   const v = pct === null ? 0 : Math.max(0, Math.min(100, pct))
   const esgotada = pct !== null && pct >= 100
+  const nivel = esgotada ? "alerta" : nivelUso(pct, alerta)
+  const corBarra = nivel === "alerta" ? "var(--erro)" : nivel === "atencao" ? "var(--atencao)" : corConta(cor)
   return (
     <div className="min-w-0">
       {rotulo !== undefined || detalhe !== undefined ? (
         <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
           <span className="truncate text-muted-foreground">{rotulo}</span>
           <span className="shrink-0 tabular-nums">
-            <span className="font-medium text-foreground">{fmtPct(pct, idioma, 1)}</span>
+            <span
+              className={cn(
+                "font-medium",
+                nivel === "alerta" ? "text-erro" : nivel === "atencao" ? "text-atencao" : "text-foreground"
+              )}
+            >
+              {fmtPct(pct, idioma, 1)}
+            </span>
             {detalhe ? <span className="text-muted-foreground"> · {detalhe}</span> : null}
           </span>
         </div>
@@ -129,7 +158,7 @@ export function BarraUso({
       >
         <div
           className="h-full rounded-full transition-[width] duration-500 ease-out"
-          style={{ width: `${v}%`, background: esgotada ? "var(--erro-barra)" : corConta(cor) }}
+          style={{ width: `${v}%`, background: corBarra }}
         />
         {aviso ? (
           <span aria-hidden className="absolute inset-y-0 w-px bg-foreground/35" style={{ left: `${aviso}%` }} />

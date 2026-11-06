@@ -1,4 +1,4 @@
-// Plano da semana e previsão de esgotar: contas puras, testadas, que as telas de Uso e Plano usam.
+// Ritmo da semana e previsão de esgotar: contas puras, testadas, que as telas de Uso, Contas e Visão geral usam.
 
 import type { PontoHistorico } from "@/dados/tipos"
 
