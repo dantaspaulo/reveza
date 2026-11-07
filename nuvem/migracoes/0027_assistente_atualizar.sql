@@ -15,7 +15,7 @@ alter table public.config add constraint config_chave_check check (chave in ('au
   'rodizio_minutos', 'rodizio_ordem', 'intervalo_s', 'retomar_terminal', 'espera_entre_trocas_s', 'proximo_rodizio_em',
   'fuso', 'alertas_ate', 'exigir_duas_etapas', 'cofre_impressao', 'atualizar_sozinho', 'atualizacao_vez',
   'nuvem_versao', 'nuvem_atualizacao', 'publicado', 'impressoes', 'painel_publicacao', 'atualizacao_completa',
-  'publicacao_vez', 'idioma', 'assistente_atualizar'));
+  'publicacao_vez', 'idioma', 'assistente_atualizar', 'criticas', 'criticas_gatilho'));
 
 -- O corpo da 0020, mais a escolha do assistente de código.
 create or replace function public.painel_config(p_chave text, p_valor jsonb) returns jsonb
