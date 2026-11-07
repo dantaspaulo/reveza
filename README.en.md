@@ -46,6 +46,7 @@ If you use Claude Code all day, you know these three moments:
 | Account passwords shared over chat | Each login encrypted on your computer; the cloud stores it without being able to read it |
 | The bigger plan's account lands on any computer | Each computer can have its preferred account, used whenever it is free |
 | Changing the model by hand after every account switch | Each account with its own model, written to the computer at the switch |
+| The accounts run out and monitoring stops along with everything else | Critical sessions: with no room left, regular sessions wait and only marked ones keep going |
 | Long `git status` and `grep` output filling the conversation | Lean output, optional: read commands arrive shorter and the account goes further |
 | A spreadsheet to guess which account still has room | A dashboard with usage, cost and a forecast of when each account runs out |
 | Everyone on the team sorting it out alone | A team with roles, alerts and the history of every switch |
@@ -198,6 +199,7 @@ reveza trocar a@example.com
 reveza uso --csv         # usage log as a spreadsheet
 reveza som desligar      # turns off the switch sound (som ligar, som testar)
 reveza resumo 300k       # how many tokens before the conversation is summarized (default 180k; resumo desligar)
+reveza criticas          # critical sessions: on/off, trigger and marked ones (criticas marcar <session>)
 reveza doctor            # diagnostics
 reveza contas conectar b@example.com   # connects an account from the terminal
 ```
@@ -227,6 +229,14 @@ end shows everything. Machine formats (`--porcelain`, `-z`, `-print0`) and stder
 13/10/2026, on 13 read commands in three real repositories: 34% less text overall (from 119,800 to 79,333 characters);
 `git status` 51% to 59%, `find` with subfolders 48%, `grep -rn` 17% to 20%, `ls -la` 6% to 14% and `git diff` 1% to 3%
 (a diff has little to drop before the cut).
+
+**Critical sessions:** off by default. For what can't stop (monitoring, fixes, support). Under **Automatic switching**,
+turn on **Critical sessions** and pick the trigger (75% by default). When no account is below it, regular sessions wait:
+their prompts and actions are refused with a notice, and one stopped in the middle of a task carries on by itself when
+an account has room again. Critical sessions keep going, using what is left. To mark a session, type `/reveza critica`
+in it (again unmarks it); in routines started by a script, put `REVEZA_CRITICA=1` before the command; in the terminal,
+`reveza criticas marcar <session id>`. Reserving an account would not do this: an account applies to the whole
+computer, and every open session would spend from it together.
 
 **Connecting an account:** the computer opens the official sign-in in a **private window** of its browser (Chrome,
 Edge, Brave, Chromium or Firefox), without the account already open in it (people with several Chrome profiles ended up

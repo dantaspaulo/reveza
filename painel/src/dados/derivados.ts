@@ -143,6 +143,7 @@ export type TipoFaixa =
   | "sem_livre"
   | "folga_acabando"
   | "sem_folga"
+  | "so_criticas"
   | "computador_parado"
   | "login_vence"
   | "auto_desligada"
@@ -194,6 +195,20 @@ export function folgaDasContas(contas: Conta[], aviso: number, agora: Date): Fol
   return { ativas, comFolga, proxima }
 }
 
+/**
+ * Sessões críticas (0.15.0): com a função ligada e nenhuma conta em atividade abaixo do gatilho, as sessões comuns
+ * esperam e só as marcadas seguem. A mesma conta do agente (criticas.ts): conta sem leitura não conta como folga.
+ */
+export function soCriticas(contas: Conta[], config: ConfigTroca, agora: Date): boolean {
+  if (!config.criticas || !contas.length) return false
+  const gatilho = config.criticasGatilho >= 50 && config.criticasGatilho <= 95 ? config.criticasGatilho : 75
+  return !contas.some((c) => {
+    if (c.pausada || c.precisaLogin || c.saiEm) return false
+    const v = cheia(c, agora)
+    return v !== null && v < gatilho
+  })
+}
+
 /** Folga acabando: duas ou mais contas em atividade e no máximo uma com folga (como o alerta da nuvem). */
 export function folgaAcabando(f: Folga): boolean {
   return f.ativas.length >= 2 && f.comFolga.length <= 1
@@ -211,7 +226,9 @@ export function faixasDeAlerta(e: Instantaneo, agora: Date, lidoEm?: Date | null
     if (c.precisaLogin && !c.saiEm) faixas.push({ tipo: "precisa_login", nivel: "erro", contaId: c.id })
   }
   const folga = folgaDasContas(e.contas, e.config.aviso, agora)
-  if (folgaAcabando(folga)) {
+  if (soCriticas(e.contas, e.config, agora)) {
+    faixas.push({ tipo: "so_criticas", nivel: "atencao", proximaId: folga.proxima?.conta.id, liberaEm: folga.proxima?.em.toISOString() })
+  } else if (folgaAcabando(folga)) {
     const uma = folga.comFolga[0]
     faixas.push({
       tipo: uma ? "folga_acabando" : "sem_folga",

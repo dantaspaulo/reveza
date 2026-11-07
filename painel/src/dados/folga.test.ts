@@ -2,7 +2,7 @@
 // a mesma conta do alerta da nuvem (rvz_folga_contas, 0032).
 import { describe, expect, it } from "vitest"
 
-import { faixasDeAlerta, folgaAcabando, folgaDasContas } from "./derivados"
+import { faixasDeAlerta, folgaAcabando, folgaDasContas, soCriticas } from "./derivados"
 import type { Conta, Instantaneo, Janela } from "./tipos"
 
 const AGORA = new Date("2026-11-06T20:00:00.000Z")
@@ -51,5 +51,28 @@ describe("folgaDasContas", () => {
     const nenhuma = faixasDeAlerta(e([conta("a", 90), conta("b", 97)]), AGORA)
     expect(nenhuma.map((x) => x.tipo)).toContain("sem_folga")
     expect(faixasDeAlerta(e([conta("a", 10), conta("b", 20)]), AGORA).map((x) => x.tipo)).not.toContain("folga_acabando")
+  })
+})
+
+// Sessões críticas (0.15.0): a mesma conta do agente (criticas.ts).
+describe("soCriticas", () => {
+  const cfg = (criticas: boolean, criticasGatilho = 75) =>
+    ({ aviso: 85, troca: 90, auto: true, modo: "limiar", criticas, criticasGatilho }) as unknown as Instantaneo["config"]
+  it("desligada não segura; ligada, segura quando nenhuma conta em atividade está abaixo do gatilho", () => {
+    const contas = [conta("a", 80), conta("b", 99), conta("pausada", 10, { pausada: true })]
+    expect(soCriticas(contas, cfg(false), AGORA)).toBe(false)
+    expect(soCriticas(contas, cfg(true), AGORA)).toBe(true)
+    expect(soCriticas([...contas, conta("folga", 74)], cfg(true), AGORA)).toBe(false)
+    expect(soCriticas(contas, cfg(true, 85), AGORA), "com o gatilho em 85, a de 80% ainda tem folga").toBe(false)
+  })
+  it("conta sem leitura não conta como folga; sem conta nenhuma, não segura", () => {
+    expect(soCriticas([conta("a", 90), conta("semLeitura", null)], cfg(true), AGORA)).toBe(true)
+    expect(soCriticas([], cfg(true), AGORA)).toBe(false)
+  })
+  it("a faixa da visão geral troca a folga acabando pela de só as críticas", () => {
+    const e = { contas: [conta("a", 90), conta("b", 97)], computadores: [], config: cfg(true) } as unknown as Instantaneo
+    const tipos = faixasDeAlerta(e, AGORA).map((x) => x.tipo)
+    expect(tipos).toContain("so_criticas")
+    expect(tipos).not.toContain("sem_folga")
   })
 })

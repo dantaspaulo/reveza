@@ -7,6 +7,31 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.15.0 · 07/11/2026
+
+Sessões críticas: quando as contas ficam sem folga, só o que não pode parar continua. E a troca para de escolher
+conta com a semana cheia e passa a preferir a mesma organização. Pedidos do Paulo: "todas as contas esgotaram e tudo
+parou... tenho sessões de monitoramento e erros que não podem jamais parar" e "tivemos em 24h 50 trocas de contas...
+isso não é bom né?". Precisa da nuvem na 0.15.0 (migração 0033: a nuvem se atualiza sozinha, ou pelo **Atualizar a
+nuvem**), do painel novo e dos computadores na 0.15.0 (o mod novo vale nas sessões abertas depois da atualização).
+
+- **Sessões críticas** (desligadas de fábrica). Em **Troca automática**, ligue **Sessões críticas** e escolha o gatilho
+  (75% de fábrica). Quando nenhuma conta estiver abaixo dele, as sessões comuns esperam: o prompt e as ações delas são
+  recusados com um aviso, e a que estava no meio de uma tarefa continua sozinha quando uma conta voltar a ter folga. As
+  críticas seguem, gastando o que sobra; nenhuma conta fica parada esperando. Para marcar: `/reveza critica` dentro da
+  sessão (de novo desmarca, e a marca vale quando a sessão é retomada), `REVEZA_CRITICA=1` antes do comando nas rotinas
+  abertas por script, ou `reveza criticas marcar <sessão>` no terminal. A **Visão geral** mostra a faixa "Só as sessões
+  críticas seguem agora", e o começo e o fim da espera ficam nos eventos. Sem nuvem, `reveza criticas ligar 75` liga.
+- **Correção: a troca escolhia conta com a semana cheia.** Quando a leitura de uso ficava velha (o provedor limita as
+  leituras), a nuvem deixava a semana de fora e a janela de 5 horas já renovada contava como zero: uma conta com a
+  semana em 100% aparecia em 0%. Medido no Mac mini em 07/11 (das 10h49 de 06/11 às 10h49 de 07/11): 14 das 33 trocas
+  foram para uma conta em 94% ou mais, e 3 voltaram em 16 segundos. Agora a última leitura de uma janela que ainda não
+  renovou vale como piso.
+- **A troca prefere a mesma organização.** O que a conversa já tem guardado vale só na organização da conta. Trocar
+  para outra fez 67% das sessões abertas mandarem a conversa inteira de novo (17% na mesma organização), cerca de 11%
+  do gasto de 48 h. Entre as contas livres, a da mesma organização da conta em uso vem antes, se ainda tiver 30 pontos
+  de folga até a troca. A conta preferida do computador e a ordem das reservas continuam valendo antes disso.
+
 ## 0.14.0 · 06/11/2026
 
 O computador novo ganha nome na hora de gerar o código. Pedido do Paulo: "deve ter um jeito de adicionar novo pc na

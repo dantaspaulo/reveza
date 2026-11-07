@@ -293,4 +293,17 @@ describe("empate", () => {
     const { candidata } = await import("../src/decisao.js");
     assert.equal(candidata(e(), agora()), "ffff", "c@exemplo.com vem antes de z@exemplo.com");
   });
+
+  test("na troca, a da mesma organização com folga vem antes; quase cheia, não", async () => {
+    m = await montar();
+    const a = await ativaEm(m, "A", 96);
+    const outra = contaEstacionada(m, "B", 0);
+    const colega = contaEstacionada(m, "C", 40);
+    e().contas[a]!.org = "Alfa";
+    e().contas[outra]!.org = "Beta";
+    e().contas[colega]!.org = "Alfa";
+    assert.deepEqual(decidir(e(), agora()), ["trocar", colega]);
+    e().contas[colega]!.janelas = [{ tipo: "five_hour", pct: 70, resetEm: agora() + 3600 }];
+    assert.deepEqual(decidir(e(), agora()), ["trocar", outra], "70% fica a menos de 30 pontos do gatilho de 95%");
+  });
 });

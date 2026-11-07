@@ -68,6 +68,13 @@ export interface ConfigLocal {
    * mexe (ver resumo.ts).
    */
   resumo: number | false;
+  /**
+   * Sessões críticas (0.15.0, criticas.ts): sem conta com folga abaixo do gatilho, só as sessões marcadas seguem.
+   * Desligada de fábrica.
+   */
+  criticas: boolean;
+  /** O gatilho das sessões críticas, em % (50 a 95). */
+  criticasGatilho: number;
 }
 
 export interface PontoHistorico {
@@ -113,6 +120,8 @@ export interface EstadoLocal {
    * até `ate` (epoch em segundos). Sem nuvem é esta a marca; com nuvem, a da nuvem (contas_sem_modelo) decide.
    */
   semModelo?: Record<string, { modelo: string; ate: number }>;
+  /** Sessões marcadas como críticas neste computador, pelo id da sessão: quando foram marcadas ou lembradas (epoch s). */
+  sessoesCriticas?: Record<string, number>;
 }
 
 export interface UltimaAtualizacaoAssistente {
@@ -138,6 +147,8 @@ export const CONFIG_INICIAL: ConfigLocal = {
   intervaloS: 5,
   som: true,
   resumo: 180_000,
+  criticas: false,
+  criticasGatilho: 75,
 };
 
 export function estadoInicial(): EstadoLocal {

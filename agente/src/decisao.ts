@@ -34,6 +34,24 @@ export function gatilhoDeTroca(estado: EstadoLocal): number {
   return estado.config.modo === "limite" ? 100 : estado.config.troca;
 }
 
+/**
+ * A conta é da mesma organização da em uso e tem folga de verdade (30 pontos até o gatilho de troca). O cache da conversa
+ * é da organização: trocar para outra faz as sessões abertas mandarem a conversa inteira de novo (medido em 07/11/2026:
+ * 67% das sessões, contra 17% na mesma organização). Igual à rvz_mesma_org da nuvem (0033).
+ */
+export function mesmaOrganizacao(estado: EstadoLocal, id: string, p: number): boolean {
+  const org = estado.ativa ? estado.contas[estado.ativa]?.org : null;
+  return !!org && estado.contas[id]?.org === org && p <= gatilhoDeTroca(estado) - 30;
+}
+
+/** A ordem das candidatas: a da mesma organização com folga antes, depois o menor uso, e o e-mail no empate. */
+function ordenar(estado: EstadoLocal, saida: [number, string][]): [number, string][] {
+  // empate no uso: a ordem do e-mail (o id local é sorteado na importação; o e-mail é o mesmo em todo lugar)
+  const email = (id: string) => estado.contas[id]?.email ?? id;
+  const fora = (x: [number, string]) => (mesmaOrganizacao(estado, x[1], x[0]) ? 0 : 1);
+  return saida.sort((a, b) => fora(a) - fora(b) || a[0] - b[0] || email(a[1]).localeCompare(email(b[1])));
+}
+
 function livres(estado: EstadoLocal, t: number): [number, string][] {
   const saida: [number, string][] = [];
   for (const [id, c] of Object.entries(estado.contas)) {
@@ -43,9 +61,7 @@ function livres(estado: EstadoLocal, t: number): [number, string][] {
     const p = pctEfetivo(c, t);
     if (p !== null && p < estado.config.aviso) saida.push([p, id]);
   }
-  // empate no uso: a ordem do e-mail (o id local é sorteado na importação; o e-mail é o mesmo em todo lugar)
-  const email = (id: string) => estado.contas[id]?.email ?? id;
-  return saida.sort((a, b) => a[0] - b[0] || email(a[1]).localeCompare(email(b[1])));
+  return ordenar(estado, saida);
 }
 
 export function candidata(estado: EstadoLocal, t: number): string | null {
@@ -61,8 +77,7 @@ function comMaisFolga(estado: EstadoLocal, t: number, teto: number, atual: numbe
     const p = pctEfetivo(c, t);
     if (p !== null && p < teto && (atual === null || p < atual)) saida.push([p, id]);
   }
-  const email = (id: string) => estado.contas[id]?.email ?? id;
-  return saida.sort((a, b) => a[0] - b[0] || email(a[1]).localeCompare(email(b[1])))[0]?.[1] ?? null;
+  return ordenar(estado, saida)[0]?.[1] ?? null;
 }
 
 /**
@@ -88,7 +103,9 @@ export function escolherRodizio(estado: EstadoLocal, t: number, sorteio: (xs: st
   const l = livres(estado, t);
   if (!l.length) return null;
   if (estado.config.rodizio.ordem === "menor_uso") return l[0]![1];
-  return sorteio(l.map(([, id]) => id).sort());
+  // sorteio entre as da mesma organização com folga, quando há (como a nuvem: a organização vem antes do sorteio)
+  const mesma = l.filter(([p, id]) => mesmaOrganizacao(estado, id, p));
+  return sorteio((mesma.length ? mesma : l).map(([, id]) => id).sort());
 }
 
 export const sorteioReal = (xs: string[]): string => xs[Math.floor(Math.random() * xs.length)]!;

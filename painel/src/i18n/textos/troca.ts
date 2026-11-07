@@ -58,6 +58,20 @@ export default secao({
         semTeto: "sem teto",
         fuso: "Fuso da agenda",
       },
+      criticas: {
+        titulo: "Sessões críticas",
+        descricao:
+          "Para o que não pode parar (monitoramento, correção, atendimento). Quando todas as contas passam do gatilho, as sessões comuns esperam e só as críticas seguem, gastando o que sobra. Nenhuma conta fica parada esperando.",
+        ligar: "Segurar as sessões comuns quando faltar folga",
+        ligarDica: "Desligado, todas as sessões seguem até as contas acabarem.",
+        gatilho: "Gatilho",
+        gatilhoDica: "Quando nenhuma conta estiver abaixo disto, só as críticas seguem. Quando uma conta voltar a ter folga, as comuns voltam sozinhas.",
+        agora: "Agora só as críticas seguem",
+        comoMarcar: "Como marcar uma sessão",
+        naSessao: "Dentro da sessão, digite:",
+        naRotina: "Em rotinas abertas por script, ponha isto antes do comando:",
+        noTerminal: "Ou, no terminal do computador, com o id da sessão:",
+      },
       ajustes: {
         titulo: "Mais ajustes",
         espera: "Espera mínima entre trocas",
@@ -133,6 +147,20 @@ export default secao({
         editar: "Edit",
         semTeto: "no cap",
         fuso: "Schedule time zone",
+      },
+      criticas: {
+        titulo: "Critical sessions",
+        descricao:
+          "For what can't stop (monitoring, fixes, support). When every account passes the trigger, regular sessions wait and only critical ones keep going, using what is left. No account sits idle waiting.",
+        ligar: "Hold regular sessions when room runs out",
+        ligarDica: "Off, every session keeps going until the accounts run out.",
+        gatilho: "Trigger",
+        gatilhoDica: "When no account is below this, only critical sessions run. When an account has room again, regular ones come back on their own.",
+        agora: "Only critical sessions are running now",
+        comoMarcar: "How to mark a session",
+        naSessao: "Inside the session, type:",
+        naRotina: "In routines started by a script, put this before the command:",
+        noTerminal: "Or, in the computer's terminal, with the session id:",
       },
       ajustes: {
         titulo: "More settings",

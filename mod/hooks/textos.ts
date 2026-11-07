@@ -65,6 +65,18 @@ export type Textos = {
   descricao: string
   retomada: string
   foraDoAr: string
+  criticas: {
+    status: (gatilho: number) => string
+    marca: string
+    recusaPrompt: (gatilho: number) => string
+    recusaAcao: (gatilho: number) => string
+    comecou: (gatilho: number) => string
+    voltou: string
+    retomada: string
+    virouCritica: string
+    virouComum: string
+    resumo: (ligada: boolean, gatilho: number, segurar: boolean, critica: boolean) => string
+  }
   toasts: {
     limite: string
     contexto: string
@@ -120,6 +132,48 @@ export function textos(i: Idioma = atual): Textos {
       'O agente do Reveza está fora do ar. No terminal: reveza servico instalar (ou reveza rodar), e depois reveza doctor.',
       'The Reveza agent is down. In the terminal: reveza servico instalar (or reveza rodar), then reveza doctor.',
     ),
+    criticas: {
+      status: gatilho => o(`Reveza: em espera (contas acima de ${gatilho}%, só as sessões críticas seguem)`, `Reveza: on hold (accounts above ${gatilho}%, only critical sessions run)`),
+      marca: o('crítica', 'critical'),
+      recusaPrompt: gatilho =>
+        o(
+          `Reveza: todas as contas passaram de ${gatilho}% e só as sessões críticas seguem agora. Esta sessão espera até uma conta ter folga e volta sozinha; mande de novo depois. Para esta seguir, /reveza critica.`,
+          `Reveza: every account is above ${gatilho}% and only critical sessions run now. This session waits until an account has headroom and comes back on its own; send it again then. To keep this one going, /reveza critica.`,
+        ),
+      recusaAcao: gatilho =>
+        o(
+          `O Reveza pôs esta sessão em espera: todas as contas passaram de ${gatilho}% e o que sobra fica para as sessões críticas. Pare agora, sem tentar outra ferramenta, e diga em uma linha onde parou. A sessão continua sozinha quando uma conta tiver folga.`,
+          `Reveza put this session on hold: every account is above ${gatilho}% and what is left is kept for critical sessions. Stop now, without trying another tool, and say in one line where you stopped. The session continues on its own when an account has headroom.`,
+        ),
+      comecou: gatilho =>
+        o(
+          `Reveza: todas as contas passaram de ${gatilho}%. Esta sessão fica em espera e só as críticas seguem (/reveza critica marca esta).`,
+          `Reveza: every account is above ${gatilho}%. This session waits and only critical ones run (/reveza critica marks this one).`,
+        ),
+      voltou: o('Reveza: uma conta voltou a ter folga e esta sessão voltou.', 'Reveza: an account has headroom again and this session is back.'),
+      retomada: o(
+        'O Reveza tinha posto esta sessão em espera porque as contas estavam sem folga. Agora há folga de novo: continue a tarefa de onde parou.',
+        'Reveza had put this session on hold because the accounts had no headroom. There is headroom again: continue the task from where you left off.',
+      ),
+      virouCritica: o(
+        'Esta sessão agora é crítica: quando as contas ficarem sem folga, ela segue e as comuns esperam. /reveza critica de novo desmarca.',
+        'This session is now critical: when the accounts run out of headroom, it keeps going and regular ones wait. /reveza critica again unmarks it.',
+      ),
+      virouComum: o(
+        'Esta sessão voltou a ser comum: quando as contas ficarem sem folga, ela espera junto com as outras.',
+        'This session is regular again: when the accounts run out of headroom, it waits with the others.',
+      ),
+      resumo: (ligada, gatilho, segurar, critica) =>
+        ligada
+          ? o(
+              `Sessões críticas: ligadas, gatilho em ${gatilho}%${segurar ? ' (agora só as críticas seguem)' : ''}. Esta sessão: ${critica ? 'crítica' : 'comum'} (/reveza critica muda).`,
+              `Critical sessions: on, trigger at ${gatilho}%${segurar ? ' (only critical ones run now)' : ''}. This session: ${critica ? 'critical' : 'regular'} (/reveza critica changes it).`,
+            )
+          : o(
+              `Sessões críticas: desligadas (o painel liga, em Troca automática). Esta sessão: ${critica ? 'crítica' : 'comum'}.`,
+              `Critical sessions: off (turn them on in the panel, under Automatic switching). This session: ${critica ? 'critical' : 'regular'}.`,
+            ),
+    },
     toasts: {
       limite: o(
         'A conversa passou do limite: rode /rewind, volte algumas mensagens e rode /compact (ou comece outra sessão).',

@@ -111,7 +111,26 @@ aviso de limite. Para cada computador ligado:
   limite, troca como qualquer outra. Para os outros computadores, enquanto o dono está ligado, ela vem depois das
   demais, e quem estiver com ela devolve e pega a melhor que sobrar (nunca uma reserva nem a preferida de um
   terceiro);
+- mesma organização (0.15.0, `rvz_mesma_org`): depois da preferida, da reserva e da preferida de outro, a candidata da
+  mesma organização da conta em uso vem antes, se tiver 30 pontos de folga até o gatilho de troca. O cache da conversa é
+  da organização: medido em 07/11/2026, trocar para outra fez 67% das sessões abertas mandarem a conversa inteira de
+  novo (17% na mesma organização), cerca de 11% do gasto de 48 h;
+- o uso que decide (`rvz_pct_efetivo`, 0.15.0): o maior entre as janelas lidas há menos de 15 minutos (a renovada conta
+  zero), nunca abaixo da última leitura de uma janela que ainda não renovou (o uso só cresce até o reset). Antes, com a
+  leitura limitada pelo provedor, a semana cheia saía da conta e a conta aparecia em 0%;
 - grava a decisão em `atribuicao(computador_id, conta_id, motivo, versao)` e no `eventos`.
+
+**Sessões críticas (0.15.0).** A conta vale para o computador inteiro, então reservar uma conta não protege uma sessão:
+quando o computador entra nela, todas gastam juntas. Com `criticas` ligada na config (gatilho `criticas_gatilho`, 50 a
+95, 75 de fábrica), cada agente olha as contas (as mesmas que ele conhece da nuvem): sem nenhuma em atividade abaixo do
+gatilho (pausada, sem login e sem o modelo do computador não contam; leitura velha vale pelo último número), as sessões
+comuns esperam. O agente põe `criticas: { segurar, gatilho }` na resposta de `/api/ativa`, e o mod de cada sessão
+recusa o prompt (`prompt.submit` com `drop`; os comandos de barra passam) e a ação (`tool.call` com `deny`, pedindo
+para parar) da sessão comum. Na espera a sessão lê a ponte a cada 5 s; quando a espera acaba, a que foi parada no meio
+recebe o pedido fixo de continuar. A crítica segue: marcada por `/reveza critica` (a marca fica no agente,
+`sessoesCriticas`, e vale na sessão retomada; 30 dias sem uso, sai), por `reveza criticas marcar <sessão>` ou por
+`REVEZA_CRITICA=1` no ambiente da sessão. Sessão noutra conta (o app de desktop) não espera, e com o agente fora do ar
+ninguém espera. O começo e o fim da espera viram evento.
 
 ## 7. Nuvem: tabelas (todas com RLS ligado)
 

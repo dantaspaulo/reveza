@@ -125,6 +125,7 @@ function Faixas({ estado, agora }: { estado: Instantaneo; agora: Date }) {
     sem_livre: "/contas",
     folga_acabando: "/contas",
     sem_folga: "/contas",
+    so_criticas: "/troca",
     computador_parado: "/saude",
     login_vence: "/contas",
     versao_antiga: "/saude",

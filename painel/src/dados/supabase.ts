@@ -71,6 +71,8 @@ export const CONFIG_PADRAO: ConfigTroca = {
   exigirDuasEtapas: false,
   atualizarSozinho: "desligada",
   assistenteAtualizar: "padrao",
+  criticas: false,
+  criticasGatilho: 75,
   atualizacaoVez: null,
   nuvem: null,
   proximoRodizioEm: null,
@@ -157,6 +159,8 @@ export const CHAVES_CONFIG: Record<CampoGravavel, string> = {
   exigirDuasEtapas: "exigir_duas_etapas",
   atualizarSozinho: "atualizar_sozinho",
   assistenteAtualizar: "assistente_atualizar",
+  criticas: "criticas",
+  criticasGatilho: "criticas_gatilho",
 }
 
 const CAMPOS_CONTA: Record<keyof CamposConta, string> = {
@@ -190,6 +194,7 @@ const MENSAGENS: [RegExp, string][] = [
   [/rodízio de 15 a 480/i, "rodizio_fora"],
   [/intervalo de 3 a 60|tempo de atualização/i, "intervalo_fora"],
   [/espera de 30 a 3600/i, "espera_fora"],
+  [/gatilho das sessões críticas/i, "criticas_fora"],
   [/fuso desconhecido/i, "fuso_invalido"],
   [/^e-mail inválido$/i, "email_invalido"],
   [/último administrador/i, "ultimo_admin"],

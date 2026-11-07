@@ -108,7 +108,27 @@ limit warning arrives. For each computer that is on:
   rotation it stays on it; at the limit, it switches like any other. For the other computers, while its owner is
   connected, it comes after all the others, and whoever has it gives it back and takes the best one left (never a backup
   account nor a third computer's preferred one);
+- same organization (0.15.0, `rvz_mesma_org`): after the preferred, backup and third-party preferred rules, a candidate
+  from the same organization as the account in use comes first, if it has 30 points of room before the switch trigger.
+  The conversation cache belongs to the organization: measured on 07/11/2026, switching to another one made 67% of the
+  open sessions send the whole conversation again (17% within the same organization), about 11% of 48 h of spending;
+- the usage that decides (`rvz_pct_efetivo`, 0.15.0): the highest of the windows read in the last 15 minutes (a reset
+  window counts as zero), never below the last reading of a window that has not reset yet (usage only grows until the
+  reset). Before, with reads throttled by the provider, a full week dropped out and the account showed 0%;
 - it writes the decision to `atribuicao(computador_id, conta_id, motivo, versao)` and to `eventos`.
+
+**Critical sessions (0.15.0).** An account applies to the whole computer, so reserving an account does not protect a
+session: when the computer moves onto it, every session spends from it. With `criticas` on in the config (trigger
+`criticas_gatilho`, 50 to 95, 75 by default), each agent looks at the accounts it knows from the cloud: with none in
+activity below the trigger (paused, signed out and without the computer's model don't count; an old reading counts by
+its last number), regular sessions wait. The agent adds `criticas: { segurar, gatilho }` to the `/api/ativa` answer, and
+each session's mod refuses the prompt (`prompt.submit` with `drop`; slash commands pass) and the action (`tool.call`
+with `deny`, asking it to stop) of a regular session. While waiting, the session reads the bridge every 5 s; when the
+wait ends, the one stopped midway gets the fixed request to continue. Critical sessions go on: marked with
+`/reveza critica` (the mark stays in the agent, `sessoesCriticas`, and holds in a resumed session; it goes after 30
+days unused), with `reveza criticas marcar <session>` or with `REVEZA_CRITICA=1` in the session's environment. A session
+on another account (the desktop app) does not wait, and with the agent down nobody waits. The start and the end of the
+wait become events.
 
 ## 7. Cloud: tables (all with RLS on)
 

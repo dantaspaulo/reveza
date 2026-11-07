@@ -120,7 +120,15 @@ export async function lerContaDaSessao(
   }
 }
 
-export type Ativa = { slug: string | null; email: string | null; versao: number; trocadaEm: number; enxugar?: boolean }
+export type Ativa = {
+  slug: string | null
+  email: string | null
+  versao: number
+  trocadaEm: number
+  enxugar?: boolean
+  /** Sessões críticas (0.15.0): vem só com a função ligada no agente. */
+  criticas?: { segurar?: boolean; gatilho?: number }
+}
 type Janela = { tipo: string; rotulo?: string; pct: number | null; resetEm: number | null }
 type Conta = { email: string; org: string | null; estado: string; janelas: Janela[] }
 export type Estado = {
@@ -130,6 +138,26 @@ export type Estado = {
   limiares: { aviso: number; troca: number }
   sombra?: boolean
   nuvem?: { ligada?: boolean; online?: boolean | null }
+  criticas?: { ligada?: boolean; gatilho?: number; segurar?: boolean }
+}
+
+/**
+ * Sessões críticas (0.15.0, pedido do Paulo, 07/11/2026): com a função ligada e nenhuma conta com folga abaixo do
+ * gatilho, a sessão comum espera (o prompt e a ação dela são recusados) e só as críticas seguem. A sessão noutra conta
+ * (o app de desktop) não gasta das contas do Reveza, e com o agente fora do ar ninguém espera: na dúvida, segue.
+ */
+export function deveSegurar(s: { segurar: boolean; critica: boolean; outraConta: boolean; foraDoAr: boolean }): boolean {
+  return s.segurar && !s.critica && !s.outraConta && !s.foraDoAr
+}
+
+/** `/reveza critica` (com ou sem acento, ou em inglês) marca ou desmarca esta sessão. */
+export function pedeCritica(args: string): boolean {
+  return /^(cr[ií]tica|critical)$/i.test(args.trim())
+}
+
+/** REVEZA_CRITICA=1 (ou true, sim, yes) no comando que abre a sessão: as rotinas de terminal já nascem críticas. */
+export function ambienteCritico(valor: unknown): boolean {
+  return typeof valor === 'string' && /^(1|true|sim|yes)$/i.test(valor.trim())
 }
 
 // Os rótulos e as frases ficam em textos.ts, nos dois idiomas (o da instalação, lido do instalacao.json no começo da
@@ -156,7 +184,7 @@ export function janelasTexto(janelas: Janela[], idioma?: Idioma): string {
   return partes.length ? partes.join(', ') : x.semLeitura
 }
 
-export function resumo(estado: Estado, idioma?: Idioma): string {
+export function resumo(estado: Estado, idioma?: Idioma, critica?: boolean): string {
   const x = textos(idioma)
   const linhas = estado.contas.map(
     c => `- ${c.email}${c.org ? ` (${c.org})` : ''}: ${x.estados[c.estado] ?? c.estado}. ${janelasTexto(c.janelas, idioma)}`,
@@ -167,6 +195,10 @@ export function resumo(estado: Estado, idioma?: Idioma): string {
   const extra: string[] = []
   if (estado.sombra) extra.push(x.sombra)
   if (estado.nuvem?.ligada && estado.nuvem.online === false) extra.push(x.semNuvem)
+  if (critica !== undefined && estado.criticas) {
+    const k = estado.criticas
+    extra.push(x.criticas.resumo(k.ligada === true, k.gatilho ?? 75, k.segurar === true, critica))
+  }
   return ['Reveza AI', troca, ...extra, ...(linhas.length ? linhas : [x.semContas])].join('\n')
 }
 
@@ -287,6 +319,27 @@ export const register: Register = (on, options) => {
   let statusMostrado: string | undefined | null = null
   // de onde a sessão roda (entradaDaSessao), lido no começo dela; vai na medida e no limite
   let entrada: string | null = null
+  // sessões críticas: esta sessão é crítica; o agente manda segurar as comuns; o gatilho; e se uma ação desta sessão
+  // foi recusada na espera (ela volta sozinha quando a espera acaba)
+  let critica = false
+  let segurar = false
+  let gatilho = 75
+  let paradaNaEspera = false
+  const segurando = () => deveSegurar({ segurar, critica, outraConta, foraDoAr })
+
+  /** A marca desta sessão no agente: lê (critica undefined) ou grava. null: o agente não respondeu. */
+  async function marcaNoAgente(buscar: (url: string, init: HttpInit) => Promise<HttpResponse>, nova?: boolean): Promise<boolean | null> {
+    if (!sessao) return null
+    try {
+      const corpo = nova === undefined ? { sessao } : { sessao, critica: nova }
+      const p = await pedido('POST', '/api/critica', corpo)
+      const r = await buscar(`${BASE}/api/critica`, p.init)
+      const c = (await doAgente(r, p.nonce)) ? lerJson<{ ok?: boolean; critica?: boolean }>(r) : null
+      return c?.ok ? c.critica === true : null
+    } catch {
+      return null
+    }
+  }
 
   // `fresca`: no limite a conta é lida de novo, porque o limite é da credencial do pedido que acabou de falhar
   async function contaAtual(agora: number, ler: () => Promise<ContaSessao | null>, fresca = false): Promise<ContaSessao | null> {
@@ -309,13 +362,17 @@ export const register: Register = (on, options) => {
     const x = textos()
     if (foraDoAr) return x.agenteForaDoAr
     if (outraConta) return x.contaOutra
+    if (segurando()) return x.criticas.status(gatilho)
     if (!email) return undefined
-    return x.contaEmUso(email.split('@')[0]!, cinco)
+    const conta = x.contaEmUso(email.split('@')[0]!, cinco)
+    return critica ? `${conta} · ${x.criticas.marca}` : conta
   }
 
   // Devolve o aviso a mostrar quando a conta mudou desde a última leitura.
   function aplicarAtiva(a: Ativa): string | null {
     enxugar = a.enxugar === true
+    segurar = a.criticas?.segurar === true
+    if (typeof a.criticas?.gatilho === 'number') gatilho = a.criticas.gatilho
     const mudou = versao !== null && a.versao !== versao && !!a.email && a.email !== email
     versao = a.versao
     email = a.email
@@ -337,6 +394,8 @@ export const register: Register = (on, options) => {
       name: 'reveza',
       description: textos().descricao,
     })
+    // crítica pelo ambiente (as rotinas de terminal) ou pela marca que o agente guarda (a sessão retomada continua)
+    critica = ambienteCritico(await $.env.get('REVEZA_CRITICA').catch(() => undefined)) || (await marcaNoAgente((url, init) => $.http.fetch(url, init))) === true
 
     $.clock.every(5000, () => {
       void (async () => {
@@ -344,8 +403,10 @@ export const register: Register = (on, options) => {
         if (!chavePonte) chavePonte = String(await $.fs.read(`${raiz}/ponte.chave`).catch(() => '')).trim()
         // o relógio do host (e não o Date): é ele que marca os 5 s, e o teste o move
         const agora = await $.clock.now()
-        if (!espera && agora - ultimaLeitura < LEITURA_MS) return
+        // em espera, a leitura é a cada 5 s: a sessão volta logo que uma conta tiver folga
+        if (!espera && !segurando() && agora - ultimaLeitura < LEITURA_MS) return
         ultimaLeitura = agora
+        const segurandoAntes = segurando()
         let ativa: Ativa | null = null
         try {
           const p = await pedido('GET', '/api/ativa')
@@ -360,6 +421,20 @@ export const register: Register = (on, options) => {
         if (aviso && !outraConta) $.ui.toast(aviso)
         const status = statusMudou()
         if (status) $.ui.status(status.texto)
+
+        // sessões críticas: a espera desta sessão começou ou acabou
+        const segurandoAgora = segurando()
+        if (segurandoAgora && !segurandoAntes) $.ui.toast(textos().criticas.comecou(gatilho))
+        if (!segurandoAgora && segurandoAntes) {
+          $.ui.toast(textos().criticas.voltou)
+          if (paradaNaEspera) {
+            paradaNaEspera = false
+            retomando = true
+            // texto fixo, como a retomada do limite
+            await $.prompt.submit({ text: textos().criticas.retomada }).catch(() => undefined)
+            return
+          }
+        }
 
         // conta sem o modelo da sessão e nenhuma troca em 2 minutos: não fica preso, segue no modelo padrão
         if (espera?.modelo && agora - espera.desde > ESPERA_MODELO_MS && !(ativa && ativa.versao > espera.referencia)) {
@@ -615,6 +690,21 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // Sessões críticas: na espera, o prompt da sessão comum não entra (os comandos de barra passam: /reveza critica, /model)
+  on('prompt.submit', ($, e, next) => {
+    if (!segurando() || e.command) return next(e)
+    // o "continue" do próprio Reveza (a volta do limite) recusado aqui fica para quando a espera acabar
+    if (e.origin?.kind === 'plugin') paradaNaEspera = true
+    return { drop: textos().criticas.recusaPrompt(gatilho) }
+  })
+
+  // ...e a ação dela é recusada com o pedido de parar; quando a espera acaba, ela continua sozinha
+  on('tool.call', ($, e, next) => {
+    if (!segurando()) return next(e)
+    paradaNaEspera = true
+    return { deny: textos().criticas.recusaAcao(gatilho) }
+  })
+
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     if (e.tool !== 'Bash' || !enxugar) return next(e)
     const r = await next(e)
@@ -631,13 +721,21 @@ export const register: Register = (on, options) => {
     return curto === null ? r : { result: { ...s, stdout: curto }, context: r.context }
   })
 
-  on('command.run', { command: 'reveza' }, async $ => {
+  on('command.run', { command: 'reveza' }, async ($, e) => {
     let estado: Estado | null = null
     const raiz =
       (await $.env.get('REVEZA_HOME')) ??
       `${(await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''}/.reveza`
     if (!idioma) idioma = usarIdioma(await idiomaDaInstalacao(caminho => $.fs.read(caminho), raiz))
     if (!chavePonte) chavePonte = String(await $.fs.read(`${raiz}/ponte.chave`).catch(() => '')).trim()
+    if (pedeCritica(e.args ?? '')) {
+      const nova = await marcaNoAgente((url, init) => $.http.fetch(url, init), !critica)
+      if (nova === null) return { text: textos().foraDoAr }
+      critica = nova
+      const status = statusMudou()
+      if (status) $.ui.status(status.texto)
+      return { text: critica ? textos().criticas.virouCritica : textos().criticas.virouComum }
+    }
     try {
       const p = await pedido('GET', '/api/estado')
       const r = await $.http.fetch(`${BASE}/api/estado`, p.init)
@@ -648,6 +746,6 @@ export const register: Register = (on, options) => {
     if (!estado) {
       return { text: textos().foraDoAr }
     }
-    return { text: resumo(estado) }
+    return { text: resumo(estado, undefined, critica) }
   })
 }

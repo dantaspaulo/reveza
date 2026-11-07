@@ -44,6 +44,8 @@ describe("FonteSupabase (partes puras)", () => {
         "atualizar_sozinho",
         "auto",
         "aviso",
+        "criticas",
+        "criticas_gatilho",
         "espera_entre_trocas_s",
         "exigir_duas_etapas",
         "fuso",
@@ -63,6 +65,8 @@ describe("FonteSupabase (partes puras)", () => {
       rodizioOrdem: "aleatoria",
       atualizarSozinho: "desligada",
       assistenteAtualizar: "padrao",
+      criticas: false,
+      criticasGatilho: 75,
     })
   })
 

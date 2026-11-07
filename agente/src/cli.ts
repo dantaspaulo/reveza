@@ -165,6 +165,9 @@ Uso: reveza <comando> [opções]
   som [ligar|desligar|testar]     som do sistema quando este computador troca de conta (ligado de fábrica)
   resumo [180k|desligar]          perto de quantos tokens o assistente resume a conversa nas contas que não são 20x
                                  (de fábrica, 180k: evita sessão travada e faz a conta durar mais)
+  criticas [ligar [75]|desligar|marcar <sessão>|desmarcar <sessão>]
+                                  sessões críticas: sem conta com folga abaixo do gatilho, só as marcadas seguem
+                                  (com nuvem, liga pelo painel; na sessão, /reveza critica marca e desmarca)
   uso [--dias N] [--csv|--json]   tokens e custo equivalente por dia, conta, modelo e projeto
   doctor [--so-ver] [--json]      confere serviço, mod, credenciais, chaveiro, nuvem, relógio e versões, e conserta o que
                                   tem conserto seguro (serviço, mod, conta em uso sem login); --so-ver só confere
@@ -202,6 +205,9 @@ Usage: reveza <command> [options]
   resumo [180k|desligar]          around how many tokens the coding assistant summarizes the conversation on
                                  accounts that are not 20x (default 180k: avoids a stuck session and makes the
                                  account last longer)
+  criticas [ligar [75]|desligar|marcar <session>|desmarcar <session>]
+                                  critical sessions: with no account below the trigger, only marked ones keep going
+                                  (with the cloud, turn it on in the panel; in a session, /reveza critica toggles it)
   uso [--dias N] [--csv|--json]   tokens and equivalent cost per day, account, model and project
   doctor [--so-ver] [--json]      checks service, mod, credentials, keychain, cloud, clock and versions, and fixes
                                   what has a safe fix (service, mod, account in use without a login); --so-ver only checks
@@ -449,6 +455,74 @@ async function cmdResumo(amb: Ambiente, a: Args): Promise<number> {
           ),
     );
   }
+  return 0;
+}
+
+/**
+ * reveza criticas [ligar [75]|desligar|marcar <sessão>|desmarcar <sessão>]: as sessões críticas (criticas.ts). Sem conta
+ * com folga abaixo do gatilho, só as sessões marcadas seguem. Ligar e o gatilho, só sem nuvem (com nuvem, o painel).
+ */
+async function cmdCriticas(amb: Ambiente, a: Args): Promise<number> {
+  const acao = a.pos[1] ?? "";
+  const uso = t(
+    "uso: reveza criticas [ligar [50-95]|desligar|marcar <sessão>|desmarcar <sessão>]",
+    "usage: reveza criticas [ligar [50-95]|desligar|marcar <session>|desmarcar <session>]",
+  );
+  let corpo: Record<string, unknown> = {};
+  if (acao === "ligar") {
+    corpo = { ligada: true };
+    if (a.pos[2] !== undefined) {
+      const g = Number(a.pos[2].replace("%", ""));
+      if (!Number.isFinite(g)) {
+        amb.erro(uso);
+        return 2;
+      }
+      corpo.gatilho = g;
+    }
+  } else if (acao === "desligar") corpo = { ligada: false };
+  else if (acao === "marcar" || acao === "desmarcar") {
+    if (!a.pos[2]) {
+      amb.erro(uso);
+      return 2;
+    }
+    corpo = { sessao: a.pos[2], critica: acao === "marcar" };
+  } else if (acao) {
+    amb.erro(uso);
+    return 2;
+  }
+  const porta = portaDe(amb, a);
+  const chave = chaveDaPonte(amb.c.ponteChave, false);
+  const r = await pedirPonte(porta, "POST", "/api/critica", corpo, chave);
+  if (!r) {
+    amb.erro(t("o agente não está rodando", "the agent is not running"));
+    return 1;
+  }
+  const c = r.corpo as { ok?: boolean; erro?: string; critica?: boolean };
+  if (!c.ok) {
+    amb.erro(c.erro ?? t("o agente recusou", "the agent refused"));
+    return 1;
+  }
+  if (corpo.sessao !== undefined) {
+    amb.saida(
+      c.critica
+        ? t(`sessão ${String(corpo.sessao)}: crítica (segue mesmo sem folga)`, `session ${String(corpo.sessao)}: critical (keeps going without headroom)`)
+        : t(`sessão ${String(corpo.sessao)}: comum`, `session ${String(corpo.sessao)}: regular`),
+    );
+    return 0;
+  }
+  const lista = await pedirPonte(porta, "POST", "/api/critica", {}, chave);
+  const l = (lista?.corpo ?? {}) as { ligada?: boolean; gatilho?: number; segurar?: boolean; sessoes?: { sessao: string; em: number }[] };
+  amb.saida(
+    l.ligada
+      ? t(
+          `sessões críticas: ligadas, gatilho em ${l.gatilho}%${l.segurar ? " (agora só as críticas seguem)" : ""}`,
+          `critical sessions: on, trigger at ${l.gatilho}%${l.segurar ? " (only critical sessions run now)" : ""}`,
+        )
+      : t("sessões críticas: desligadas", "critical sessions: off"),
+  );
+  const sessoes = l.sessoes ?? [];
+  amb.saida(t(`marcadas neste computador: ${sessoes.length}`, `marked on this computer: ${sessoes.length}`));
+  for (const s of sessoes) amb.saida(`  ${s.sessao}`);
   return 0;
 }
 
@@ -1209,6 +1283,8 @@ export async function executarCli(argv: string[], amb: Ambiente = ambienteReal()
         return await cmdSom(amb, a);
       case "resumo":
         return await cmdResumo(amb, a);
+      case "criticas":
+        return await cmdCriticas(amb, a);
       case "uso":
         return await cmdUso(amb, a);
       case "doctor":

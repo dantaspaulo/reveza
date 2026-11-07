@@ -21,6 +21,7 @@ import { PRINCIPAL } from "./credenciais/tipos.js";
 import { CredenciaisSombra } from "./credenciais/sombra.js";
 import type { Credenciais } from "./credenciais/tipos.js";
 import { agendarRodizio, candidata, decidir, gatilhoDeTroca, pctEfetivo, sorteioReal } from "./decisao.js";
+import { gatilhoValido, lembrarCritica, marcarCritica, sessaoCritica, sessaoValida, situacaoCriticas } from "./criticas.js";
 import { carregarEstadoDoAgente, salvarCopiaBoa, salvarEstado, type EstadoLocal, type Modo, type Recuperacao, type UltimaAtualizacaoAssistente } from "./estado.js";
 import { idiomaAtual, t } from "./i18n.js";
 import { aplicarAutoUpdater, ASSISTENTE_CONFERIR_S, autoDesligado, erroDoUpdate, modoAssistente, type ModoAssistente } from "./assistente.js";
@@ -546,6 +547,7 @@ export class Agente {
           await this.trocador.arrumarPastas(this.logins.pastas());
         }
         this.trocador.registrarHistorico(t);
+        this.vigiarCriticas(t);
         if (!this.comNuvem && this.estado.config.modo === "rodizio" && !this.estado.proximoRodizioEm) {
           agendarRodizio(this.estado, t, this.d.aleatorio);
         }
@@ -952,6 +954,32 @@ export class Agente {
     k.rodizio.minutos = num(cfg.rodizio_minutos, 15, 480) ?? k.rodizio.minutos;
     if (cfg.rodizio_ordem === "aleatoria" || cfg.rodizio_ordem === "menor_uso") k.rodizio.ordem = cfg.rodizio_ordem;
     if (typeof cfg.retomar_terminal === "boolean") k.retomarHeadless = cfg.retomar_terminal;
+    if (typeof cfg.criticas === "boolean") k.criticas = cfg.criticas;
+    k.criticasGatilho = gatilhoValido(cfg.criticas_gatilho) ?? k.criticasGatilho;
+  }
+
+  /** Se as sessões comuns estavam em espera na última volta (null: ainda não olhado desde que o agente subiu). */
+  private segurandoComuns: boolean | null = null;
+
+  /**
+   * Sessões críticas (criticas.ts): a espera das comuns começa ou acaba. O evento fica no log e no painel; o mod de cada
+   * sessão lê a situação pela ponte.
+   */
+  vigiarCriticas(t: number): void {
+    const s = situacaoCriticas(this.estado, t);
+    const segurar = s?.segurar === true;
+    const antes = this.segurandoComuns;
+    this.segurandoComuns = segurar;
+    if (antes === null ? !segurar : antes === segurar) return;
+    if (segurar) {
+      this.trocador.evento(
+        "aviso",
+        `Nenhuma conta com folga abaixo de ${s!.gatilho}%: as sessões comuns ficam em espera e só as críticas seguem.`,
+        { criticas: "segurando", gatilho: s!.gatilho },
+      );
+    } else {
+      this.registrarEvento("info", "Uma conta voltou a ter folga: as sessões comuns voltaram.", { criticas: "liberadas" });
+    }
   }
 
   /**
@@ -2060,6 +2088,11 @@ export class Agente {
       credencial: { esperandoConta: this.esperandoConta() },
       modelo: this.estado.modeloEscrito ?? null,
       enxugar: this.estado.enxugar === true,
+      criticas: {
+        ...(situacaoCriticas(this.estado, this.d.relogio.agora()) ?? { segurar: false, gatilho: this.estado.config.criticasGatilho }),
+        ligada: this.estado.config.criticas === true,
+        marcadas: Object.keys(this.estado.sessoesCriticas ?? {}).length,
+      },
     });
   }
 
@@ -2068,7 +2101,52 @@ export class Agente {
       ativa: () => {
         const e = this.estado;
         const c = e.ativa ? e.contas[e.ativa] : undefined;
-        return { slug: e.ativa, email: c?.email ?? null, versao: e.versao, trocadaEm: e.trocadaEm, enxugar: e.enxugar === true };
+        // `criticas`: só com a função ligada (o mod antigo ignora o campo)
+        const criticas = situacaoCriticas(e, this.d.relogio.agora());
+        return {
+          slug: e.ativa,
+          email: c?.email ?? null,
+          versao: e.versao,
+          trocadaEm: e.trocadaEm,
+          enxugar: e.enxugar === true,
+          ...(criticas ? { criticas } : {}),
+        };
+      },
+      critica: (corpo: Record<string, unknown>): Resposta => {
+        const t = this.d.relogio.agora();
+        // ligar, desligar e o gatilho: com nuvem, quem decide é o painel (a próxima busca escreveria por cima)
+        if (typeof corpo.ligada === "boolean" || corpo.gatilho !== undefined) {
+          if (this.comNuvem) return { status: 409, corpo: { ok: false, erro: "com nuvem, ligue e ajuste pelo painel (Troca automática, Sessões críticas)" } };
+          const g = corpo.gatilho === undefined ? null : gatilhoValido(corpo.gatilho);
+          if (corpo.gatilho !== undefined && g === null) return { status: 400, corpo: { ok: false, erro: "gatilho de 50 a 95" } };
+          if (typeof corpo.ligada === "boolean") this.estado.config.criticas = corpo.ligada;
+          if (g !== null) this.estado.config.criticasGatilho = g;
+          this.salvar();
+          this.vigiarCriticas(t);
+        }
+        if (corpo.sessao === undefined) {
+          const marcas = this.estado.sessoesCriticas ?? {};
+          const k = this.estado.config;
+          return {
+            status: 200,
+            corpo: {
+              ok: true,
+              ligada: k.criticas === true,
+              gatilho: k.criticasGatilho,
+              segurar: situacaoCriticas(this.estado, t)?.segurar === true,
+              sessoes: Object.entries(marcas).map(([sessao, em]) => ({ sessao, em })),
+            },
+          };
+        }
+        const sessao = sessaoValida(corpo.sessao);
+        if (!sessao) return { status: 400, corpo: { ok: false, erro: "sessão inválida" } };
+        if (typeof corpo.critica === "boolean") {
+          if (marcarCritica(this.estado, sessao, corpo.critica, t)) {
+            this.d.log.info(`sessão ${sessao.slice(0, 8)} ${corpo.critica ? "marcada como crítica" : "deixou de ser crítica"}`);
+            this.salvar();
+          }
+        } else lembrarCritica(this.estado, sessao, t);
+        return { status: 200, corpo: { ok: true, critica: sessaoCritica(this.estado, sessao) } };
       },
       estado: () => this.publico(),
       medida: (corpo: Record<string, unknown>): Resposta => {

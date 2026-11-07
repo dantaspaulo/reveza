@@ -25,6 +25,11 @@ export default secao({
           texto: "{proxima} Até lá, o Reveza usa a conta com mais folga até 100%.",
           botao: "Ver contas",
         },
+        so_criticas: {
+          titulo: "Só as sessões críticas seguem agora",
+          texto: "Todas as contas passaram do gatilho, e as sessões comuns esperam até uma conta ter folga. {proxima}",
+          botao: "Ver a regra",
+        },
         proxima: "A próxima libera {quando}: {conta}.",
         semPrevisao: "Ainda sem a hora em que a próxima libera.",
         computador_parado: {
@@ -116,6 +121,11 @@ export default secao({
           titulo: "Running low: no account has room right now",
           texto: "{proxima} Until then, Reveza uses the account with the most room up to 100%.",
           botao: "See accounts",
+        },
+        so_criticas: {
+          titulo: "Only critical sessions are running now",
+          texto: "Every account is past the trigger, and regular sessions wait until an account has room. {proxima}",
+          botao: "See the rule",
         },
         proxima: "Next to free up {quando}: {conta}.",
         semPrevisao: "No time yet for when the next one frees up.",

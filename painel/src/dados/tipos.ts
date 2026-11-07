@@ -174,6 +174,13 @@ export interface ConfigTroca {
   atualizarSozinho: ModoAtualizar
   /** O assistente de código dos computadores: o jeito dele (o padrão), sempre a mais nova ou só pelo painel. */
   assistenteAtualizar: ModoAssistente
+  /**
+   * Sessões críticas (0.15.0): sem nenhuma conta com folga abaixo do gatilho, as sessões comuns esperam e só as
+   * marcadas seguem. Desligada de fábrica.
+   */
+  criticas: boolean
+  /** O gatilho das sessões críticas, em % (50 a 95). */
+  criticasGatilho: number
   /** Só leitura: de quem é a vez de atualizar sozinho agora (config `atualizacao_vez`, um computador por vez). */
   atualizacaoVez?: VezAtualizacao | null
   /** Só leitura: a nuvem e o painel (0.3.0): a versão da nuvem, o que está no ar e o andamento. */

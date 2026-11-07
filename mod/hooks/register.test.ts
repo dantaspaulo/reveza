@@ -1,7 +1,19 @@
 import type { On } from 'claude-code'
 import { expect, mock, test, type TestBody } from 'claude-code/testing'
 
-import { aguardarMs, entradaDaSessao, hmacHex, janelasTexto, paradaDoTurno, releituraDaConta, resumo, tipoDoLimite } from './register'
+import {
+  aguardarMs,
+  ambienteCritico,
+  deveSegurar,
+  entradaDaSessao,
+  hmacHex,
+  janelasTexto,
+  paradaDoTurno,
+  pedeCritica,
+  releituraDaConta,
+  resumo,
+  tipoDoLimite,
+} from './register'
 
 // Agente falso: responde /api/ativa com a versão do momento e guarda o que o mod mandou.
 // `instalacao` é o conteúdo do instalacao.json (o idioma da instalação); sem ele, o arquivo não existe (português).
@@ -34,6 +46,10 @@ function agente(on: On, instalacao?: string) {
     limiteExtra: {} as Record<string, unknown>,
     // o CLAUDE_CODE_ENTRYPOINT da sessão
     entrada: undefined as string | undefined,
+    // sessões críticas: o que /api/ativa manda (undefined: função desligada), a marca guardada e o REVEZA_CRITICA
+    criticas: undefined as { segurar: boolean; gatilho: number } | undefined,
+    marcada: false,
+    ambienteCritica: undefined as string | undefined,
   }
   const perfis: { auth: string | undefined; cabecalhos: Record<string, string> }[] = []
   on('http.fetch', async ($, e) => {
@@ -51,7 +67,12 @@ function agente(on: On, instalacao?: string) {
       cabecalhos: (e.init?.headers ?? {}) as Record<string, string>,
     })
     let resposta: unknown = { ok: true }
-    if (e.url.endsWith('/api/ativa')) resposta = { slug: 'a', email: estado.email, versao: estado.versao, trocadaEm: 0, enxugar: estado.enxugar }
+    if (e.url.endsWith('/api/ativa'))
+      resposta = { slug: 'a', email: estado.email, versao: estado.versao, trocadaEm: 0, enxugar: estado.enxugar, ...(estado.criticas ? { criticas: estado.criticas } : {}) }
+    if (e.url.endsWith('/api/critica')) {
+      if (typeof corpo?.critica === 'boolean') estado.marcada = corpo.critica
+      resposta = { ok: true, critica: estado.marcada }
+    }
     if (e.url.endsWith('/api/limite')) resposta = { ok: true, versao: estado.versao, ...(estado.outraConta ? { outraConta: true } : {}), ...estado.limiteExtra }
     if (e.url.endsWith('/api/medida')) resposta = { ok: true, outraConta: estado.outraConta }
     if (e.url.endsWith('/api/estado'))
@@ -69,7 +90,10 @@ function agente(on: On, instalacao?: string) {
     return { value: { status: 200, ok: true, headers, text: JSON.stringify(resposta) } }
   })
   on('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '' } }) as never)
-  on('env.get', ($, e) => ({ value: e.name === 'HOME' ? '/home/teste' : e.name === 'CLAUDE_CODE_ENTRYPOINT' ? estado.entrada : undefined }))
+  on('env.get', ($, e) => ({
+    value:
+      e.name === 'HOME' ? '/home/teste' : e.name === 'CLAUDE_CODE_ENTRYPOINT' ? estado.entrada : e.name === 'REVEZA_CRITICA' ? estado.ambienteCritica : undefined,
+  }))
   on('fs.read', ($, e) => {
     if (e.path === '/home/teste/.reveza/ponte.chave') return { value: `${'c'.repeat(64)}\n` }
     if (instalacao && e.path === '/home/teste/.reveza/instalacao.json') return { value: instalacao }
@@ -818,4 +842,111 @@ test('as paradas que o fim do turno reconhece, pelo texto que a sessão mostrou'
   expect(paradaDoTurno('API Error: 500 Internal server error')).toBeNull()
   expect(paradaDoTurno('')).toBeNull()
   expect(paradaDoTurno(undefined)).toBeNull()
+})
+
+// Sessões críticas (0.15.0): na espera, a sessão comum não manda prompt nem roda ação; a crítica segue.
+async function leAtiva($: Parameters<TestBody>[0], relogio: { advance: (ms: number) => Promise<void>; settle: () => Promise<void> }, vezes = 8) {
+  for (let i = 0; i < vezes; i++) {
+    await relogio.advance(5000)
+    await relogio.settle()
+  }
+}
+
+test('sessões críticas: quem segura e quem segue', () => {
+  expect(deveSegurar({ segurar: true, critica: false, outraConta: false, foraDoAr: false })).toBe(true)
+  expect(deveSegurar({ segurar: true, critica: true, outraConta: false, foraDoAr: false })).toBe(false)
+  expect(deveSegurar({ segurar: true, critica: false, outraConta: true, foraDoAr: false })).toBe(false)
+  expect(deveSegurar({ segurar: true, critica: false, outraConta: false, foraDoAr: true })).toBe(false)
+  expect(deveSegurar({ segurar: false, critica: false, outraConta: false, foraDoAr: false })).toBe(false)
+  expect(pedeCritica(' critica ')).toBe(true)
+  expect(pedeCritica('crítica')).toBe(true)
+  expect(pedeCritica('critical')).toBe(true)
+  expect(pedeCritica('')).toBe(false)
+  expect(pedeCritica('criticas demais')).toBe(false)
+  expect(ambienteCritico('1')).toBe(true)
+  expect(ambienteCritico('sim')).toBe(true)
+  expect(ambienteCritico('0')).toBe(false)
+  expect(ambienteCritico(undefined)).toBe(false)
+})
+
+test('sessão comum na espera: o prompt não entra, a ação é recusada, e ela volta sozinha quando há folga', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado, avisos, status } = agente(on)
+  const enviados: string[] = []
+  on('prompt.submit', ($, e) => (enviados.push(e.text), { text: e.text }))
+  bash(on, { stdout: 'ok' })
+  estado.criticas = { segurar: true, gatilho: 75 }
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await leAtiva($, relogio)
+  expect(avisos.some(a => a.includes('passaram de 75%'))).toBe(true)
+  expect(status.at(-1)).toContain('em espera')
+
+  const p = await $.prompt.submit({ text: 'faz mais uma coisa' } as never)
+  expect((p as { drop?: string }).drop).toContain('/reveza critica')
+  expect(enviados).toHaveLength(0)
+  const comando = await $.prompt.submit({ text: '/model', command: { name: 'model' } } as never)
+  expect((comando as { drop?: string }).drop).toBeUndefined()
+
+  const r = (await rodar($, 'ls')) as { deny?: string }
+  expect(r.deny).toContain('Pare agora')
+
+  estado.criticas = { segurar: false, gatilho: 75 }
+  await leAtiva($, relogio, 3)
+  expect(avisos.some(a => a.includes('voltou a ter folga'))).toBe(true)
+  expect(enviados.some(t => t.includes('continue a tarefa'))).toBe(true)
+  expect(((await rodar($, 'ls')) as { deny?: string }).deny).toBeUndefined()
+})
+
+test('/reveza critica marca a sessão no agente, e a crítica segue na espera', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado, recebidos, status } = agente(on)
+  bash(on, { stdout: 'ok' })
+  estado.criticas = { segurar: true, gatilho: 80 }
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await leAtiva($, relogio)
+  const r = await $.command.run({ command: 'reveza', args: 'critica', origin: { kind: 'composer' } as never, presentation: { isFullscreen: false, columns: 100 } })
+  expect(r.text).toContain('agora é crítica')
+  expect(estado.marcada).toBe(true)
+  expect(recebidos.find(x => x.url.endsWith('/api/critica') && x.corpo?.critica === true)?.corpo).toMatchObject({ sessao: 'sessao-teste' })
+  expect(((await rodar($, 'ls')) as { deny?: string }).deny).toBeUndefined()
+  expect(status.at(-1)).toContain('crítica')
+  const de_novo = await $.command.run({ command: 'reveza', args: 'critica', origin: { kind: 'composer' } as never, presentation: { isFullscreen: false, columns: 100 } })
+  expect(de_novo.text).toContain('voltou a ser comum')
+  expect(estado.marcada).toBe(false)
+})
+
+test('sessão marcada antes (retomada) ou aberta com REVEZA_CRITICA=1 já nasce crítica', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado } = agente(on)
+  bash(on, { stdout: 'ok' })
+  estado.criticas = { segurar: true, gatilho: 75 }
+  estado.ambienteCritica = '1'
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await leAtiva($, relogio)
+  expect(((await rodar($, 'ls')) as { deny?: string }).deny).toBeUndefined()
+})
+
+test('agente fora do ar: ninguém fica em espera (e a sessão parada continua)', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { estado } = agente(on)
+  const enviados: string[] = []
+  on('prompt.submit', ($, e) => (enviados.push(e.text), { text: e.text }))
+  bash(on, { stdout: 'ok' })
+  estado.criticas = { segurar: true, gatilho: 75 }
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  await leAtiva($, relogio)
+  expect(((await rodar($, 'ls')) as { deny?: string }).deny).toContain('Pare agora')
+  estado.foraDoAr = true
+  await leAtiva($, relogio, 3)
+  expect(((await rodar($, 'ls')) as { deny?: string }).deny).toBeUndefined()
+  expect(enviados.some(t => t.includes('continue a tarefa'))).toBe(true)
+})
+
+test('/reveza mostra as sessões críticas quando o agente manda', () => {
+  const texto = resumo(
+    { auto: true, modo: 'limiar', limiares: { aviso: 90, troca: 95 }, contas: [], criticas: { ligada: true, gatilho: 75, segurar: true } },
+    'pt-BR',
+    true,
+  )
+  expect(texto).toContain('Sessões críticas: ligadas, gatilho em 75% (agora só as críticas seguem). Esta sessão: crítica')
 })

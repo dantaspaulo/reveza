@@ -9,6 +9,7 @@ import {
   CalendarClockIcon,
   CircleDollarSignIcon,
   PencilIcon,
+  ShieldCheckIcon,
   TimerIcon,
 } from "lucide-react"
 
@@ -26,7 +27,9 @@ import { Slider } from "@/components/ui/slider"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Codigo } from "@/components/painel/copiar"
 import { useAcao, useAgora, useDados, useEstado, usePermissao } from "@/dados/contexto"
+import { soCriticas } from "@/dados/derivados"
 import type { ConfigTroca, Conta, Modo, OrdemRodizio } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import { fmtDuracao, fmtFuturo, fmtPct } from "@/lib/formato"
@@ -125,6 +128,8 @@ export default function Troca() {
       return { ...x, ordem }
     })
 
+  // o que vale agora (a configuração salva, não o rascunho): as sessões comuns estão em espera
+  const seguraAgora = soCriticas(estado.contas, estado.config, agora)
   const fx = faixaRodizio(cfg.rodizioMinutos)
   const vars = {
     aviso: fmtPct(cfg.aviso, idioma),
@@ -333,6 +338,56 @@ export default function Troca() {
         </Card>
 
         <div className="flex flex-col gap-4">
+          <Card className={cn("transition-colors", seguraAgora && "border-atencao-borda")}>
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <ShieldCheckIcon className="size-4 text-muted-foreground" aria-hidden />
+                {t("troca.criticas.titulo")}
+                {seguraAgora ? (
+                  <Badge variant="outline" className="border-atencao-borda bg-atencao-fundo text-atencao">
+                    {t("troca.criticas.agora")}
+                  </Badge>
+                ) : null}
+              </CardTitle>
+              <CardDescription>{t("troca.criticas.descricao")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FieldGroup>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldLabel htmlFor="criticas">{t("troca.criticas.ligar")}</FieldLabel>
+                    <FieldDescription>{t("troca.criticas.ligarDica")}</FieldDescription>
+                  </FieldContent>
+                  <Switch id="criticas" checked={cfg.criticas} onCheckedChange={(criticas) => mudar({ criticas })} disabled={!pode} />
+                </Field>
+                {cfg.criticas ? (
+                  <>
+                    <Limiar
+                      rotulo={t("troca.criticas.gatilho")}
+                      dica={t("troca.criticas.gatilhoDica")}
+                      valor={cfg.criticasGatilho}
+                      aoMudar={(criticasGatilho) => mudar({ criticasGatilho })}
+                      desligado={!pode}
+                      min={50}
+                      max={95}
+                      passo={5}
+                    />
+                    <Field>
+                      <FieldTitle>{t("troca.criticas.comoMarcar")}</FieldTitle>
+                      <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                        <span>{t("troca.criticas.naSessao")}</span>
+                        <Codigo texto="/reveza critica" />
+                        <span>{t("troca.criticas.naRotina")}</span>
+                        <Codigo texto="REVEZA_CRITICA=1" />
+                        <span>{t("troca.criticas.noTerminal")}</span>
+                        <Codigo texto="reveza criticas marcar <id>" />
+                      </div>
+                    </Field>
+                  </>
+                ) : null}
+              </FieldGroup>
+            </CardContent>
+          </Card>
           <AgendaTeto aoEditar={(c) => editar.abrir(c)} fuso={cfg.fuso} aoMudarFuso={(fuso) => mudar({ fuso })} />
           <Card>
             <CardHeader>
@@ -432,12 +487,18 @@ function Limiar({
   valor,
   aoMudar,
   desligado,
+  min = 50,
+  max = 100,
+  passo = 1,
 }: {
   rotulo: string
   dica: string
   valor: number
   aoMudar: (v: number) => void
   desligado?: boolean
+  min?: number
+  max?: number
+  passo?: number
 }) {
   const { idioma } = useT()
   return (
@@ -448,9 +509,9 @@ function Limiar({
       </div>
       <Slider
         value={[valor]}
-        min={50}
-        max={100}
-        step={1}
+        min={min}
+        max={max}
+        step={passo}
         onValueChange={(v) => aoMudar(v[0] ?? valor)}
         disabled={desligado}
         aria-label={rotulo}

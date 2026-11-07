@@ -46,6 +46,7 @@ Quem usa o Claude Code o dia todo conhece estes três momentos:
 | Senha de conta passada por mensagem | Cada login cifrado no seu computador; a nuvem guarda sem conseguir ler |
 | A conta do plano maior cai em qualquer computador | Cada computador pode ter a sua conta preferida, usada sempre que estiver livre |
 | Trocar o modelo à mão depois de cada troca de conta | Cada conta com o seu modelo, gravado no computador na hora da troca |
+| As contas acabam e o monitoramento para junto com o resto | Sessões críticas: sem folga nas contas, as comuns esperam e só as marcadas seguem |
 | `git status` e `grep` longos enchendo a conversa | Saída enxuta, opcional: os comandos de leitura chegam mais curtos e a conta rende mais |
 | Planilha para adivinhar qual conta ainda tem saldo | Painel com uso, custo e previsão de esgotar de cada conta |
 | Cada pessoa do time resolvendo no seu canto | Time com papéis, alertas e o histórico de cada troca |
@@ -194,6 +195,7 @@ reveza trocar a@exemplo.com
 reveza uso --csv         # registro de uso em planilha
 reveza som desligar      # tira o som da troca (som ligar, som testar)
 reveza resumo 300k       # perto de quantos tokens a conversa é resumida (de fábrica, 180k; resumo desligar)
+reveza criticas          # sessões críticas: ligadas, gatilho e as marcadas (criticas marcar <sessão>)
 reveza doctor            # diagnóstico
 reveza contas conectar b@exemplo.com   # conecta uma conta pelo terminal
 ```
@@ -222,6 +224,14 @@ na frente vale); com pipe, `;`, outro `&&` ou redirecionamento, a saída passa i
 13/10/2026, em 13 comandos de leitura em três repositórios de verdade: 34% menos texto no total (de 119.800 para 79.333
 caracteres); `git status` de 51% a 59%, `find` com subpastas 48%, `grep -rn` de 17% a 20%, `ls -la` de 6% a 14% e
 `git diff` de 1% a 3% (o diff quase não tem o que tirar antes do corte).
+
+**Sessões críticas:** desligadas de fábrica. Para o que não pode parar (monitoramento, correção, atendimento). Em
+**Troca automática**, ligue **Sessões críticas** e escolha o gatilho (75% de fábrica). Quando nenhuma conta estiver
+abaixo dele, as sessões comuns esperam: o prompt e as ações delas são recusados com um aviso, e quem estava no meio de
+uma tarefa continua sozinha quando uma conta voltar a ter folga. As críticas seguem, gastando o que sobra. Para marcar
+uma sessão, digite `/reveza critica` nela (de novo desmarca); em rotinas abertas por script, ponha `REVEZA_CRITICA=1`
+antes do comando; no terminal, `reveza criticas marcar <id da sessão>`. Reservar uma conta não faria isso: a conta vale
+para o computador inteiro, e todas as sessões abertas gastariam dela juntas.
 
 **Conectar conta:** o computador abre o login oficial numa **janela anônima** do navegador (Chrome, Edge, Brave,
 Chromium ou Firefox), sem a conta que já estiver aberta nele (quem tem vários perfis do Chrome caía na conta errada).

@@ -143,6 +143,15 @@ const INTERACOES = [
     },
   ],
   [
+    "i-troca-criticas",
+    "/troca",
+    async (p) => {
+      const ligar = p.getByLabel(L("Segurar as sessões comuns quando faltar folga", "Hold regular sessions when room runs out"))
+      await ligar.click()
+      await ligar.scrollIntoViewIfNeeded()
+    },
+  ],
+  [
     "i-time-convidar",
     "/time",
     async (p) => {

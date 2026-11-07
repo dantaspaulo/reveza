@@ -80,6 +80,11 @@ export interface AlvoPonte {
   sessaoErro(corpo: Record<string, unknown>): Resposta | Promise<Resposta>;
   /** Conserto do `reveza doctor` que precisa do agente rodando (só os da lista fechada, pelo nome). */
   consertar(corpo: Record<string, unknown>): Resposta | Promise<Resposta>;
+  /**
+   * Sessões críticas (0.15.0): `{ sessao }` lê a marca da sessão; `{ sessao, critica }` marca ou desmarca; `{}` lista
+   * (a linha de comando).
+   */
+  critica(corpo: Record<string, unknown>): Resposta | Promise<Resposta>;
 }
 
 const SESSAO = /^[A-Za-z0-9_-]{1,80}$/;
@@ -173,6 +178,7 @@ export function criarPonte(alvo: AlvoPonte, porta: number, chave: string | null 
         if (caminho === "/api/resumo") return alvo.resumo(c);
         if (caminho === "/api/sessao/erro") return alvo.sessaoErro(c);
         if (caminho === "/api/consertar") return alvo.consertar(c);
+        if (caminho === "/api/critica") return alvo.critica(c);
         const m = /^\/api\/fila\/([^/]+)\/(retomada|descartar)$/.exec(caminho);
         if (m) {
           const sessao = decodeURIComponent(m[1]!);
