@@ -518,6 +518,26 @@ describe("comandos do painel", () => {
     assert.equal(banco.comandos.find((c) => c.id === 3)!.http, 409, "sessão com tela não é retomada no terminal por cima");
   });
 
+  test("retomar_sessao: conversa de agente do OpenBot é recusada (ele a reabre sozinho; seria uma segunda cópia)", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    const sessao = "66666666-0000-4000-8000-000000000006";
+    const pasta = path.join(m.c.home, "OpenBot", "Agents", "agent-2222");
+    fs.mkdirSync(pasta, { recursive: true });
+    const dir = path.join(m.c.projetos, "-ob");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${sessao}.jsonl`), JSON.stringify({ sessionId: sessao, cwd: pasta, entrypoint: "openbot" }) + "\n");
+    e().fila.unshift({ sessao, cwd: pasta, tipo: "headless", em: m.relogio.agora(), estado: "aguardando", conta: null });
+    banco.comandos.push({ id: 1, acao: "retomar_sessao", corpo: { sessao }, pc: "pc-1", estado: "pendente" });
+    await m.agente.busca();
+    assert.deepEqual(m.cli.retomadas, []);
+    const c = banco.comandos.find((x) => x.id === 1)!;
+    assert.equal(c.http, 409);
+    assert.match(JSON.stringify(c.resposta), /openbot/);
+    assert.equal(e().fila.find((f) => f.sessao === sessao)!.estado, "descartada");
+  });
+
   test("o pedido \"ligar\" do painel antigo (a frase cifrada para o navegador) é recusado: saiu na 0.2.0", async () => {
     const c = await comComando("ligar", { publica: { kty: "EC", crv: "P-256", x: "a".repeat(43), y: "b".repeat(43) }, idioma: "pt-BR" });
     assert.equal(c.http, 410);

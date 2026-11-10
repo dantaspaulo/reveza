@@ -185,6 +185,14 @@ aprende. Outro usuário do mesmo computador, que alcança 127.0.0.1, não lê e-
 retomada de sessão só acontece na pasta registrada na transcrição da própria sessão (nunca na que chega pela ponte),
 e o texto que o mod põe no prompt é fixo.
 
+**Conversa de outro programa não se retoma.** O `claude --resume <sessão> -p` da retomada sem tela vale só para
+conversa do próprio assistente: o `entrypoint` do começo da transcrição é `cli` ou `sdk-cli`. Conversa que outro
+programa abriu (o OpenBot grava `openbot`; um app pelo SDK, `sdk-ts` ou `sdk-py`), ou que roda numa pasta de agente do
+OpenBot (`~/OpenBot/Agents/<agente>`, mesmo sem a marca), fica de fora: o programa a reabre sozinho na conta nova, e a
+cópia do Reveza trabalharia junto com a dele, na mesma conversa e nas mesmas pastas, respondendo para o Reveza e não
+para quem conversa (caso de 10/11/2026: duas cópias de um agente do OpenBot ao mesmo tempo). A fila marca a sessão como
+descartada, com um evento dizendo de quem ela é, e o **retomar** do painel responde 409.
+
 **A conta da sessão (0.10.3).** O uso ao vivo (`/api/medida`) e o limite (`/api/limite`) só valem para a conta em uso
 quando a sessão está nela. Relato de um usuário (22/10/2026): o app de desktop, com login próprio numa conta A, carregava
 o mod, e o uso dele era gravado na conta B, a em uso (o painel e a troca decidiam com o número errado). O mod lê a conta

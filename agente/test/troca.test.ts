@@ -3,7 +3,7 @@ import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { cwdDaSessao } from "../src/agente.js";
+import { cwdDaSessao, lerSessao } from "../src/agente.js";
 import { EMAIL_VALIDO } from "../src/logins.js";
 import { CONFERIR_TROCA_MS } from "../src/config.js";
 import { PRINCIPAL_MORTA_APOS_S } from "../src/troca.js";
@@ -516,6 +516,60 @@ describe("leitura de uso", () => {
     assert.deepEqual(m.cli.retomadas, []);
     assert.equal(e().fila[0]!.estado, "descartada");
     assert.equal(cwdDaSessao(m.c.projetos, "../../etc/passwd"), null);
+  });
+
+  // Conversa aberta por outro programa (o OpenBot, um app pelo SDK): ele a reabre sozinho na conta nova. Um
+  // `claude --resume -p` do Reveza por cima dela punha duas cópias trabalhando juntas, na mesma conversa e na mesma
+  // pasta, e a resposta da segunda ia para o Reveza, não para quem conversa (caso de 10/11/2026).
+  function transcricaoDe(sessao: string, cwd: string, ...origens: (string | undefined)[]) {
+    const dir = path.join(m.c.projetos, "-outro");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(cwd, { recursive: true });
+    const linhas = origens.map((o) => JSON.stringify({ type: "user", sessionId: sessao, cwd, ...(o ? { entrypoint: o } : {}) }));
+    fs.writeFileSync(path.join(dir, `${sessao}.jsonl`), linhas.join("\n") + "\n");
+  }
+
+  test("conversa de agente do OpenBot (pasta em ~/OpenBot/Agents/*) não é reaberta com claude --resume -p", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    const pasta = path.join(m.c.home, "OpenBot", "Agents", "agent-0000");
+    // a primeira linha é do OpenBot; a segunda, de uma retomada antiga do próprio Reveza (que grava sdk-cli)
+    transcricaoDe(S9, pasta, "openbot", "sdk-cli");
+    await m.agente.alvoPonte().limite({ sessao: S9, cwd: pasta, tipo: "headless" });
+    await m.agente.esperar();
+    assert.deepEqual(m.cli.retomadas, [], "nenhum claude --resume -p");
+    assert.equal(e().fila[0]!.estado, "descartada");
+    assert.ok(e().eventos.some((x) => x.tipo === "info" && /é do openbot/.test(x.texto)), "o evento diz por que não retomou");
+  });
+
+  test("na pasta de agente do OpenBot vale mesmo sem a marca de origem; fora dela, a origem do SDK também não volta", async () => {
+    m = await montar();
+    const openbot = path.join(m.c.home, "OpenBot", "Agents", "agent-1111", "sub");
+    transcricaoDe(S9, openbot, undefined, "sdk-cli");
+    assert.deepEqual(lerSessao(m.c.projetos, S9, m.c.home), { cwd: openbot, programa: "openbot" });
+    const S8 = "88888888-0000-4000-8000-000000000008";
+    transcricaoDe(S8, path.join(m.c.base, "app"), "sdk-ts");
+    assert.equal(lerSessao(m.c.projetos, S8, m.c.home)!.programa, "sdk-ts");
+    // o terminal e o claude -p seguem sendo retomados, inclusive numa pasta que só se parece com a do OpenBot
+    const S7 = "77777777-0000-4000-8000-000000000007";
+    transcricaoDe(S7, path.join(m.c.home, "OpenBot", "AgentsX"), "sdk-cli");
+    assert.equal(lerSessao(m.c.projetos, S7, m.c.home)!.programa, null);
+    const S6 = "66666666-0000-4000-8000-000000000006";
+    transcricaoDe(S6, path.join(m.c.home, "OpenBot", "Agents"), "cli");
+    assert.equal(lerSessao(m.c.projetos, S6, m.c.home)!.programa, null, "a própria pasta Agents não é de um agente");
+
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    for (const s of [S9, S8, S7]) e().fila.unshift({ sessao: s, cwd: "/tmp", tipo: "headless", em: m.relogio.agora(), estado: "aguardando", conta: null });
+    m.agente.retomarHeadless();
+    assert.deepEqual(m.cli.retomadas, [{ sessao: S7, cwd: path.join(m.c.home, "OpenBot", "AgentsX") }]);
+    assert.deepEqual(
+      e().fila.filter((f) => f.sessao !== S7).map((f) => f.estado),
+      ["descartada", "descartada"],
+    );
   });
 });
 

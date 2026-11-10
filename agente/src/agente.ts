@@ -690,25 +690,38 @@ export class Agente {
         f.estado = "descartada";
         continue;
       }
-      const cwd = this.retomar(f.sessao);
-      f.estado = cwd ? "retomada" : "descartada";
-      if (cwd) this.trocador.evento("retomada", `Retomei a sessão de terminal ${f.sessao.slice(0, 8)} em ${path.basename(cwd)}.`, { sessao: f.sessao });
+      const r = this.retomar(f.sessao);
+      f.estado = r && "cwd" in r ? "retomada" : "descartada";
+      if (r && "cwd" in r) this.trocador.evento("retomada", `Retomei a sessão de terminal ${f.sessao.slice(0, 8)} em ${path.basename(r.cwd)}.`, { sessao: f.sessao });
+      else if (r)
+        this.trocador.evento(
+          "info",
+          `A sessão ${f.sessao.slice(0, 8)} é do ${r.programa}, que a reabre sozinho na conta nova; o Reveza não abre outra cópia dela.`,
+          { sessao: f.sessao },
+        );
     }
   }
 
   /**
    * Retoma a sessão na pasta em que ela rodou, lida da transcrição que o próprio assistente gravou: a pasta que veio
-   * pela ponte local não vale (qualquer programa do computador fala com a ponte). Devolve a pasta, ou null.
+   * pela ponte local não vale (qualquer programa do computador fala com a ponte). Devolve a pasta, `programa` quando a
+   * conversa é de outro programa (ele a reabre sozinho; uma segunda cópia trabalharia junto com a dele e responderia
+   * para o Reveza, não para quem conversa), ou null sem a transcrição.
    */
-  private retomar(sessao: string): string | null {
-    const cwd = cwdDaSessao(this.d.c.projetos, sessao);
-    if (!cwd || !fs.existsSync(cwd)) {
+  private retomar(sessao: string): { cwd: string } | { programa: string } | null {
+    const lida = lerSessao(this.d.c.projetos, sessao, this.d.c.home);
+    if (!lida || !fs.existsSync(lida.cwd)) {
       this.d.log.erro(`sessão ${sessao.slice(0, 8)}: não achei a transcrição dela; não retomo`);
       return null;
     }
+    if (lida.programa) {
+      this.d.log.info(`sessão ${sessao.slice(0, 8)}: é do ${lida.programa}, que a reabre sozinho; não abro outra cópia`);
+      return { programa: lida.programa };
+    }
+    const cwd = lida.cwd;
     if (this.d.sombra) {
       this.d.log.faria(`retomar a sessão ${sessao.slice(0, 8)}`);
-      return cwd;
+      return { cwd };
     }
     fs.mkdirSync(this.d.c.logs, { recursive: true, mode: 0o700 });
     const fd = fs.openSync(path.join(this.d.c.logs, `retomada-${sessao.slice(0, 40)}.log`), "a", 0o600);
@@ -717,7 +730,7 @@ export class Agente {
     } finally {
       fs.closeSync(fd);
     }
-    return cwd;
+    return { cwd };
   }
 
   // ------------------------------------------------------------------------------------------------ nuvem
@@ -2074,7 +2087,13 @@ export class Agente {
         if (f.estado !== "aguardando") return recusa(409, `a sessão já foi ${f.estado}`);
         // sessão com tela continua sozinha pelo mod; retomar no terminal por cima dela daria duas conversas ao mesmo tempo
         if (f.tipo !== "headless") return recusa(409, "sessão com tela: ela continua sozinha quando a conta troca");
-        if (!this.retomar(f.sessao)) return recusa(404, "a transcrição da sessão não está neste computador");
+        const r = this.retomar(f.sessao);
+        if (!r) return recusa(404, "a transcrição da sessão não está neste computador");
+        if (!("cwd" in r)) {
+          f.estado = "descartada";
+          this.salvar();
+          return recusa(409, `a sessão é do ${r.programa}, que a reabre sozinho na conta nova; retomar daqui abriria outra cópia dela`);
+        }
         f.estado = "retomada";
         this.trocador.evento("retomada", `Retomei a sessão ${f.sessao.slice(0, 8)} pelo painel.`, { sessao: f.sessao });
         this.salvar();
@@ -2425,8 +2444,34 @@ export class Agente {
 
 const SESSAO_VALIDA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A pasta em que a sessão rodou, pelo campo `cwd` da transcrição em ~/.claude/projects/<pasta>/<sessão>.jsonl. */
-export function cwdDaSessao(projetos: string, sessao: string): string | null {
+/**
+ * Origens (`entrypoint` da transcrição) do próprio assistente: o terminal e o `claude -p`, que é também o que a retomada
+ * do Reveza grava. Qualquer outra é de um programa que abriu a conversa por conta própria (o OpenBot grava "openbot",
+ * um app pelo SDK grava "sdk-ts" ou "sdk-py") e que a reabre ele mesmo na conta nova.
+ */
+const ORIGENS_DO_ASSISTENTE = new Set(["cli", "sdk-cli"]);
+
+/** A pasta dos agentes do OpenBot (`<home>/OpenBot/Agents/<agente>`): conversa que roda lá é do OpenBot, com ou sem a marca. */
+const PASTA_AGENTES_OPENBOT = ["OpenBot", "Agents"];
+
+export interface SessaoLida {
+  /** A pasta em que a sessão rodou. */
+  cwd: string;
+  /** O programa que abriu a conversa e a reabre sozinho, ou null quando é do próprio assistente. */
+  programa: string | null;
+}
+
+function programaDaPasta(cwd: string, home: string | undefined): string | null {
+  if (!home) return null;
+  const rel = path.relative(path.join(home, ...PASTA_AGENTES_OPENBOT), cwd);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel) ? "openbot" : null;
+}
+
+/**
+ * A pasta em que a sessão rodou e quem a abriu, pelos campos `cwd` e `entrypoint` do começo da transcrição em
+ * ~/.claude/projects/<pasta>/<sessão>.jsonl (as primeiras linhas são de quem criou a conversa; as da retomada vêm depois).
+ */
+export function lerSessao(projetos: string, sessao: string, home?: string): SessaoLida | null {
   if (!SESSAO_VALIDA.test(sessao)) return null;
   let pastas: string[];
   try {
@@ -2438,13 +2483,19 @@ export function cwdDaSessao(projetos: string, sessao: string): string | null {
     const arq = path.join(projetos, p, `${sessao}.jsonl`);
     if (!fs.existsSync(arq)) continue;
     const fd = fs.openSync(arq, "r");
+    let cwd: string | null = null;
+    let programa: string | null = null;
     try {
       const buf = Buffer.alloc(256 * 1024);
       const n = fs.readSync(fd, buf, 0, buf.length, 0);
       for (const linha of buf.subarray(0, n).toString("utf8").split("\n")) {
         try {
-          const j = JSON.parse(linha) as { cwd?: unknown; sessionId?: unknown };
-          if (typeof j.cwd === "string" && path.isAbsolute(j.cwd) && (j.sessionId === sessao)) return j.cwd;
+          const j = JSON.parse(linha) as { cwd?: unknown; sessionId?: unknown; entrypoint?: unknown };
+          if (j.sessionId !== sessao) continue;
+          if (!cwd && typeof j.cwd === "string" && path.isAbsolute(j.cwd)) cwd = j.cwd;
+          if (!programa && typeof j.entrypoint === "string" && j.entrypoint && !ORIGENS_DO_ASSISTENTE.has(j.entrypoint)) {
+            programa = j.entrypoint.replace(/[^\w.-]/g, "").slice(0, 40) || "outro programa";
+          }
         } catch {
           /* linha cortada no fim do pedaço lido */
         }
@@ -2452,6 +2503,12 @@ export function cwdDaSessao(projetos: string, sessao: string): string | null {
     } finally {
       fs.closeSync(fd);
     }
+    if (cwd) return { cwd, programa: programa ?? programaDaPasta(cwd, home) };
   }
   return null;
+}
+
+/** A pasta em que a sessão rodou, pelo campo `cwd` da transcrição em ~/.claude/projects/<pasta>/<sessão>.jsonl. */
+export function cwdDaSessao(projetos: string, sessao: string): string | null {
+  return lerSessao(projetos, sessao)?.cwd ?? null;
 }
