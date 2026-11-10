@@ -89,7 +89,11 @@ aviso de limite. Para cada computador ligado:
   da semana (cota da semana dividida pelos dias restantes);
 - janela cheia = maior entre 5 h, semana e semana por família de modelo; reset que já passou conta como zero. A
   semana de um modelo que a API manda na lista nova (`limits`, `weekly_scoped`; hoje só a do Fable, gravada como
-  `seven_day_fable`, 0.9.0) aparece no painel, mas fica fora desse máximo: quem usa outro modelo não troca por ela;
+  `seven_day_fable`, 0.9.0) aparece no painel, mas fica fora desse máximo: quem usa outro modelo não troca por ela.
+  Ela NÃO é cota a mais: mede o Fable incluso no plano (passou de 100%, o Fable só segue com créditos de uso), e o
+  Fable gasta também a semana da conta. O próprio Claude Code (2.1.322) diz isso no "reset do Fable", que "devolve à
+  semana o que o Fable gastou", e a semana geral se chama "Current week (all models)". Com a semana da conta cheia, o
+  Fable para junto; passar as sessões para o Fable perto do fim da semana não rende uso a mais (10/11/2026);
 - conta que não roda o modelo das sessões de um computador (sem créditos de uso, como o Fable numa conta Team, 0.9.0):
   o mod reconhece "requires usage credits" e "<modelo> limit reached · continuing on ... uses usage credits", o agente
   chama `agente_sem_modelo(conta, modelo, sessao)` e a conta fica fora das candidatas daquele computador por 6 horas

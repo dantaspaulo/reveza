@@ -15,7 +15,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react"
 
-import { BarraUso, NomeConta, SeloEstado } from "@/components/painel/conta"
+import { BarraFable, BarraUso, NomeConta, SeloEstado } from "@/components/painel/conta"
 import { LinhaEvento, traduzirMotivo } from "@/components/painel/evento"
 import { Pagina } from "@/components/painel/pagina"
 import { NumeroAnimado } from "@/components/rb"
@@ -385,6 +385,7 @@ function CartaoComputador({ pc, estado, agora }: { pc: Computador; estado: Insta
             detalhe={r7 ? t("visao.emUso.renova", { quando: fmtFuturo(r7, agora, idioma) }) : undefined}
             compacta
           />
+          <BarraFable conta={conta} agora={agora} comRotulo />
           {pc.atribuicao ? (
             <p className="text-xs text-muted-foreground">
               {traduzirMotivo(pc.atribuicao.motivo, i)} ·{" "}

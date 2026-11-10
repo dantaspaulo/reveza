@@ -662,7 +662,7 @@ describe("Computadores: o cartão do assistente de código (a versão de cada co
 describe("Contas: a conta sem o modelo de um computador e a semana do Fable (relato de 22/10/2026)", () => {
   const H = 3_600_000
   const daqui = (ms: number) => new Date(Date.now() + ms).toISOString()
-  async function desenharCom(tela: "contas") {
+  async function desenharCom(tela: "contas" | "visao") {
     const antes = { janelas: linhas.tabelas.uso_janelas, semModelo: linhas.tabelas.contas_sem_modelo }
     linhas.tabelas.contas_sem_modelo = [
       { conta_id: "c2", computador_id: "pc1", modelo: "claude-fable-5-1", ate: daqui(3 * H) },
@@ -692,7 +692,21 @@ describe("Contas: a conta sem o modelo de um computador e a semana do Fable (rel
     expect(lido.contas.find((c) => c.id === "c4")!.semModelo).toHaveLength(0)
     expect(html).toMatch(/sem o Fable 5\.1 em Mac mini até \d{2}:\d{2}/)
     expect(html.match(/sem o Fable 5\.1/g)).toHaveLength(2) // a tabela e o cartão do celular, da mesma conta
-    expect(html).toContain("semana do Fable: 21%")
+    // a semana do Fable virou barra embaixo da semana (pedido do Paulo, 10/11/2026), na tabela e no cartão do celular
+    expect(html).toMatch(/aria-valuenow="21" aria-label="Fable"/)
+    expect(html).toMatch(/aria-valuenow="21" aria-label="Semana, Fable"/)
+    expect(html.match(/aria-label="(Semana, )?Fable"/g)).toHaveLength(2) // só a c3 tem a semana do Fable
+    expect(html).not.toContain("semana do Fable:")
+    // a nota que diz que não é cota a mais, uma vez embaixo da lista
+    expect(html.match(/<span>A barra do Fable mostra/g)).toHaveLength(1)
+    expect(html).toContain("Não é cota a mais: o Fable também gasta a semana da conta")
+  })
+
+  it("Visão geral: o cartão do computador mostra a semana do Fable da conta em uso", async () => {
+    const { html, erros } = await desenharCom("visao")
+    expect(erros).toEqual([])
+    // o MacBook está na c3, a única com a semana do Fable
+    expect(html.match(/aria-valuenow="21" aria-label="Semana, Fable"/g)).toHaveLength(1)
   })
 
 })

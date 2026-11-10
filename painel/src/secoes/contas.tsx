@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { BarraUso, NomeConta, PontoConta, SeloEstado } from "@/components/painel/conta"
+import { BarraFable, BarraUso, NomeConta, PontoConta, SeloEstado } from "@/components/painel/conta"
 import { Confirmar } from "@/components/painel/confirmar"
 import { DialogoLogin } from "@/components/painel/dialogo-login"
 import { EditorAgenda, resumoFaixa, useDias } from "@/components/painel/editor-agenda"
@@ -69,6 +69,7 @@ import {
   estadoComputador,
   estadoConta,
   FORMATO_MODELO,
+  janela,
   MODELOS_PRONTOS,
   nomeDoModelo,
   nomePlano,
@@ -155,7 +156,10 @@ export default function Contas() {
                       <Janela conta={c} tipo="five_hour" estado={estado} agora={agora} />
                     </TableCell>
                     <TableCell>
-                      <Janela conta={c} tipo="seven_day" estado={estado} agora={agora} />
+                      <div className="flex flex-col gap-1.5">
+                        <Janela conta={c} tipo="seven_day" estado={estado} agora={agora} />
+                        <BarraFable conta={c} agora={agora} />
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Regras conta={c} estado={estado} />
@@ -194,12 +198,19 @@ export default function Contas() {
                   <SeloEstado estado={estadoConta(c, estado.config, agora)} className="self-start" />
                   <Janela conta={c} tipo="five_hour" estado={estado} agora={agora} comRotulo />
                   <Janela conta={c} tipo="seven_day" estado={estado} agora={agora} comRotulo />
+                  <BarraFable conta={c} agora={agora} comRotulo />
                   <Regras conta={c} estado={estado} />
                   <BotaoUsar conta={c} estado={estado} aoUsar={() => usar.abrir(c)} className="self-start" />
                 </CardContent>
               </Card>
             ))}
           </div>
+          {contas.some((c) => janela(c, "seven_day_fable")) ? (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <SparklesIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
+              <span>{t("fable.nota")}</span>
+            </p>
+          ) : null}
         </>
       )}
       <EditarConta key={editar.chave} conta={editar.valor ?? null} aberto={editar.aberto} aoFechar={editar.fechar} />
@@ -323,8 +334,6 @@ function Regras({ conta, estado }: { conta: Conta; estado: Instantaneo }) {
       texto: t("contas.semModelo", { modelo: nomeDoModelo(s.modelo), computador: pc?.nome ?? "?", hora: fmtHora(s.ate, idioma) }),
     })
   }
-  const fable = conta.janelas.find((j) => j.tipo === "seven_day_fable")
-  if (fable && fable.pct !== null) itens.push({ icone: SparklesIcon, texto: t("contas.semanaFable", { pct: fmtPct(fable.pct, idioma) }) })
   if (conta.reserva) itens.push({ icone: LifeBuoyIcon, texto: t("contas.reservaRegra") })
   if (conta.pausada) itens.push({ icone: PauseIcon, texto: t("estadoConta.pausada") })
   if (conta.tetoSemana != null)

@@ -153,6 +153,10 @@ export default secao({
       seven_day_sonnet: "Semana, modelo médio",
       seven_day_fable: "Semana, Fable",
     },
+    fable: {
+      curto: "Fable",
+      nota: "A barra do Fable mostra o quanto já se usou do Fable incluso no plano nesta semana (passou de 100%, ele só segue com créditos de uso). Não é cota a mais: o Fable também gasta a semana da conta e, com ela cheia, para junto.",
+    },
     sistema: { macos: "macOS", linux: "Linux", windows: "Windows", pendente: "aguardando o primeiro contato" },
     modo: {
       limite: "Só no limite",
@@ -455,6 +459,10 @@ export default secao({
       seven_day_opus: "Week, larger model",
       seven_day_sonnet: "Week, medium model",
       seven_day_fable: "Week, Fable",
+    },
+    fable: {
+      curto: "Fable",
+      nota: "The Fable bar shows how much of the Fable usage included in the plan has been used this week (past 100%, it only continues on usage credits). It is not extra quota: Fable also uses the account's week and stops when that is full.",
     },
     sistema: { macos: "macOS", linux: "Linux", windows: "Windows", pendente: "waiting for first contact" },
     modo: {

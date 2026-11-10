@@ -12,11 +12,11 @@ import {
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import type { EstadoConta } from "@/dados/derivados"
+import { janela, pctJanela, resetDe, type EstadoConta } from "@/dados/derivados"
 import type { Conta } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import { corConta } from "@/lib/cores"
-import { fmtPct } from "@/lib/formato"
+import { fmtFuturo, fmtPct } from "@/lib/formato"
 import { cn } from "@/lib/utils"
 
 /** O ponto com a cor do workspace da conta. `tom` só onde várias contas aparecem juntas sem o nome de cada uma. */
@@ -167,6 +167,32 @@ export function BarraUso({
           <span aria-hidden className="absolute inset-y-0 w-px bg-foreground/60" style={{ left: `${troca}%` }} />
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/**
+ * A semana do Fable, embaixo da semana da conta (pedido do Paulo, 10/11/2026: "não mostra o do fable"). A API manda à
+ * parte (a lista `limits`, desde outubro de 2026) o quanto já se usou do Fable incluso no plano na semana; passou de
+ * 100%, o Fable só segue com créditos de uso. Não é cota a mais: o Fable gasta também a semana da conta (o "reset do
+ * Fable" do Claude Code 2.1.322 "devolve à semana o que o Fable gastou") e, com ela cheia, para junto. Por isso a barra
+ * não tem as marcas de aviso e de troca (ela não decide a troca, como na nuvem desde a 0028), fica âmbar perto do fim do
+ * incluso e vermelha nele. Conta sem a semana do Fable (plano sem o Fable incluso) não mostra nada.
+ */
+export function BarraFable({ conta, agora, comRotulo = false }: { conta: Conta; agora: Date; comRotulo?: boolean }) {
+  const { t, idioma } = useT()
+  if (!janela(conta, "seven_day_fable")) return null
+  const reset = resetDe(conta, "seven_day_fable")
+  return (
+    <div title={t("fable.nota")}>
+      <BarraUso
+        pct={pctJanela(conta, "seven_day_fable", agora)}
+        cor={conta.cor}
+        alerta={100}
+        rotulo={comRotulo ? t("janela.seven_day_fable") : t("fable.curto")}
+        detalhe={comRotulo && reset ? t("visao.emUso.renova", { quando: fmtFuturo(reset, agora, idioma) }) : undefined}
+        compacta
+      />
     </div>
   )
 }

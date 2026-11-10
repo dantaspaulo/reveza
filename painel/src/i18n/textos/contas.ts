@@ -24,7 +24,6 @@ export default secao({
       reservaRegra: "só sem outra livre",
       modeloRegra: "modelo {modelo}",
       semModelo: "sem o {modelo} em {computador} até {hora}",
-      semanaFable: "semana do Fable: {pct}",
       menu: {
         editar: "Editar regras",
         entrarDeNovo: "Entrar de novo",
@@ -179,7 +178,6 @@ export default secao({
       reservaRegra: "only when no other is free",
       modeloRegra: "model {modelo}",
       semModelo: "no {modelo} on {computador} until {hora}",
-      semanaFable: "Fable week: {pct}",
       menu: {
         editar: "Edit rules",
         entrarDeNovo: "Sign in again",
