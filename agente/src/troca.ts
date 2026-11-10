@@ -60,6 +60,8 @@ export interface Ganchos {
 export type ResultadoRenovar = true | false | "bloqueado" | "momentaneo";
 /** O que o assistente diz quando o login morreu de fato. */
 export const LOGIN_MORTO = /\/login\b|invalid_grant|revoked|not logged in|"loggedIn"\s*:\s*false|invalid authentication|authentication_error/i;
+/** A troca não pôs a conta: o login dela venceu e o assistente disse que ele morreu (a conta fica pedindo login). */
+export const ERRO_LOGIN_MORTO = "o login venceu e não renova mais";
 /** Depois de uma renovação que tropeçou, a próxima tentativa. */
 export const RECUO_RENOVAR_S = 1800;
 /** Tropeçando sem parar por este tempo, a conta passa a pedir login. */
@@ -367,9 +369,18 @@ export class Trocador {
     if (de === destino) return { ok: true, de };
     const r = await this.travaConta(destino).com(async () => {
       let blobAlvo = await this.cred.ler(alvo.pasta);
-      if (blobAlvo && expiraEm(blobAlvo) < this.agora() + RENOVAR_ANTES_S && (await this.renovarDentro(destino)) === true) {
-        // Token perto de vencer: renova antes de pôr na principal, ainda com a conta travada.
-        blobAlvo = await this.cred.ler(alvo.pasta);
+      if (blobAlvo && expiraEm(blobAlvo) < this.agora() + RENOVAR_ANTES_S) {
+        // Token perto de vencer: renova antes de pôr na principal, ainda com a conta travada. Com a principal sem conta,
+        // vale também para a conta que consta em uso: o assistente saiu dela e ninguém aqui guarda um token mais novo.
+        const renovou = await this.renovarDentro(destino, semConta);
+        if (renovou === true) blobAlvo = await this.cred.ler(alvo.pasta);
+        else if (renovou === false && expiraEm(blobAlvo) <= this.agora()) {
+          // Vencido e o assistente disse que o login morreu: na principal, ele só seria apagado pelo assistente, que
+          // pede login (09/11/2026: o Corrigir repunha o mesmo login morto no AIR e dizia "corrigido").
+          alvo.precisaLogin = true;
+          this.evento("erro", `${alvo.email}: o login venceu e não renova mais; entre de novo nela pelo painel (Contas, Entrar de novo).`, { conta: destino });
+          return { ok: false, erro: ERRO_LOGIN_MORTO };
+        }
       }
       if (!temRenovacao(blobAlvo)) {
         alvo.precisaLogin = true;
@@ -500,10 +511,15 @@ export class Trocador {
     return this.travaConta(id).com(() => this.renovarDentro(id));
   }
 
-  /** Renova o login de uma conta ESTACIONADA pelo próprio assistente, na pasta dela. Chamar com a trava da conta. */
-  async renovarDentro(id: string): Promise<ResultadoRenovar> {
+  /**
+   * Renova o login de uma conta ESTACIONADA pelo próprio assistente, na pasta dela. Chamar com a trava da conta.
+   * `principalSemConta`: a conta que consta em uso também renova, porque o assistente saiu dela (a principal não guarda
+   * um token mais novo). Com ela na principal, renovar a cópia da pasta queimaria o login que as sessões usam.
+   */
+  async renovarDentro(id: string, principalSemConta = false): Promise<ResultadoRenovar> {
     const c = this.estado.contas[id];
-    if (!c || id === this.estado.ativa) return false;
+    if (!c) return false;
+    if (id === this.estado.ativa && !principalSemConta) return "bloqueado";
     if (this.sombra) {
       this.log.faria(`renovar o login de ${c.email}`);
       return "bloqueado";

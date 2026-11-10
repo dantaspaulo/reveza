@@ -22,7 +22,7 @@ import { CredenciaisSombra } from "./credenciais/sombra.js";
 import type { Credenciais } from "./credenciais/tipos.js";
 import { agendarRodizio, candidata, decidir, gatilhoDeTroca, pctEfetivo, sorteioReal } from "./decisao.js";
 import { gatilhoValido, lembrarCritica, marcarCritica, sessaoCritica, sessaoValida, situacaoCriticas } from "./criticas.js";
-import { carregarEstadoDoAgente, salvarCopiaBoa, salvarEstado, type EstadoLocal, type Modo, type Recuperacao, type UltimaAtualizacaoAssistente } from "./estado.js";
+import { carregarEstadoDoAgente, salvarCopiaBoa, salvarEstado, type ContaLocal, type EstadoLocal, type Modo, type Recuperacao, type UltimaAtualizacaoAssistente } from "./estado.js";
 import { idiomaAtual, t } from "./i18n.js";
 import { aplicarAutoUpdater, ASSISTENTE_CONFERIR_S, autoDesligado, erroDoUpdate, modoAssistente, type ModoAssistente } from "./assistente.js";
 import { conferirCodigo, entregarChave, impressaoDaChave, LIGACAO_DUPLA } from "./ligar.js";
@@ -31,7 +31,7 @@ import { ErroNuvem, TIPOS_EVENTO_NUVEM, type Atribuicao, type ComandoNuvem, type
 import { PosseCofre } from "./posse.js";
 import { chaveDaPonte, criarPonte, type Resposta } from "./ponte.js";
 import { Contador } from "./registro/contador.js";
-import { Trocador } from "./troca.js";
+import { ERRO_LOGIN_MORTO, Trocador } from "./troca.js";
 import { isoParaEpoch, epochParaIso, type Relogio } from "./util/tempo.js";
 import type { Log } from "./util/log.js";
 import type { Guarda } from "./cofre/guarda.js";
@@ -125,6 +125,10 @@ type Pendente = AtualizacaoPendente & {
 
 /** Quanto a conta que a nuvem mandou pode levar para chegar à principal antes de o doctor acusar falha. */
 export const ESPERA_CONTA_S = 120;
+/** O assistente saiu da conta em uso: a busca a repõe sozinha, no máximo uma vez neste intervalo por conta. */
+export const REPOR_CONTA_S = 600;
+/** Leitura de uso que deu certo dentro deste intervalo prova que o login da conta funciona. */
+export const LOGIN_PROVADO_S = 1800;
 
 /**
  * Dois pedidos de computador novo ao mesmo tempo: todos são recusados (falha fechada). Quem escreve direto no banco
@@ -208,6 +212,8 @@ export class Agente {
   private janelasAbertas = new Set<string>();
   private semTelaAvisado = new Set<string>();
   private falhaAtribuicao = new Map<string, number>();
+  /** Conta da nuvem que a busca repôs no assistente sem login: quando pode repor de novo (epoch em segundos). */
+  private reposta = new Map<string, number>();
   /** A conta atribuída que não está entrando: desde quando, quantas tentativas e se já virou alerta. */
   private trocaQueNaoSai: { conta: string; desde: number; vezes: number; avisado: boolean } | null = null;
   /** A troca automática que espera memória (memoria.ts): de qual conta em uso, desde quando e se ainda espera. */
@@ -595,6 +601,9 @@ export class Agente {
       .com(id, motivo, async () => {
         await this.trocador.lerUso(id, true);
         await this.relatarUso(true);
+        // login morto descoberto agora: a nuvem fica sabendo enquanto a posse está na mão (depois ela recusa o aviso)
+        const atual = this.estado.contas[id];
+        if (atual?.precisaLogin && this.loginInformado.get(id) !== true) await this.informarLogin(atual);
         return true;
       })
       .catch((e) => {
@@ -1021,13 +1030,38 @@ export class Agente {
       const sabido = this.loginInformado.get(c.id);
       const naMao = this.posse!.temPosse(c.id) || this.estado.nuvem.atribuicaoConta === c.contaId;
       if (sabido === c.precisaLogin || (sabido === undefined && !c.precisaLogin && !naMao)) continue;
+      // "voltou a ter login" só com prova: sem ela, a conta na mão com o login morto apagava a marca posta por outro
+      // computador (09/11/2026: o AIR desmarcou uma conta morta, e a nuvem a mandou ao Mac mini, que ficou sem login)
+      if (!c.precisaLogin && !this.loginProvado(c, t)) continue;
       if (t - (this.loginTentado.get(c.id) ?? 0) < 300) continue;
-      const r = await nuvem.marcarLogin(c.contaId, c.precisaLogin).catch(() => ({ ok: false }));
-      if (r.ok) {
-        this.loginInformado.set(c.id, c.precisaLogin);
-        this.loginTentado.delete(c.id);
-      } else this.loginTentado.set(c.id, t);
+      await this.informarLogin(c);
     }
+  }
+
+  /** O login da conta funciona aqui: de pé na principal (a em uso) ou numa leitura de uso que deu certo há pouco. */
+  private loginProvado(c: ContaLocal, t: number): boolean {
+    if (c.id === this.estado.ativa) {
+      const u = this.trocador.ultimaPrincipal;
+      if (u && u[0] === c.id && expiraEm(u[1]) > t) return true;
+    }
+    return !c.erro && c.lidoEm !== null && t - c.lidoEm < LOGIN_PROVADO_S;
+  }
+
+  /**
+   * Conta à nuvem, já, se a conta precisa de login. Chamar com a conta na mão (posse ou atribuição): sem ela a nuvem
+   * recusa, e o login morto descoberto na leitura com posse curta nunca chegava lá (09/11/2026: três contas mortas
+   * seguiram sendo mandadas a outros computadores).
+   */
+  private async informarLogin(c: ContaLocal): Promise<boolean> {
+    const nuvem = this.d.nuvem;
+    if (!nuvem || !c.contaId || this.d.sombra) return false;
+    const precisa = c.precisaLogin === true;
+    const r = await nuvem.marcarLogin(c.contaId, precisa).catch(() => ({ ok: false }));
+    if (r.ok) {
+      this.loginInformado.set(c.id, precisa);
+      this.loginTentado.delete(c.id);
+    } else this.loginTentado.set(c.id, this.d.relogio.agora());
+    return r.ok;
   }
 
   /**
@@ -1121,7 +1155,14 @@ export class Agente {
     this.estado.nuvem.atribuicaoConta = a.conta_id;
     const destino = this.posse!.porContaId(a.conta_id);
     const ativa = this.estado.ativa;
-    if (destino && destino === ativa && !principalSemConta) {
+    // O assistente saiu da conta em uso há mais de 2 minutos (apagou um login que não renovava mais, ou alguém saiu
+    // dele): a busca a repõe sozinha, renovada, no máximo a cada 10 minutos. Antes só o Corrigir repunha, e o AIR ficou
+    // pedindo login (09/11/2026).
+    const agora = this.d.relogio.agora();
+    const repor = !principalSemConta && !!destino && destino === ativa && this.principalSemLoginHaMuito() && (this.reposta.get(a.conta_id) ?? 0) <= agora;
+    if (repor) this.reposta.set(a.conta_id, agora + REPOR_CONTA_S);
+    const semLogin = principalSemConta || repor;
+    if (destino && destino === ativa && !semLogin) {
       this.estado.nuvem.atribuicaoVersao = Math.max(this.estado.nuvem.atribuicaoVersao, a.versao);
       this.estado.nuvem.atribuicaoConta = a.conta_id;
       this.trocaQueNaoSai = null;
@@ -1137,7 +1178,7 @@ export class Agente {
       }
       return { ok: false, erro: "modo sombra: o agente não troca" };
     }
-    if (!principalSemConta && (await this.esperarMemoriaParaTrocar(a.motivo || ""))) {
+    if (!semLogin && (await this.esperarMemoriaParaTrocar(a.motivo || ""))) {
       if (await this.manterAtivaDuranteEspera()) return { ok: false, erro: "a troca espera sobrar memória neste computador" };
       this.d.log.info("[troca] a nuvem não deixou a conta em uso com este computador durante a espera por memória; troco agora");
     }
@@ -1159,15 +1200,18 @@ export class Agente {
           : "este computador não tem a chave do cofre: ligue-o pelo painel (Computadores, Ligar computador novo) ou com reveza ligar");
       }
     } else {
-      await this.posse!.sincronizar(id, r.cofre, principalSemConta);
+      await this.posse!.sincronizar(id, r.cofre, semLogin);
     }
     const ja = this.posse!.posses.get(id);
     this.posse!.posses.set(id, "uso");
-    const res = await this.trocador.trocar(id, a.motivo || "decisão da nuvem");
+    const res = await this.trocador.trocar(id, repor ? "o assistente estava sem login" : a.motivo || "decisão da nuvem");
     if (!res.ok) {
       // Não trocou (conta sem login guardado, rede fora na hora de identificar a principal...): solta a conta e
       // tenta de novo em 1 min, sem martelar a cada busca.
       this.falhaAtribuicao.set(chave, this.d.relogio.agora() + 60);
+      // Login morto: a nuvem fica sabendo já, com a conta ainda na mão, e manda outra a este computador na busca
+      // seguinte (sem isso, mandava a mesma de novo).
+      if (res.erro === ERRO_LOGIN_MORTO) await this.informarLogin(this.estado.contas[id]!);
       if (ja !== "uso") {
         await this.posse!.devolver(id).catch(() => false);
         await this.posse!.soltar(id).catch(() => undefined);
@@ -1685,11 +1729,15 @@ export class Agente {
       }
       r = await this.aplicarAtribuicao(a, true);
     } else {
-      const destino = this.contaParaConserto();
+      // a que tem o login morto fica marcada (precisa de login) e sai da escolha: tenta a próxima livre
+      let destino = this.contaParaConserto();
       if (!destino) {
         return { ok: false, texto: "nenhuma conta livre neste computador agora (no limite, pausadas ou sem login): entre de novo numa delas ou espere o reset" };
       }
       r = await this.trocador.trocar(destino, "conserto: o assistente estava sem login");
+      for (let i = 0; i < 3 && r.erro === ERRO_LOGIN_MORTO && (destino = this.contaParaConserto()); i++) {
+        r = await this.trocador.trocar(destino, "conserto: o assistente estava sem login");
+      }
     }
     const depois = await this.principalComLogin();
     if (depois) return { ok: true, texto: `o assistente voltou a ter login: ${depois}` };
@@ -1701,7 +1749,54 @@ export class Agente {
       };
     }
     if (r.erro === "conta sem login guardado") return { ok: false, texto: "a conta escolhida está sem login guardado: entre de novo nela pelo painel (Contas, Entrar de novo)" };
+    if (r.erro === ERRO_LOGIN_MORTO) {
+      const morta = this.ultimaAtribuicao?.email ?? "a conta deste computador";
+      return {
+        ok: false,
+        texto: this.d.nuvem
+          ? `o login de ${morta} venceu e não renova mais: ela ficou marcada para entrar de novo (Contas, Entrar de novo), e a nuvem manda outra conta, que entra em segundos`
+          : "o login da conta escolhida venceu e não renova mais: entre de novo nela (reveza contas conectar <email>)",
+      };
+    }
     return { ok: false, texto: r.erro ?? "a troca não aconteceu" };
+  }
+
+  /**
+   * O conserto das contas que pedem login aqui (o Corrigir do painel e o `reveza doctor`): com a posse curta, a cópia do
+   * cofre entra no lugar da daqui quando é mais nova (alguém entrou de novo nela em outro computador) e a leitura de uso
+   * confere se o login abre. A que está com outro computador funciona lá e fica para a leitura de depois. Só com a nuvem.
+   */
+  async consertarContas(): Promise<{ ok: boolean; texto: string }> {
+    if (this.d.sombra) return { ok: false, texto: "modo sombra: o agente não mexe nas contas" };
+    if (!this.d.nuvem || !this.posse) return { ok: false, texto: "sem a nuvem, o login só volta entrando de novo: reveza contas conectar <email>" };
+    const voltaram: string[] = [];
+    const emOutro: string[] = [];
+    const seguem: string[] = [];
+    for (const c of Object.values(this.estado.contas)) {
+      if (!c.contaId || c.id === this.estado.ativa) continue;
+      if (!c.precisaLogin && (await this.cred.ler(c.pasta).catch(() => null))) continue;
+      const lida = await this.posse
+        .com(c.id, "leitura", async () => {
+          await this.trocador.lerUso(c.id, true);
+          const agora = this.estado.contas[c.id];
+          // morta de fato: a nuvem fica sabendo com a posse na mão
+          if (agora?.precisaLogin && this.loginInformado.get(c.id) !== true) await this.informarLogin(agora);
+          return true;
+        })
+        .catch(() => null);
+      const agora = this.estado.contas[c.id];
+      if (!agora) continue;
+      if (lida === null) emOutro.push(agora.email);
+      else if (!agora.precisaLogin && (await this.cred.ler(agora.pasta).catch(() => null))) voltaram.push(agora.email);
+      else seguem.push(agora.email);
+    }
+    this.salvar();
+    const partes = [
+      voltaram.length ? `voltaram com o login do cofre: ${voltaram.join(", ")}` : "",
+      emOutro.length ? `com outro computador agora (o login vale lá; confiro de novo depois): ${emOutro.join(", ")}` : "",
+      seguem.length ? `precisam entrar de novo pelo painel (Contas, Entrar de novo): ${seguem.join(", ")}` : "",
+    ].filter(Boolean);
+    return { ok: !seguem.length, texto: partes.join("; ") || "nenhuma conta pedindo login" };
   }
 
   /**
@@ -1721,6 +1816,12 @@ export class Agente {
     if (!a?.conta_id) return false;
     const destino = this.posse.porContaId(a.conta_id);
     return !destino || destino !== this.estado.ativa;
+  }
+
+  /** O assistente está sem login de conta há mais tempo que a espera da conta a caminho (a principal já foi lida). */
+  private principalSemLoginHaMuito(): boolean {
+    const tr = this.trocador;
+    return tr.principalLida && tr.principalSemLoginDesde !== null && this.d.relogio.agora() - tr.principalSemLoginDesde > ESPERA_CONTA_S;
   }
 
   /** O e-mail da conta com login de pé na principal (dentro da validade, ou com renovação), ou null. */
@@ -2191,6 +2292,18 @@ export class Agente {
           return { status: 409, corpo: { ok: false, erro: "com a nuvem ligada, quem decide a conta é o painel (Trocar agora); use --local para forçar" } };
         }
         if (this.d.sombra) return { status: 409, corpo: { ok: false, erro: "modo sombra: o agente não troca" } };
+        // Nem o --local pega a conta que está com outro computador (atribuída a ele ou na posse dele): os dois renovariam
+        // o mesmo login, e a renovação de um apaga o do outro (09/11/2026: a VPS pegou assim a conta do AIR, que ficou
+        // pedindo login). Livre, a cópia mais nova do cofre vem antes da troca. Sem rede para conferir, segue o pedido.
+        if (this.comNuvem && this.posse && this.estado.contas[id]!.contaId && id !== this.estado.ativa) {
+          const livre = await this.posse.com(id, "leitura", async () => true).catch((e: Error) => {
+            this.d.log.info(`[troca] não conferi com a nuvem se ${email} está livre (${e.message}); troco porque foi pedido com --local`);
+            return true;
+          });
+          if (livre !== true) {
+            return { status: 409, corpo: { ok: false, erro: `${email} está com outro computador: trocar aqui faria os dois renovarem o mesmo login, e um deles ficaria sem login` } };
+          }
+        }
         const r = await this.trocador.trocar(id, "pedido pela linha de comando");
         return { status: r.ok ? 200 : 400, corpo: { ok: r.ok, erro: r.erro ?? null } };
       },
@@ -2216,8 +2329,8 @@ export class Agente {
       },
       consertar: async (corpo: Record<string, unknown>): Promise<Resposta> => {
         // só os consertos que precisam do agente rodando, pelo nome (a lista fechada); o resto roda no terminal
-        if (corpo.item !== "credenciais") return { status: 400, corpo: { ok: false, erro: "conserto desconhecido" } };
-        const r = await this.consertarCredencial();
+        if (corpo.item !== "credenciais" && corpo.item !== "contas") return { status: 400, corpo: { ok: false, erro: "conserto desconhecido" } };
+        const r = corpo.item === "contas" ? await this.consertarContas() : await this.consertarCredencial();
         if (r.ok) this.trocador.evento("info", `Conserto pelo terminal: ${r.texto}.`);
         return { status: 200, corpo: r };
       },

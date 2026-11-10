@@ -1,8 +1,8 @@
 // O conserto do `reveza doctor` e do Corrigir do painel: confere, roda só os consertos seguros da lista fechada para os
 // problemas achados, confere de novo e diz, em cada problema, "corrigido" ou o que fazer.
 //
-// Lista fechada (IdConserto): reinstalar/reiniciar o serviço (só pelo terminal), reinstalar o mod das sessões e pedir a
-// troca para a conta atribuída quando o assistente está sem login. Nada aqui recebe texto, caminho ou comando de fora:
+// Lista fechada (IdConserto): reinstalar/reiniciar o serviço (só pelo terminal), reinstalar o mod das sessões, pedir a
+// troca para a conta atribuída quando o assistente está sem login e trazer do cofre o login das contas que pedem login. Nada aqui recebe texto, caminho ou comando de fora:
 // quem chama só diz "conserte". Login de conta, chave do cofre, relógio e instalação do assistente ficam explicados
 // (`fazer`), nunca mexidos.
 
@@ -21,8 +21,11 @@ export interface Resultado {
 /** Como cada conserto roda neste lugar; o que falta aqui não roda (vira "não deu" com o motivo). */
 export type Consertos = Partial<Record<IdConserto, () => Promise<Resultado>>>;
 
-/** Na ordem: o serviço primeiro (a ponte e a nuvem dependem dele), o mod, e a troca de conta por último (pede o agente). */
-export const ORDEM_CONSERTOS: readonly IdConserto[] = ["servico", "mod", "credenciais"];
+/**
+ * Na ordem: o serviço primeiro (a ponte e a nuvem dependem dele), o mod, a troca de conta (pede o agente) e, por último,
+ * as contas que pedem login aqui, com o login do cofre (também pelo agente).
+ */
+export const ORDEM_CONSERTOS: readonly IdConserto[] = ["servico", "mod", "credenciais", "contas"];
 
 export interface Conserto {
   antes: Conferencia[];
@@ -61,7 +64,8 @@ export async function consertar(d: DepsDoctor, k: Consertos): Promise<Conserto> 
       const texto = f?.ok ? f.texto : t("voltou a funcionar", "it works again");
       agora.consertado = { resultado: "corrigido", texto: sobrouAviso ? t(`${texto} (fica o aviso: ${agora.detalhe})`, `${texto} (the warning stays: ${agora.detalhe})`) : texto };
     } else {
-      const motivo = f && !f.ok ? f.texto : agora.fazer ?? t(`o conserto rodou, mas o problema continua (${agora.detalhe})`, `the fix ran, but the problem remains (${agora.detalhe})`);
+      // as contas: o texto do conserto diz quais voltaram, quais estão com outro computador e quais pedem login
+      const motivo = f && (!f.ok || a.conserto === "contas") ? f.texto : agora.fazer ?? t(`o conserto rodou, mas o problema continua (${agora.detalhe})`, `the fix ran, but the problem remains (${agora.detalhe})`);
       agora.consertado = { resultado: "nao_deu", texto: motivo };
     }
   }

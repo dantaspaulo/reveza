@@ -795,6 +795,12 @@ async function cmdDoctor(amb: Ambiente, a: Args): Promise<number> {
       const c = x.corpo as { ok?: unknown; texto?: unknown; erro?: unknown };
       return { ok: c.ok === true, texto: String(c.texto ?? c.erro ?? t(`o agente respondeu ${x.status}`, `the agent responded ${x.status}`)) };
     },
+    contas: async () => {
+      const x = await pedirPonte(porta, "POST", "/api/consertar", { item: "contas" }, chaveDaPonte(amb.c.ponteChave, false), 150_000);
+      if (!x) return { ok: false, texto: t("o agente não está rodando: rode reveza servico instalar (ou reveza rodar) e corrija de novo", "the agent is not running: run reveza servico instalar (or reveza rodar) and fix again") };
+      const c = x.corpo as { ok?: unknown; texto?: unknown; erro?: unknown };
+      return { ok: c.ok === true, texto: String(c.texto ?? c.erro ?? t(`o agente respondeu ${x.status}`, `the agent responded ${x.status}`)) };
+    },
   });
   amb.saida(a.flags.json ? JSON.stringify(r.depois, null, 1) : textoDoctor(r.depois));
   if (r.feitos.length) logEmArquivo(amb.c.log, false).info(`reveza doctor consertou: ${resumoConserto(r.depois)}`);
@@ -1064,6 +1070,7 @@ async function cmdRodar(amb: Ambiente, a: Args): Promise<number> {
           return instalarMod({ exec: amb.exec, assistente: p.cli.binario(), app, porta, env: ambienteDoUsuario(amb.env) });
         },
         credenciais: () => agente.consertarCredencial(),
+        contas: () => agente.consertarContas(),
       });
       const contar = (x: "corrigido" | "nao_deu") => r.depois.filter((c) => c.consertado?.resultado === x).length;
       return { diagnostico: paraPainel(r.depois), resumo: resumoConserto(r.depois), corrigidos: contar("corrigido"), naoDeu: contar("nao_deu") };

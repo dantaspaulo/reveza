@@ -664,3 +664,158 @@ describe("relatos", () => {
     assert.ok(banco.eventos.some((x) => x.tipo === "aviso" && x.texto === "teste de alerta"));
   });
 });
+
+// 09/11/2026: o AIR ficou pedindo login. A VPS pegou com --local a conta dele e, ao renovar o login, invalidou a cópia
+// do AIR e a do cofre; o assistente do AIR apagou o login que não renovava, o Corrigir repunha o mesmo login morto e
+// dizia "corrigido", e a nuvem seguia mandando a conta, porque ninguém contava a ela que o login tinha morrido.
+describe("login morto da conta em uso", () => {
+  const SO_MCP = { mcpOAuth: { servidor: { accessToken: "mcp-da-maquina" } } };
+  const MORREU = () => ({ codigo: 1, saida: "", erro: "OAuth token refresh failed: invalid_grant" });
+
+  /** A em uso e atribuída; o computador dormiu 2 h (o login de A venceu) e o assistente apagou o login. */
+  async function airDepoisDeDormir() {
+    await preparar();
+    const a = await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const aId = e().contas[a]!.contaId!;
+    await m.relogio.avancar(7_200_000);
+    m.cred.d.set("principal", SO_MCP);
+    await m.agente.ciclo();
+    return { a, aId };
+  }
+
+  test("login morto: não volta à principal, a conta fica pedindo login, a nuvem sabe na hora e a outra conta entra", async () => {
+    const { a, aId } = await airDepoisDeDormir();
+    m.cli.aoRenovar = MORREU;
+    await m.agente.busca();
+    assert.equal(m.cli.renovacoes.length, 0, "nos 2 primeiros minutos a conta pode estar a caminho: nada se mexe");
+    await m.relogio.avancar(121_000);
+    await m.agente.busca();
+    assert.equal(m.cli.renovacoes.length, 2, "a conta em uso renova, porque o assistente saiu dela");
+    assert.equal(m.cred.token("principal"), undefined, "o login morto não volta à principal");
+    assert.equal(e().contas[a]!.precisaLogin, true);
+    assert.ok(e().eventos.some((x) => x.tipo === "erro" && /a@exemplo\.com: o login venceu e não renova mais/.test(x.texto)));
+    assert.ok(fns("marcarLogin").some((x) => x.args[0] === aId && x.args[1] === true), "avisada com a conta na mão");
+    assert.equal(banco.contas.get(aId)!.precisaLogin, true);
+    // a nuvem escolhe outra (o decidir de verdade roda no agente_marcar_login): ela entra na busca seguinte
+    const bId = await semear("B");
+    banco.atribuir("pc-1", bId, "a conta em uso precisa entrar de novo");
+    await m.agente.busca();
+    assert.equal(m.cred.token("principal"), "B1");
+  });
+
+  test("login que ainda renova: a busca o repõe renovado depois de 2 minutos, e repõe de novo só depois de 10", async () => {
+    const { a } = await airDepoisDeDormir();
+    m.cli.aoRenovar = (p) => m.cred.d.set(p, blob("A2", true, 7200, m.relogio.agora()));
+    await m.relogio.avancar(121_000);
+    await m.agente.busca();
+    assert.equal(m.cred.token("principal"), "A2");
+    assert.deepEqual(m.cred.agora("principal")!.mcpOAuth, SO_MCP.mcpOAuth, "os logins MCP da máquina ficam");
+    assert.equal(e().ativa, a);
+    assert.ok(e().eventos.some((x) => x.tipo === "troca" && /Pus a@exemplo\.com.*estava sem login\. Motivo: o assistente estava sem login/.test(x.texto)));
+    m.cred.d.set("principal", SO_MCP);
+    await m.agente.ciclo();
+    await m.relogio.avancar(121_000);
+    await m.agente.busca();
+    assert.equal(m.cred.token("principal"), undefined, "dentro dos 10 minutos não repõe de novo");
+    await m.relogio.avancar(480_000);
+    await m.agente.busca();
+    assert.equal(m.cred.token("principal"), "A2");
+  });
+
+  test("conta na mão com o login morto não apaga a marca de precisar de login que outro computador pôs", async () => {
+    const { a, aId } = await airDepoisDeDormir();
+    banco.contas.get(aId)!.precisaLogin = true;
+    // como depois de um aviso que falhou sem rede: a nuvem não sabe o que este computador acha da conta
+    (m.agente as unknown as { loginInformado: Map<string, boolean> }).loginInformado.delete(a);
+    await m.agente.busca();
+    assert.ok(!fns("marcarLogin").some((x) => x.args[0] === aId && x.args[1] === false), "sem prova de que o login funciona");
+    assert.equal(banco.contas.get(aId)!.precisaLogin, true);
+  });
+
+  test("Corrigir com o login morto: diz que não deu e por quê, e a nuvem já fica sabendo", async () => {
+    const { aId } = await airDepoisDeDormir();
+    m.cli.aoRenovar = MORREU;
+    const r = await m.agente.consertarCredencial();
+    assert.equal(r.ok, false);
+    assert.match(r.texto, /a@exemplo\.com venceu e não renova mais.*Entrar de novo.*a nuvem manda outra conta/);
+    assert.equal(m.cred.token("principal"), undefined);
+    assert.equal(banco.contas.get(aId)!.precisaLogin, true);
+  });
+
+  test("conta parada com o login morto: a nuvem sabe enquanto a posse curta está na mão", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    m.agente.online = true;
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    const k = (await lerChave(m.guarda))!;
+    const vencido = cifrarLogin(k, aadConta(bId, 2), blob("B1", true, 30, m.relogio.agora()));
+    banco.contas.get(bId)!.cofre = { ...vencido, versao: 2, expira_em: null };
+    m.cred.d.set(pasta(b), blob("B1", true, 30, m.relogio.agora()));
+    m.cli.aoRenovar = MORREU;
+    await m.agente.lerUsoConta(b);
+    assert.equal(e().contas[b]!.precisaLogin, true);
+    const ordem = banco.chamadas.filter((c) => c.args[0] === bId && ["pegarPosse", "marcarLogin", "soltarPosse"].includes(c.fn)).map((c) => c.fn);
+    assert.deepEqual(ordem, ["pegarPosse", "marcarLogin", "soltarPosse"], "avisa antes de soltar a posse");
+    assert.equal(banco.contas.get(bId)!.precisaLogin, true);
+  });
+
+  test("Corrigir das contas: a reconectada em outro computador volta com o login do cofre; a morta segue pedindo login", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const k = (await lerChave(m.guarda))!;
+    // B: a cópia daqui morreu e alguém entrou de novo nela em outro computador (o cofre tem a nova)
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    e().contas[b]!.precisaLogin = true;
+    await semear("B", 3, "B7");
+    // C: vencida aqui e no cofre, e o assistente diz que o login morreu
+    const cId = await semear("C", 2, "C1");
+    const c = contaEstacionada(m, "C", 3, { contaId: cId });
+    e().contas[c]!.versaoCofre = 2;
+    e().contas[c]!.precisaLogin = true;
+    banco.contas.get(cId)!.cofre = { ...cifrarLogin(k, aadConta(cId, 2), blob("C1", true, 30, m.relogio.agora())), versao: 2, expira_em: null };
+    m.cred.d.set(pasta(c), blob("C1", true, 30, m.relogio.agora()));
+    m.cli.aoRenovar = MORREU;
+    // D: com outro computador agora
+    const dId = await semear("D");
+    const d = contaEstacionada(m, "D", 3, { contaId: dId });
+    e().contas[d]!.precisaLogin = true;
+    banco.atribuir("pc-2", dId, "chegou a 95%");
+    const r = await m.agente.consertarContas();
+    assert.equal(r.ok, false, "sobrou conta pedindo login");
+    assert.match(r.texto, /voltaram com o login do cofre: b@exemplo\.com/);
+    assert.match(r.texto, /com outro computador agora [^;]*: d@exemplo\.com/);
+    assert.match(r.texto, /precisam entrar de novo pelo painel [^;]*: c@exemplo\.com$/);
+    assert.equal(e().contas[b]!.precisaLogin, false);
+    assert.equal(m.cred.token(pasta(b)), "B7");
+    assert.equal(banco.contas.get(cId)!.precisaLogin, true, "a morta: a nuvem fica sabendo");
+    assert.equal(m.cred.token("principal"), "A1", "a conta em uso não se mexe");
+  });
+
+  test("reveza trocar --local não pega a conta que está com outro computador; livre, troca", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B");
+    contaEstacionada(m, "B", 3, { contaId: bId });
+    banco.atribuir("pc-2", bId, "chegou a 95%");
+    const r = await m.agente.alvoPonte().trocar({ email: "b@exemplo.com", local: true });
+    assert.equal(r.status, 409);
+    assert.match(String((r.corpo as { erro?: unknown }).erro), /b@exemplo\.com está com outro computador/);
+    assert.equal(m.cred.token("principal"), "A1", "a troca não aconteceu");
+    banco.atribuicao.delete("pc-2");
+    const ok = await m.agente.alvoPonte().trocar({ email: "b@exemplo.com", local: true });
+    assert.equal(ok.status, 200);
+    assert.equal(m.cred.token("principal"), "B1");
+    assert.equal(banco.posse.get(bId), undefined, "a posse curta da conferência foi solta");
+  });
+});

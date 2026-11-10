@@ -450,9 +450,11 @@ function useTextoBloqueio() {
       ? t("contas.usarAgora.pausada")
       : b.motivo === "semLogin"
         ? t("contas.usarAgora.semLogin")
-        : b.motivo === "jaUsa"
-          ? t("contas.usarAgora.jaUsa")
-          : t("contas.usarAgora.ocupada", { computador: b.computador })
+        : b.motivo === "esgotada"
+          ? t("contas.usarAgora.esgotada")
+          : b.motivo === "jaUsa"
+            ? t("contas.usarAgora.jaUsa")
+            : t("contas.usarAgora.ocupada", { computador: b.computador })
 }
 
 /** O "Usar agora" à vista em cada conta: um clique abre a escolha do computador (com um só, já vem escolhido). */

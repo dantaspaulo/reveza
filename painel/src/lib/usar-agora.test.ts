@@ -4,7 +4,7 @@ import type { Computador, Conta } from "@/dados/tipos"
 import { bloqueioDaConta, bloqueioUsar, computadoresParaUsar, podeUsarEmAlgum } from "./usar-agora"
 
 const conta = (id: string, extra: Partial<Conta> = {}): Conta =>
-  ({ id, email: `${id}@exemplo.com`, pausada: false, precisaLogin: false, ...extra }) as Conta
+  ({ id, email: `${id}@exemplo.com`, pausada: false, precisaLogin: false, janelas: [], ...extra }) as Conta
 const pc = (id: string, contaId: string | null, extra: Partial<Computador> = {}): Computador =>
   ({
     id,
@@ -36,6 +36,23 @@ describe("usar agora", () => {
     expect(bloqueioUsar(conta("x"), a, estado)).toEqual({ motivo: "jaUsa" })
     expect(bloqueioUsar(conta("x"), b, estado)).toEqual({ motivo: "ocupada", computador: "PC a" })
     expect(bloqueioUsar(conta("y"), b, estado)).toBe(null)
+  })
+
+  it("esgotada (100% numa janela da conta que ainda não renovou) não vai para computador nenhum; renovada, volta", () => {
+    const agora = new Date("2026-11-09T17:00:00.000Z")
+    const depois = "2026-11-11T03:00:00.000Z"
+    const antes = "2026-11-09T16:00:00.000Z"
+    const so = { computadores: [pc("a", null)] }
+    const semana = conta("x", { janelas: [{ tipo: "seven_day", pct: 100, resetEm: depois }] as Conta["janelas"] })
+    const cinco = conta("y", { janelas: [{ tipo: "five_hour", pct: 100, resetEm: depois }] as Conta["janelas"] })
+    const renovada = conta("z", { janelas: [{ tipo: "five_hour", pct: 100, resetEm: antes }] as Conta["janelas"] })
+    const fable = conta("w", { janelas: [{ tipo: "seven_day_fable", pct: 100, resetEm: depois }] as Conta["janelas"] })
+    expect(bloqueioDaConta(semana, agora)).toEqual({ motivo: "esgotada" })
+    expect(bloqueioDaConta(cinco, agora)).toEqual({ motivo: "esgotada" })
+    expect(podeUsarEmAlgum(semana, so, agora), "o botão fica desativado").toBe(false)
+    expect(bloqueioDaConta(renovada, agora), "a janela já renovou").toBe(null)
+    expect(bloqueioDaConta(fable, agora), "a semana de um modelo não esgota a conta toda").toBe(null)
+    expect(bloqueioDaConta(conta("v", { pausada: true, janelas: semana.janelas }), agora)).toEqual({ motivo: "pausada" })
   })
 
   it("o botão aparece quando há algum computador em que a conta entra agora", () => {

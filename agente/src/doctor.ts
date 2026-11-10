@@ -19,7 +19,7 @@ import { carregarEstado } from "./estado.js";
 export type Situacao = "ok" | "aviso" | "falha";
 
 /** Os únicos consertos automáticos que existem (lista fechada; nada vindo da nuvem entra aqui). */
-export type IdConserto = "servico" | "mod" | "credenciais";
+export type IdConserto = "servico" | "mod" | "credenciais" | "contas";
 
 export interface Conferencia {
   id: string;
@@ -366,6 +366,9 @@ export async function doctor(d: DepsDoctor): Promise<Conferencia[]> {
           (precisam.length ? t(`; precisam entrar de novo: ${precisam.join(", ")}`, `; need to sign in again: ${precisam.join(", ")}`) : "") +
           (semLogin.length ? t(`; sem login guardado: ${semLogin.join(", ")}`, `; no login stored: ${semLogin.join(", ")}`) : ""),
     {
+      // com a nuvem, o Corrigir traz do cofre o login de quem entrou de novo em outro computador (09/11/2026: a VPS seguia
+      // acusando contas que o Paulo tinha acabado de reconectar no Mac mini, e o Corrigir não mexia nelas)
+      ...(nuvem && (precisam.length || semLogin.length) ? { conserto: "contas" as const } : {}),
       fazer: !contas.length
         ? nuvem
           ? t(

@@ -7,6 +7,47 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.15.1 · 09/11/2026
+
+Correção: o computador que ficava pedindo login, com o Corrigir dizendo que tinha corrigido; a conta removida que
+não saía; e conta esgotada que ainda dava para usar à mão. Pedidos do Paulo: "fica dizendo que precisa fazer login...
+tem 9 de 10 e botão corrigir, mas não corrigi nada. A IA não responde lá", "tá marcado para sair do reveza e não sai" e
+"Contas esgotadas não pode ser usadas, o botão de usar agora nem deve ficar ativo". Precisa da nuvem na 0.15.1
+(migração 0034: a nuvem se atualiza sozinha, ou pelo **Atualizar a nuvem**), do painel novo e dos computadores na 0.15.1
+(cada um se atualiza sozinho, ou pelo painel em **Computadores → Atualizar**).
+
+- **O que aconteceu.** Um computador pegou com `reveza trocar --local` a conta que estava com outro. Ao renovar o
+  login, ele invalidou a cópia do outro computador e a do cofre. O assistente do outro apagou o login que não renovava
+  e passou a pedir login; o Corrigir punha de volta o mesmo login morto (que o assistente apagava em segundos) e dizia
+  "corrigido"; e a nuvem seguia mandando a mesma conta, porque nenhum computador contava a ela que o login tinha
+  morrido.
+- **O Corrigir testa o login antes de pôr.** Login vencido é renovado antes de entrar no assistente, também o da conta
+  que já estava em uso quando o assistente saiu dela. Se ele não renova mais, a conta fica marcada para entrar de novo
+  (**Contas → Entrar de novo**), a nuvem fica sabendo na hora e manda outra conta, que entra em segundos. O Corrigir diz
+  isso, em vez de "corrigido".
+- **Sem esperar o Corrigir.** O assistente que fica mais de 2 minutos sem login recebe de volta a conta deste
+  computador, renovada, no máximo uma vez a cada 10 minutos; com o login morto, vale o item acima.
+- **A nuvem fica sabendo do login morto das contas paradas.** O computador que descobre, ao ler o uso, que o login de
+  uma conta parada morreu avisa a nuvem enquanto ainda está com ela. Antes avisava depois de soltá-la, a nuvem recusava,
+  e a conta seguia sendo mandada a outros computadores.
+- **`reveza trocar --local` não pega a conta de outro computador.** Com a nuvem ligada, a conta atribuída a outro
+  computador, ou com ele naquele momento, é recusada: os dois renovariam o mesmo login, e um deles ficaria sem.
+- **"Voltou a ter login" só com prova.** O computador que tinha nas mãos uma conta com o login morto contava à nuvem
+  que ela estava boa, apagando a marca posta por outro; a nuvem a mandou a outro computador, que ficou sem login. Agora
+  ele só diz isso com o login de pé no assistente ou com uma leitura de uso que deu certo há pouco.
+- **A conta removida sai de verdade, e a vigia da nuvem voltou.** O uso de tokens da conta removida batia no de outra
+  conta já removida, na mesma hora, e a remoção falhava inteira: desde 07/11 a vigia da nuvem parou (1.559 falhas em dois
+  dias), e com ela os alertas de computador parado e de conta sem login e o aviso de folga. Agora o uso dessa hora soma
+  no que já estava guardado, e cada passo da vigia corre à parte: um que falhe vira um erro nos eventos, no máximo um
+  por hora, sem segurar os outros.
+- **O Corrigir também cuida das contas que pedem login.** O item **Contas** do diagnóstico seguia acusando contas que
+  acabavam de ser reconectadas em outro computador, e o Corrigir não mexia nele ("10 de 11" para sempre). Agora ele traz
+  do cofre o login novo dessas contas e confere se abre; diz quais voltaram, quais estão com outro computador naquele
+  momento e quais precisam mesmo entrar de novo.
+- **Conta esgotada não entra à mão.** Com 100% na janela de 5 horas ou na semana, e a janela ainda sem renovar, o
+  **Usar agora** (Contas) e o **Trocar conta agora** (Computadores) ficam desativados, com o motivo, e a nuvem recusa o
+  pedido. A troca automática já não as escolhia.
+
 ## 0.15.0 · 07/11/2026
 
 Sessões críticas: quando as contas ficam sem folga, só o que não pode parar continua. E a troca para de escolher
