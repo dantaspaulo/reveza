@@ -7,6 +7,22 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.16.2 · 10/11/2026
+
+Sessão sem tela que ainda roda não ganha outra cópia. Quando a conta trocava, a retomada abria `claude --resume -p` na
+sessão que bateu o limite mesmo com o processo dela ainda vivo, e na troca seguinte abria outra por cima da primeira.
+Precisa dos computadores na 0.16.2 (cada um se atualiza sozinho, ou pelo painel em **Computadores → Atualizar**); a
+nuvem e o painel não mudam.
+
+- **O que acontecia:** o processo que bate o limite pode seguir vivo, relendo o login e trabalhando na conta nova. Um
+  `claude -p` agendado foi reaberto duas vezes, em duas trocas seguidas, com o processo original ainda vivo: as cópias
+  fizeram o mesmo trabalho de novo, e registros e avisos saíram em dobro.
+- **Agora:** antes de retomar, o Reveza procura um processo da conversa no computador (pela linha de comando e pelo
+  registro de sessões do próprio assistente). Com processo vivo, a sessão espera na fila e não ganha cópia, nem na troca
+  seguinte. Quando ele sai, ela volta uma vez, e só se a conversa parou no limite; se ele seguiu na conta nova até o
+  fim, a fila diz que ela voltou a trabalhar sozinha e nada reabre. O **retomar** do painel com processo vivo responde
+  que a sessão ainda roda.
+
 ## 0.16.1 · 10/11/2026
 
 Conversa de outro programa não é mais reaberta em dobro. Quando a conta trocava, a retomada das sessões sem tela
