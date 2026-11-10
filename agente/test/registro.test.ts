@@ -45,6 +45,16 @@ describe("custo", () => {
     assert.ok(Math.abs(custo({ cache_read_input_tokens: 1e6 }, "claude-fable-5").usd - 1.0) < 1e-9);
   });
 
+  test("fable 5.2 tem preço próprio (8/40, cache a 0,20) e não cai no fable 5; rápido sai o dobro", async () => {
+    assert.equal(familia("claude-fable-5-2[1m]"), "claude-fable-5-2");
+    assert.equal(familia("claude-mythos-5-2"), "claude-mythos-5-2");
+    const u = { input_tokens: 1e6, output_tokens: 1e6, cache_read_input_tokens: 1e6 };
+    const { usd, estimado } = custo(u, "claude-fable-5-2");
+    assert.ok(Math.abs(usd - (8 + 40 + 0.2)) < 1e-9);
+    assert.equal(estimado, false);
+    assert.ok(Math.abs(custo({ ...u, speed: "fast" }, "claude-fable-5-2").usd - 2 * (8 + 40 + 0.2)) < 1e-9);
+  });
+
   test("haiku 5.5: acima de 100 mil tokens no pedido vale a faixa mais cara", async () => {
     const pequeno = resposta("m", 0, { ent: 50_000, sai: 1e6, modelo: "claude-haiku-5-5" }).message.usage;
     assert.ok(Math.abs(custo(pequeno, "claude-haiku-5-5").usd - (0.05 * 0.1 + 0.5)) < 1e-9);

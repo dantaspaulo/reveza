@@ -3,6 +3,9 @@
 // na assinatura não se paga por token. Tabela herdada do registro de uso que já roda (cache de 06/10/2026).
 
 export const PRECOS: Record<string, [number, number, number]> = {
+  // a 5.2 (10/11/2026): sem ela na tabela, o nome caía no "claude-fable-5" e a leitura de cache saía a 1,00 (5x)
+  "claude-fable-5-2": [8.0, 40.0, 0.2],
+  "claude-mythos-5-2": [8.0, 40.0, 0.2],
   "claude-fable-5-1": [10.0, 50.0, 0.25],
   "claude-mythos-5-1": [10.0, 50.0, 0.25],
   "claude-fable-5": [10.0, 50.0, 1.0],
@@ -23,7 +26,13 @@ export const PRECO_PADRAO = "claude-opus-5-5";
 const FAIXA: Record<string, { acima: number; precos: [number, number, number] }> = {
   "claude-haiku-5-5": { acima: 100_000, precos: [0.5, 2.5, 0.05] },
 };
-const RAPIDO_X: Record<string, number> = { "claude-opus-5-5": 2.0, "claude-opus-5": 2.0, "claude-opus-4-8": 2.0 };
+const RAPIDO_X: Record<string, number> = {
+  "claude-opus-5-5": 2.0,
+  "claude-opus-5": 2.0,
+  "claude-opus-4-8": 2.0,
+  "claude-fable-5-2": 2.0,
+  "claude-mythos-5-2": 2.0,
+};
 const POR_TAMANHO = Object.keys(PRECOS).sort((a, b) => b.length - a.length);
 
 export interface Usage {
