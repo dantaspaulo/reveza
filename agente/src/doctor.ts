@@ -365,22 +365,24 @@ export async function doctor(d: DepsDoctor): Promise<Conferencia[]> {
       : t(`${contas.length} conta(s)`, `${contas.length} account(s)`) +
           (precisam.length ? t(`; precisam entrar de novo: ${precisam.join(", ")}`, `; need to sign in again: ${precisam.join(", ")}`) : "") +
           (semLogin.length ? t(`; sem login guardado: ${semLogin.join(", ")}`, `; no login stored: ${semLogin.join(", ")}`) : ""),
-    {
-      // com a nuvem, o Corrigir traz do cofre o login de quem entrou de novo em outro computador (09/11/2026: a VPS seguia
-      // acusando contas que o Paulo tinha acabado de reconectar no Mac mini, e o Corrigir não mexia nelas)
-      ...(nuvem && (precisam.length || semLogin.length) ? { conserto: "contas" as const } : {}),
-      fazer: !contas.length
-        ? nuvem
-          ? t(
-              "as contas chegam pela nuvem quando ela atribuir uma a este computador; para uma nova: Contas, Conectar, no painel",
-              "the accounts arrive through the cloud when it assigns one to this computer; for a new one: Accounts, Connect account, in the panel",
-            )
-          : t("conecte uma conta: reveza contas conectar <email>", "connect an account: reveza contas conectar <email>")
-        : t(
-            "entre de novo nessas contas pelo painel (Contas, Entrar de novo) ou com reveza contas conectar <email>",
-            "sign in again to these accounts from the panel (Accounts, Sign in again) or with reveza contas conectar <email>",
-          ),
-    },
+    // com a nuvem, o Corrigir traz do cofre o login de quem entrou de novo em outro computador (09/11/2026: a VPS seguia
+    // acusando contas que o Paulo tinha acabado de reconectar no Mac mini, e o Corrigir não mexia nelas); o texto dele diz
+    // quais voltaram e quais ainda pedem login. Conserto e o que fazer não andam juntos: o painel mostraria só o que fazer.
+    nuvem && (precisam.length || semLogin.length)
+      ? { conserto: "contas" as const }
+      : {
+          fazer: !contas.length
+            ? nuvem
+              ? t(
+                  "as contas chegam pela nuvem quando ela atribuir uma a este computador; para uma nova: Contas, Conectar, no painel",
+                  "the accounts arrive through the cloud when it assigns one to this computer; for a new one: Accounts, Connect account, in the panel",
+                )
+              : t("conecte uma conta: reveza contas conectar <email>", "connect an account: reveza contas conectar <email>")
+            : t(
+                "entre de novo nessas contas pelo painel (Contas, Entrar de novo) ou com reveza contas conectar <email>",
+                "sign in again to these accounts from the panel (Accounts, Sign in again) or with reveza contas conectar <email>",
+              ),
+        },
   );
 
   try {

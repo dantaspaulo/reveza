@@ -322,7 +322,8 @@ describe("leitura de uso", () => {
   test("renovar recusa a conta ativa sem rodar nada", async () => {
     m = await montar();
     const a = await ativaEm(m, "A", 10);
-    assert.equal(await tr().renovarSeguro(a), false);
+    // "bloqueado", não false: false é o assistente dizendo que o login morreu (a troca marcaria a conta para entrar de novo)
+    assert.equal(await tr().renovarSeguro(a), "bloqueado");
     assert.equal(m.cli.renovacoes.length, 0);
   });
 

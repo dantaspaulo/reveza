@@ -1793,7 +1793,8 @@ export class Agente {
     this.salvar();
     const partes = [
       voltaram.length ? `voltaram com o login do cofre: ${voltaram.join(", ")}` : "",
-      emOutro.length ? `com outro computador agora (o login vale lá; confiro de novo depois): ${emOutro.join(", ")}` : "",
+      // as partes se separam por ponto e vírgula: dentro delas, só vírgula
+      emOutro.length ? `com outro computador agora (o login vale lá, confiro de novo depois): ${emOutro.join(", ")}` : "",
       seguem.length ? `precisam entrar de novo pelo painel (Contas, Entrar de novo): ${seguem.join(", ")}` : "",
     ].filter(Boolean);
     return { ok: !seguem.length, texto: partes.join("; ") || "nenhuma conta pedindo login" };

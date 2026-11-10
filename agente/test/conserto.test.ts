@@ -104,7 +104,7 @@ describe("conferência: cada problema com o conserto seguro dele ou com o que fa
     assert.match(item(fora, "nuvem").fazer!, /internet/);
   });
 
-  test("sem conserto automático, só o que fazer: relógio, chave do cofre, assistente, contas e outro programa na porta", async () => {
+  test("sem conserto automático, só o que fazer: relógio, chave do cofre, assistente e outro programa na porta", async () => {
     tmp = pastaTemporaria();
     const d = deps(tmp.c, { horaNuvem: async () => T0 + 600, ponte: async () => ({ ativa: "x", contas: [] }) });
     d.cli.versao = async () => null as unknown as string;
@@ -124,8 +124,23 @@ describe("conferência: cada problema com o conserto seguro dele ou com o que fa
     semConserto("chaveiro", /painel.*Ligar computador novo|reveza ligar/);
     semConserto("assistente", /npm install -g @anthropic-ai\/claude-code/);
     semConserto("mod", /instale o assistente/);
-    semConserto("contas", /entre de novo/);
     semConserto("ponte", /outro programa/);
+  });
+
+  test("conta pedindo login: com nuvem, o Corrigir traz o login do cofre (sem o que fazer junto); sem nuvem, só o que fazer", async () => {
+    tmp = pastaTemporaria();
+    fs.mkdirSync(tmp.c.base, { recursive: true });
+    fs.writeFileSync(
+      tmp.c.estado,
+      JSON.stringify({ formato: 1, contas: { x: { id: "x", email: "x@exemplo.com", pasta: path.join(tmp.c.contas, "x"), precisaLogin: true, janelas: [] } } }),
+    );
+    const comNuvem = item(await doctor(deps(tmp.c)), "contas");
+    assert.equal(comNuvem.situacao, "aviso");
+    assert.equal(comNuvem.conserto, "contas");
+    assert.equal(comNuvem.fazer, undefined, "o painel mostraria só o que fazer e esconderia o conserto");
+    const semNuvem = item(await doctor(deps(tmp.c, { nuvemConfigurada: async () => null })), "contas");
+    assert.equal(semNuvem.conserto, undefined, "sem nuvem não há cofre de onde trazer o login");
+    assert.match(semNuvem.fazer ?? "", /entre de novo/);
   });
 
   test("dentro do agente (o Corrigir do painel) o serviço não se reinicia: só explica; sem serviço e em sombra também", async () => {

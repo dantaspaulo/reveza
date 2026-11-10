@@ -726,11 +726,13 @@ describe("login morto da conta em uso", () => {
 
   test("conta na mão com o login morto não apaga a marca de precisar de login que outro computador pôs", async () => {
     const { a, aId } = await airDepoisDeDormir();
+    // na preparação, com o login de pé, o aviso de que ela tem login era certo: conta só o que vem depois
+    const antes = fns("marcarLogin").length;
     banco.contas.get(aId)!.precisaLogin = true;
     // como depois de um aviso que falhou sem rede: a nuvem não sabe o que este computador acha da conta
     (m.agente as unknown as { loginInformado: Map<string, boolean> }).loginInformado.delete(a);
     await m.agente.busca();
-    assert.ok(!fns("marcarLogin").some((x) => x.args[0] === aId && x.args[1] === false), "sem prova de que o login funciona");
+    assert.ok(!fns("marcarLogin").slice(antes).some((x) => x.args[0] === aId && x.args[1] === false), "sem prova de que o login funciona");
     assert.equal(banco.contas.get(aId)!.precisaLogin, true);
   });
 
