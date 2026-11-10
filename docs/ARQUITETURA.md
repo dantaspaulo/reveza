@@ -193,6 +193,20 @@ cópia do Reveza trabalharia junto com a dele, na mesma conversa e nas mesmas pa
 para quem conversa (caso de 10/11/2026: duas cópias de um agente do OpenBot ao mesmo tempo). A fila marca a sessão como
 descartada, com um evento dizendo de quem ela é, e o **retomar** do painel responde 409.
 
+**Conversa com processo vivo não ganha outra cópia (0.16.2).** O processo que bateu o limite pode seguir vivo, relendo
+o login e trabalhando na conta nova, e uma retomada anterior pode estar no meio do trabalho (caso de 10/11/2026: um
+`claude -p` de hora em hora foi reaberto duas vezes, em duas trocas seguidas, com o processo original ainda vivo, e as
+cópias repetiram registros e avisos). Antes de abrir o `claude --resume`, a retomada procura um processo da conversa
+neste computador (`agente/src/sessaoviva.ts`): pela linha de comando do `ps` (`--resume`, `-r` ou `--session-id` com o
+id, numa linha do assistente) e pelo registro de sessões que o próprio assistente mantém ao lado das transcrições
+(`~/.claude/sessions/<pid>.json`, com o `sessionId`; ele pega o processo original, que não traz o id na linha de
+comando, e confere no `ps` que o número ainda é do assistente). No Windows, sem o `ps`, vale só o registro. Com processo
+vivo, a sessão segue na fila com o número dele (`vivo`), sai um evento, e o ciclo (15 s) confere de novo. Quando o
+processo sai, ela só volta se a última resposta do assistente na transcrição for o erro da API (`isApiErrorMessage`, o
+limite); se ele seguiu na conta nova e terminou, a fila a marca como retomada ("voltou a trabalhar sozinha") e nada
+reabre. Sem resposta no fim lido, não dá para saber, e ela volta como antes. O **retomar** do painel com processo vivo
+responde 409 e a sessão segue esperando.
+
 **A conta da sessão (0.10.3).** O uso ao vivo (`/api/medida`) e o limite (`/api/limite`) só valem para a conta em uso
 quando a sessão está nela. Relato de um usuário (22/10/2026): o app de desktop, com login próprio numa conta A, carregava
 o mod, e o uso dele era gravado na conta B, a em uso (o painel e a troca decidiam com o número errado). O mod lê a conta

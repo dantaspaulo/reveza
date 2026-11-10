@@ -197,6 +197,11 @@ export class CliFalsa implements Cli {
   retomar(sessao: string, cwd: string) {
     this.retomadas.push({ sessao, cwd });
   }
+  /** As conversas que ainda têm processo vivo neste computador (o número dele). */
+  vivas = new Map<string, number>();
+  sessaoViva(sessao: string) {
+    return this.vivas.get(sessao) ?? null;
+  }
 }
 
 export class ExecutorFalso implements Executor {

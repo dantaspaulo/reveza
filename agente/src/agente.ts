@@ -65,6 +65,7 @@ import { compararVersao, loginNoGerenciadorDoWindows } from "./doctor.js";
 import { abrirTokens, completaLigada, PUBLICA_DESDE, pendenteDaPublicacao, semSegredos } from "./completa.js";
 import { gravarAtomico, gravarJson, lerJson } from "./util/arquivos.js";
 import { aplicarResumo, contaGrande, janelaDaConta, RESUMO_MAXIMO, RESUMO_MINIMO } from "./resumo.js";
+import { parouNoErro } from "./sessaoviva.js";
 import { aplicarModelo } from "./modelo.js";
 import { ESPERA_MAXIMA_S, esperarMemoria, TETO_ESPERA_PCT, trocaPodeEsperar, type Memoria } from "./memoria.js";
 
@@ -554,6 +555,7 @@ export class Agente {
         }
         this.trocador.registrarHistorico(t);
         this.vigiarCriticas(t);
+        this.retomarAdiadas();
         if (!this.comNuvem && this.estado.config.modo === "rodizio" && !this.estado.proximoRodizioEm) {
           agendarRodizio(this.estado, t, this.d.aleatorio);
         }
@@ -690,10 +692,27 @@ export class Agente {
         f.estado = "descartada";
         continue;
       }
-      const r = this.retomar(f.sessao);
-      f.estado = r && "cwd" in r ? "retomada" : "descartada";
+      const r = this.retomar(f.sessao, f.vivo !== undefined);
+      if (r && "vivo" in r) {
+        // A conversa ainda roda: o processo que bateu o limite (ele pode seguir relendo o login e trabalhando na conta
+        // nova) ou uma retomada anterior. Outra cópia faria o mesmo trabalho de novo (10/11/2026: um claude -p reaberto
+        // duas vezes, em duas trocas seguidas). Fica na fila, e o ciclo confere até o processo sair.
+        if (f.vivo !== r.vivo) {
+          f.vivo = r.vivo;
+          this.d.log.info(`sessão ${f.sessao.slice(0, 8)}: ainda roda no processo ${r.vivo}; não abro outra cópia`);
+          this.trocador.evento(
+            "info",
+            `A sessão ${f.sessao.slice(0, 8)} ainda roda neste computador (processo ${r.vivo}); o Reveza não abre outra cópia e a retoma quando esse processo sair, se ela tiver parado no limite.`,
+            { sessao: f.sessao },
+          );
+        }
+        continue;
+      }
+      f.estado = r && ("cwd" in r || "sozinha" in r) ? "retomada" : "descartada";
       if (r && "cwd" in r) this.trocador.evento("retomada", `Retomei a sessão de terminal ${f.sessao.slice(0, 8)} em ${path.basename(r.cwd)}.`, { sessao: f.sessao });
-      else if (r)
+      else if (r && "sozinha" in r)
+        this.trocador.evento("retomada", `A sessão ${f.sessao.slice(0, 8)} voltou a trabalhar sozinha na conta nova; o Reveza não abriu outra cópia.`, { sessao: f.sessao });
+      else if (r && "programa" in r)
         this.trocador.evento(
           "info",
           `A sessão ${f.sessao.slice(0, 8)} é do ${r.programa}, que a reabre sozinho na conta nova; o Reveza não abre outra cópia dela.`,
@@ -702,13 +721,22 @@ export class Agente {
     }
   }
 
+  /** As sessões sem tela que esperam o próprio processo sair: o ciclo confere de novo. */
+  private retomarAdiadas(): void {
+    for (const f of this.estado.fila) {
+      if (f.tipo === "headless" && f.estado === "aguardando" && f.vivo !== undefined) this.retomarHeadless(f.sessao);
+    }
+  }
+
   /**
    * Retoma a sessão na pasta em que ela rodou, lida da transcrição que o próprio assistente gravou: a pasta que veio
    * pela ponte local não vale (qualquer programa do computador fala com a ponte). Devolve a pasta, `programa` quando a
    * conversa é de outro programa (ele a reabre sozinho; uma segunda cópia trabalharia junto com a dele e responderia
-   * para o Reveza, não para quem conversa), ou null sem a transcrição.
+   * para o Reveza, não para quem conversa), `vivo` quando a conversa ainda tem processo neste computador (outra cópia
+   * faria o mesmo trabalho duas vezes), `sozinha` quando ela esperou o processo sair (`adiada`) e ele seguiu na conta
+   * nova até o fim, sem parar no limite, ou null sem a transcrição.
    */
-  private retomar(sessao: string): { cwd: string } | { programa: string } | null {
+  private retomar(sessao: string, adiada = false): { cwd: string } | { programa: string } | { vivo: number } | { sozinha: true } | null {
     const lida = lerSessao(this.d.c.projetos, sessao, this.d.c.home);
     if (!lida || !fs.existsSync(lida.cwd)) {
       this.d.log.erro(`sessão ${sessao.slice(0, 8)}: não achei a transcrição dela; não retomo`);
@@ -717,6 +745,13 @@ export class Agente {
     if (lida.programa) {
       this.d.log.info(`sessão ${sessao.slice(0, 8)}: é do ${lida.programa}, que a reabre sozinho; não abro outra cópia`);
       return { programa: lida.programa };
+    }
+    const vivo = this.d.cli.sessaoViva(sessao, this.d.c.projetos);
+    if (vivo !== null) return { vivo };
+    // esperou o processo sair: se a última resposta não é o erro do limite, ele seguiu na conta nova e terminou
+    if (adiada && parouNoErro(this.d.c.projetos, sessao) === false) {
+      this.d.log.info(`sessão ${sessao.slice(0, 8)}: seguiu sozinha na conta nova depois do limite; não reabro`);
+      return { sozinha: true };
     }
     const cwd = lida.cwd;
     if (this.d.sombra) {
@@ -2089,7 +2124,13 @@ export class Agente {
         if (f.tipo !== "headless") return recusa(409, "sessão com tela: ela continua sozinha quando a conta troca");
         const r = this.retomar(f.sessao);
         if (!r) return recusa(404, "a transcrição da sessão não está neste computador");
-        if (!("cwd" in r)) {
+        if ("vivo" in r) {
+          return recusa(
+            409,
+            `a sessão ainda roda neste computador (processo ${r.vivo}): retomar agora abriria outra cópia dela; ela volta sozinha quando esse processo sair, se tiver parado no limite`,
+          );
+        }
+        if ("programa" in r) {
           f.estado = "descartada";
           this.salvar();
           return recusa(409, `a sessão é do ${r.programa}, que a reabre sozinho na conta nova; retomar daqui abriria outra cópia dela`);
@@ -2291,7 +2332,8 @@ export class Agente {
         if (sessao) this.contador.marcarParada(sessao);
         this.salvar();
         if (r.anotado) this.fundo(modelo ? this.semModeloDepois(sessao, modelo.modelo) : this.limiteDepois(sessao));
-        // sessão de terminal atrasada na troca: a troca já aconteceu, então ela volta agora (num processo novo, que lê o login)
+        // sessão de terminal atrasada na troca: a troca já aconteceu, então ela volta num processo novo, que lê o login,
+        // assim que o processo dela sair (ele mesmo pode seguir na conta nova; aí ela não volta)
         if (r.aguardarS && corpo.tipo === "headless" && sessao) this.retomarHeadless(sessao);
         return { status: 200, corpo: { ok: true, versao: r.versao, trocou: r.trocou, ...(r.aguardarS ? { aguardarS: r.aguardarS } : {}) } };
       },

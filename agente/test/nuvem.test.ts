@@ -538,6 +538,25 @@ describe("comandos do painel", () => {
     assert.equal(e().fila.find((f) => f.sessao === sessao)!.estado, "descartada");
   });
 
+  test("retomar_sessao: conversa que ainda tem processo vivo neste computador é recusada e segue esperando", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    const sessao = "55555555-0000-4000-8000-000000000005";
+    const dir = path.join(m.c.projetos, "-viva");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${sessao}.jsonl`), JSON.stringify({ sessionId: sessao, cwd: m.c.base, entrypoint: "sdk-cli" }) + "\n");
+    e().fila.unshift({ sessao, cwd: m.c.base, tipo: "headless", em: m.relogio.agora(), estado: "aguardando", conta: null });
+    m.cli.vivas.set(sessao, 4343);
+    banco.comandos.push({ id: 1, acao: "retomar_sessao", corpo: { sessao }, pc: "pc-1", estado: "pendente" });
+    await m.agente.busca();
+    assert.deepEqual(m.cli.retomadas, [], "nenhuma segunda cópia");
+    const c = banco.comandos.find((x) => x.id === 1)!;
+    assert.equal(c.http, 409);
+    assert.match(JSON.stringify(c.resposta), /ainda roda neste computador/);
+    assert.equal(e().fila.find((f) => f.sessao === sessao)!.estado, "aguardando", "segue na fila para quando o processo sair");
+  });
+
   test("o pedido \"ligar\" do painel antigo (a frase cifrada para o navegador) é recusado: saiu na 0.2.0", async () => {
     const c = await comComando("ligar", { publica: { kty: "EC", crv: "P-256", x: "a".repeat(43), y: "b".repeat(43) }, idioma: "pt-BR" });
     assert.equal(c.http, 410);

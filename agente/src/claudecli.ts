@@ -10,6 +10,7 @@ import { aspasSh } from "./navegador.js";
 import { envDaPasta, type Executor, type Processo, type Resultado } from "./util/executor.js";
 import { ASSISTENTE_UPDATE_MS, VERSAO_ASSISTENTE, instalacaoNativa, npmDoNode, prefixoNpm } from "./assistente.js";
 import { compararVersao } from "./doctor.js";
+import { processoDaSessao } from "./sessaoviva.js";
 
 /** O "navegador" do login (abrir-login.js), compilado ao lado deste arquivo. */
 const ABRIR_LOGIN = fileURLToPath(new URL("./abrir-login.js", import.meta.url));
@@ -24,6 +25,12 @@ export interface Cli {
   renovar(pasta: string, tentativa: 0 | 1): Promise<Resultado | void>;
   login(pasta: string, email: string | null): Processo;
   retomar(sessao: string, cwd: string, texto: string, saida: number): void;
+  /**
+   * Um processo vivo desta conversa neste computador (o original, que pode seguir relendo o login na conta nova, ou uma
+   * retomada anterior), ou null: com ele vivo, retomar abriria uma segunda cópia da mesma conversa. `projetos` é a pasta
+   * das transcrições; o registro de sessões do assistente mora ao lado dela.
+   */
+  sessaoViva(sessao: string, projetos: string): number | null;
   /**
    * `claude update`: o próprio assistente se atualiza (instalação nativa, npm ou Homebrew), sem terminal. Com `alvo`
    * (X.Y.Z, pedido do painel para igualar os computadores), instala essa versão quando o `claude update` não chegou nela.
@@ -119,6 +126,10 @@ export class ClaudeCli implements Cli {
     const env = envDaPasta("", process.env);
     delete env.CLAUDE_CONFIG_DIR;
     this.exec.iniciar([this.bin, "--resume", sessao, "-p", texto], { cwd, env, solto: { saida } });
+  }
+
+  sessaoViva(sessao: string, projetos: string): number | null {
+    return processoDaSessao(sessao, projetos, this.sistema === "windows");
   }
 
   async atualizar(alvo?: string): Promise<Resultado> {

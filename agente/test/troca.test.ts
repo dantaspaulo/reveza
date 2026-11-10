@@ -571,6 +571,65 @@ describe("leitura de uso", () => {
       ["descartada", "descartada"],
     );
   });
+
+  // Conversa sem tela que ainda tem processo vivo (10/11/2026): o claude -p que bateu o limite seguiu vivo, relendo o
+  // login e trabalhando na conta nova, e a retomada abriu uma cópia por cima; na troca seguinte, com a cópia viva,
+  // abriu outra. As cópias fizeram o mesmo trabalho de novo.
+  function transcricaoQueParou(sessao: string, cwd: string, noLimite: boolean) {
+    const dir = path.join(m.c.projetos, "-projeto");
+    fs.mkdirSync(dir, { recursive: true });
+    const resposta = (texto: string) => ({ type: "assistant", sessionId: sessao, cwd, message: { content: [{ type: "text", text: texto }] } });
+    const linhas = [
+      { type: "user", sessionId: sessao, cwd, entrypoint: "sdk-cli" },
+      resposta("trabalhando"),
+      noLimite ? { ...resposta("You've hit your limit"), isApiErrorMessage: true, error: "rate_limit" } : resposta("pronto"),
+      { type: "system", subtype: "stop_hook_summary", sessionId: sessao },
+    ];
+    fs.writeFileSync(path.join(dir, `${sessao}.jsonl`), linhas.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  }
+
+  test("conversa sem tela com processo vivo não ganha outra cópia, nem na troca seguinte; volta uma vez quando ele sai, se parou no limite", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    transcricaoQueParou(S9, m.c.base, true);
+    m.cli.vivas.set(S9, 4242);
+    await m.agente.alvoPonte().limite({ sessao: S9, cwd: m.c.base, tipo: "headless" });
+    await m.agente.esperar();
+    assert.deepEqual(m.cli.retomadas, [], "o processo da conversa ainda vive: nenhuma cópia");
+    assert.equal(e().fila[0]!.estado, "aguardando");
+    assert.ok(e().eventos.some((x) => x.tipo === "info" && /ainda roda neste computador \(processo 4242\)/.test(x.texto)), "o evento diz por que esperou");
+    // a troca seguinte e os ciclos, com o processo (ou uma cópia) ainda vivo, também não abrem outra
+    m.agente.retomarHeadless();
+    await m.agente.ciclo();
+    assert.deepEqual(m.cli.retomadas, []);
+    // o processo saiu e a conversa parou no limite: volta uma vez só
+    m.cli.vivas.delete(S9);
+    await m.agente.ciclo();
+    assert.deepEqual(m.cli.retomadas, [{ sessao: S9, cwd: m.c.base }], "o ciclo confere sozinho, sem esperar outra troca");
+    assert.equal(e().fila[0]!.estado, "retomada");
+    await m.agente.ciclo();
+    m.agente.retomarHeadless();
+    assert.equal(m.cli.retomadas.length, 1, "uma vez só");
+  });
+
+  test("conversa sem tela que seguiu sozinha na conta nova (não parou no limite) não é reaberta quando o processo sai", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    transcricaoQueParou(S9, m.c.base, false);
+    m.cli.vivas.set(S9, 4242);
+    await m.agente.alvoPonte().limite({ sessao: S9, cwd: m.c.base, tipo: "headless" });
+    await m.agente.esperar();
+    assert.deepEqual(m.cli.retomadas, []);
+    m.cli.vivas.delete(S9);
+    await m.agente.ciclo();
+    assert.deepEqual(m.cli.retomadas, [], "ela terminou o trabalho na conta nova: reabrir faria tudo de novo");
+    assert.equal(e().fila[0]!.estado, "retomada");
+    assert.ok(e().eventos.some((x) => x.tipo === "retomada" && /voltou a trabalhar sozinha/.test(x.texto)));
+  });
 });
 
 describe("entradas do login", () => {

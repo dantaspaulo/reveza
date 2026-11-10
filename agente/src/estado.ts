@@ -47,6 +47,11 @@ export interface ItemFila {
   em: number;
   estado: "aguardando" | "retomada" | "descartada";
   conta: string | null;
+  /**
+   * Sessão sem tela que a retomada achou com processo vivo (o número dele): ela espera esse processo sair, e o ciclo
+   * confere de novo. Quando ele sai, ela só volta se a conversa parou no limite.
+   */
+  vivo?: number;
 }
 
 export type Modo = "limiar" | "limite" | "rodizio";
