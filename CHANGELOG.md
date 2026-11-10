@@ -7,14 +7,23 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
-## 0.15.1 · 09/11/2026
+## 0.16.0 · 10/11/2026
 
-Correção: o computador que ficava pedindo login, com o Corrigir dizendo que tinha corrigido; a conta removida que
-não saía; e conta esgotada que ainda dava para usar à mão. Pedidos do Paulo: "fica dizendo que precisa fazer login...
-tem 9 de 10 e botão corrigir, mas não corrigi nada. A IA não responde lá", "tá marcado para sair do reveza e não sai" e
-"Contas esgotadas não pode ser usadas, o botão de usar agora nem deve ficar ativo". Precisa da nuvem na 0.15.1
-(migração 0034: a nuvem se atualiza sozinha, ou pelo **Atualizar a nuvem**), do painel novo e dos computadores na 0.15.1
-(cada um se atualiza sozinho, ou pelo painel em **Computadores → Atualizar**).
+Correção do login que caía e a semana do Fable no painel. O computador ficava pedindo login, com o Corrigir dizendo
+que tinha corrigido; a conta removida não saía; conta esgotada ainda dava para usar à mão; e o painel não mostrava a
+semana do Fable. Pedidos do Paulo: "fica dizendo que precisa fazer login... tem 9 de 10 e botão corrigir, mas não
+corrigi nada. A IA não responde lá", "tá marcado para sair do reveza e não sai", "Contas esgotadas não pode ser usadas,
+o botão de usar agora nem deve ficar ativo" e "não mostra o do fable". Precisa da nuvem na 0.16.0 (migração 0034: a
+nuvem se atualiza sozinha, ou pelo **Atualizar a nuvem**), do painel novo e dos computadores na 0.16.0 (cada um se
+atualiza sozinho, ou pelo painel em **Computadores → Atualizar**).
+
+- **A semana do Fable no painel.** Em **Contas** e no cartão de cada computador da **Visão geral**, uma barra **Fable**
+  embaixo da semana mostra o quanto já se usou do Fable incluso no plano na semana (passou de 100%, ele só segue com
+  créditos de uso). Não é cota a mais: o Fable gasta também a semana da conta e, com ela cheia, para junto. O próprio
+  Claude Code diz isso no "reset do Fable", que devolve à semana o que o Fable gastou. Antes ela aparecia só como uma
+  linha pequena nas regras da conta.
+- **Correção: o custo equivalente do Fable 5.2.** O preço dele não estava na tabela, e a leitura de cache saía 5 vezes
+  acima, como a do Fable 5. Agora vale o preço da 5.2.
 
 - **O que aconteceu.** Um computador pegou com `reveza trocar --local` a conta que estava com outro. Ao renovar o
   login, ele invalidou a cópia do outro computador e a do cofre. O assistente do outro apagou o login que não renovava
