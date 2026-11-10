@@ -7,6 +7,20 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.16.1 · 10/11/2026
+
+Conversa de outro programa não é mais reaberta em dobro. Quando a conta trocava, a retomada das sessões sem tela
+reabria com `claude --resume -p` também a conversa que outro programa tinha aberto (um agente do OpenBot, um app pelo
+SDK do Claude), e o programa reabria a dele na conta nova. Precisa dos computadores na 0.16.1 (cada um se atualiza
+sozinho, ou pelo painel em **Computadores → Atualizar**); a nuvem e o painel não mudam.
+
+- **O que acontecia:** ficavam duas cópias trabalhando juntas, na mesma conversa e nas mesmas pastas, e a resposta da
+  cópia do Reveza ia para o registro dele, não para quem conversava. Um envio no meio da tarefa podia sair em dobro.
+- **Agora:** a retomada lê, no começo da transcrição, quem abriu a conversa e só reabre a do próprio assistente (o
+  terminal e o `claude -p`). A de outro programa, ou a que roda numa pasta de agente do OpenBot
+  (`~/OpenBot/Agents/<agente>`), fica de fora: na fila ela aparece como descartada, com um evento dizendo de quem ela é,
+  e o **retomar** do painel responde que o programa a reabre sozinho.
+
 ## 0.16.0 · 10/11/2026
 
 Correção do login que caía e a semana do Fable no painel. O computador ficava pedindo login, com o Corrigir dizendo
