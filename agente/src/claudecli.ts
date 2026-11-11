@@ -24,7 +24,8 @@ export interface Cli {
    */
   renovar(pasta: string, tentativa: 0 | 1): Promise<Resultado | void>;
   login(pasta: string, email: string | null): Processo;
-  retomar(sessao: string, cwd: string, texto: string, saida: number): void;
+  /** `rotina`: a marca REVEZA_ROTINA da sessão, que a retomada leva adiante (se ela parar de novo, segue reconhecida). */
+  retomar(sessao: string, cwd: string, texto: string, saida: number, rotina?: string): void;
   /**
    * Um processo vivo desta conversa neste computador (o original, que pode seguir relendo o login na conta nova, ou uma
    * retomada anterior), ou null: com ele vivo, retomar abriria uma segunda cópia da mesma conversa. `projetos` é a pasta
@@ -120,11 +121,13 @@ export class ClaudeCli implements Cli {
     return this.exec.iniciar(argv, { cwd: pasta, env });
   }
 
-  retomar(sessao: string, cwd: string, texto: string, saida: number): void {
+  retomar(sessao: string, cwd: string, texto: string, saida: number, rotina?: string): void {
     // ambiente limpo como o da renovação (sem ANTHROPIC_* nem CLAUDE_CODE_* de quem rodou o agente) e sem
     // CLAUDE_CONFIG_DIR: a sessão continua na conta que acabou de entrar, com a configuração padrão do usuário
     const env = envDaPasta("", process.env);
     delete env.CLAUDE_CONFIG_DIR;
+    delete env.REVEZA_ROTINA;
+    if (rotina) env.REVEZA_ROTINA = rotina;
     this.exec.iniciar([this.bin, "--resume", sessao, "-p", texto], { cwd, env, solto: { saida } });
   }
 

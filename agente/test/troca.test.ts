@@ -7,7 +7,7 @@ import { cwdDaSessao, lerSessao } from "../src/agente.js";
 import { EMAIL_VALIDO } from "../src/logins.js";
 import { CONFERIR_TROCA_MS } from "../src/config.js";
 import { PRINCIPAL_MORTA_APOS_S } from "../src/troca.js";
-import { ativaEm, blob, contaEstacionada, montar, RelogioFalso, type Montado } from "./falsos.js";
+import { ativaEm, blob, contaEstacionada, montar, OpenBotFalso, RelogioFalso, type Montado } from "./falsos.js";
 
 let m: Montado;
 afterEach(() => m?.limpar());
@@ -629,6 +629,211 @@ describe("leitura de uso", () => {
     assert.deepEqual(m.cli.retomadas, [], "ela terminou o trabalho na conta nova: reabrir faria tudo de novo");
     assert.equal(e().fila[0]!.estado, "retomada");
     assert.ok(e().eventos.some((x) => x.tipo === "retomada" && /voltou a trabalhar sozinha/.test(x.texto)));
+  });
+
+  // 10/11/2026, 22:10: uma troca reabriu de uma vez 13 passadas sem tela, 9 delas de uma rotina de 5 em 5 minutos que
+  // o relógio já tinha deixado para trás (uns 1,9 GB juntas; registros repetidos e crédito gasto à toa).
+  const sessaoN = (n: number) => `${String(n).repeat(8)}-0000-4000-8000-${String(n).repeat(12)}`;
+  const naFila = (sessao: string, em: number, rotina?: string) =>
+    e().fila.unshift({ sessao, cwd: "/tmp", tipo: "headless", em, estado: "aguardando", conta: null, ...(rotina ? { rotina } : {}) });
+
+  test("da mesma rotina só a passada mais nova volta, com a marca da rotina; nenhuma se outra passada dela começou depois do corte", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    const t0 = m.relogio.agora();
+    const [s1, s2, s3] = [sessaoN(1), sessaoN(2), sessaoN(3)];
+    for (const s of [s1, s2, s3]) transcricao(s, m.c.base);
+    naFila(s1, t0 - 600, "com.exemplo.vigia");
+    naFila(s2, t0 - 300, "com.exemplo.vigia");
+    naFila(s3, t0 - 10, "com.exemplo.vigia");
+    m.agente.retomarHeadless();
+    assert.deepEqual(m.cli.retomadas, [{ sessao: s3, cwd: m.c.base, rotina: "com.exemplo.vigia" }], "só a mais nova, e a retomada leva a marca");
+    const estado = (s: string) => e().fila.find((f) => f.sessao === s)!.estado;
+    assert.equal(estado(s1), "descartada");
+    assert.equal(estado(s2), "descartada");
+    assert.ok(e().eventos.some((x) => /não volta: a passada mais nova da rotina com\.exemplo\.vigia/.test(x.texto)));
+
+    // outra rotina: a passada cortada às t0, e uma passada nova dela que aparece 60 s depois
+    const [s4, s5] = [sessaoN(4), sessaoN(5)];
+    transcricao(s4, m.c.base);
+    naFila(s4, t0, "relatorio:diario");
+    m.relogio.t += 60;
+    await m.agente.alvoPonte().medida({ sessao: s5, rotina: "relatorio:diario", janelas: [] });
+    m.agente.retomarHeadless();
+    assert.equal(m.cli.retomadas.length, 1, "a passada nova já começou: a cortada não volta");
+    assert.equal(estado(s4), "descartada");
+    assert.ok(e().eventos.some((x) => /outra passada da rotina relatorio:diario \(55555555\) começou depois do corte/.test(x.texto)));
+  });
+
+  test("uma retomada sem tela por vez: a próxima espera a anterior sair, e o ciclo a solta sozinho", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    const t0 = m.relogio.agora();
+    const [s1, s2] = [sessaoN(1), sessaoN(2)];
+    for (const s of [s1, s2]) transcricao(s, m.c.base);
+    naFila(s1, t0 - 30);
+    naFila(s2, t0 - 20);
+    m.agente.retomarHeadless();
+    assert.deepEqual(m.cli.retomadas.map((r) => r.sessao), [s1], "a mais antiga primeiro, e só ela");
+    // a retomada de s1 ainda roda
+    m.cli.vivas.set(s1, 777);
+    await m.agente.ciclo();
+    m.agente.retomarHeadless();
+    assert.deepEqual(m.cli.retomadas.map((r) => r.sessao), [s1], "s2 espera a vez");
+    assert.ok(e().eventos.some((x) => /A sessão 22222222 espera a vez/.test(x.texto)));
+    m.cli.vivas.delete(s1);
+    await m.agente.ciclo();
+    assert.deepEqual(m.cli.retomadas.map((r) => r.sessao), [s1, s2], "s1 saiu: o ciclo retoma s2 sem esperar outra troca");
+    await m.agente.ciclo();
+    assert.equal(m.cli.retomadas.length, 2, "uma vez cada");
+  });
+
+  test("sem tela que parou na conta que acabou de sair volta já, sem esperar a troca seguinte", async () => {
+    m = await montar();
+    await ativaEm(m, "A", 80);
+    const b = contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    const v0 = e().versao;
+    await tr().trocar(b, "teste");
+    transcricao(S9, m.c.base);
+    await m.agente.alvoPonte().limite({ sessao: S9, cwd: m.c.base, tipo: "headless", versao: v0 });
+    await m.agente.esperar();
+    assert.deepEqual(m.cli.retomadas, [{ sessao: S9, cwd: m.c.base }]);
+  });
+
+  test("sem conta livre, a sessão sem tela volta quando a própria conta volta (o reset da janela cheia)", async () => {
+    m = await montar();
+    const a = await ativaEm(m, "A", 80);
+    e().config.retomarHeadless = true;
+    transcricao(S9, m.c.base);
+    const reset = e().contas[a]!.janelas[0]!.resetEm!;
+    await m.agente.alvoPonte().limite({ sessao: S9, cwd: m.c.base, tipo: "headless" });
+    await m.agente.esperar();
+    assert.equal(e().ativa, a, "não havia outra conta");
+    assert.equal(e().fila[0]!.voltaEm, reset);
+    await m.agente.ciclo();
+    assert.deepEqual(m.cli.retomadas, [], "antes do reset, nada");
+    m.relogio.t = reset + 5;
+    e().contas[a]!.lidoEm = m.relogio.agora();
+    e().contas[a]!.fonte = "sessao";
+    await m.agente.ciclo();
+    assert.deepEqual(m.cli.retomadas, [{ sessao: S9, cwd: m.c.base }], "a janela renovou: volta sem troca");
+    assert.ok(e().eventos.some((x) => /voltou a ter crédito/.test(x.texto)));
+  });
+
+  // Conversa de agente do OpenBot cortada pelo limite (10/11/2026, 20:58: 12 cortadas, nenhuma continuou sozinha
+  // quando o crédito voltou; o OpenBot só abre o programa do agente quando chega mensagem ou rotina).
+  function conversaOpenBot(sessao: string, pedido: string, noLimite = true) {
+    const cwd = path.join(m.c.home, "OpenBot", "Agents", "agent-0000");
+    const dir = path.join(m.c.projetos, "-openbot");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(cwd, { recursive: true });
+    const linhas = [
+      { type: "user", sessionId: sessao, cwd, entrypoint: "openbot", message: { content: [{ type: "text", text: pedido }] } },
+      { type: "assistant", sessionId: sessao, cwd, message: { content: [{ type: "text", text: "começando" }] } },
+      { type: "user", sessionId: sessao, cwd, message: { content: [{ type: "tool_result", content: "ok" }] } },
+      noLimite
+        ? { type: "assistant", sessionId: sessao, cwd, isApiErrorMessage: true, error: "rate_limit", message: { content: [{ type: "text", text: "You've hit your limit" }] } }
+        : { type: "assistant", sessionId: sessao, cwd, message: { content: [{ type: "text", text: "pronto" }] } },
+    ];
+    fs.writeFileSync(path.join(dir, `${sessao}.jsonl`), linhas.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    return cwd;
+  }
+
+  test("conversa do OpenBot cortada pelo limite continua uma vez, pelo próprio OpenBot, no chat principal do agente", async () => {
+    const ob = new OpenBotFalso();
+    m = await montar({ openbot: ob });
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    ob.principais.set(S9, "agent-0000");
+    conversaOpenBot(S9, "<openbot_turn_style>\nescreva uma linha\n</openbot_turn_style>\nFaça o relatório da semana");
+    await m.agente.alvoPonte().limite({ sessao: S9, cwd: "/tmp", tipo: "headless" });
+    await m.agente.esperar();
+    assert.equal(ob.enviadas.length, 0, "logo depois da troca, espera o processo da conversa reler o login");
+    m.relogio.t += 31;
+    await m.agente.ciclo();
+    await m.agente.esperar();
+    assert.equal(ob.enviadas.length, 1);
+    assert.equal(ob.enviadas[0]!.agente, "agent-0000");
+    assert.match(ob.enviadas[0]!.texto, /bateu o limite de uso às \d\d:\d\d, no meio da sua última tarefa, e o crédito voltou\. Continue de onde parou/);
+    assert.match(ob.enviadas[0]!.texto, /responda só "nada pendente"/);
+    assert.equal(ob.enviadas[0]!.chave, `reveza-${S9}-${e().fila[0]!.em}`, "a chave do corte: o OpenBot não aceita a mesma duas vezes");
+    assert.deepEqual(m.cli.retomadas, [], "nenhum claude --resume -p");
+    assert.equal(e().fila[0]!.estado, "retomada");
+    assert.ok(e().eventos.some((x) => x.tipo === "retomada" && /Mandei o agente agent-0000 do OpenBot continuar a conversa 99999999/.test(x.texto)));
+    // uma vez por corte
+    m.relogio.t += 120;
+    await m.agente.ciclo();
+    m.agente.retomarHeadless();
+    await m.agente.esperar();
+    assert.equal(ob.enviadas.length, 1);
+  });
+
+  test("OpenBot: rodada de rotina, conversa que já seguiu e mensagem automática não continuam; as cortadas juntas saem espaçadas", async () => {
+    const ob = new OpenBotFalso();
+    m = await montar({ openbot: ob });
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    e().trocadaEm = m.relogio.agora() - 600;
+    fs.writeFileSync(path.join(m.c.base, "retomar-ignorar.txt"), "# mensagens que o remetente repete\n[Renovação automática]\n");
+    const [rotina, seguiu, automatica, s1, s2] = [sessaoN(1), sessaoN(2), sessaoN(3), sessaoN(4), sessaoN(5)];
+    conversaOpenBot(rotina, "rodada da rotina");
+    ob.principais.set(seguiu, "agent-b");
+    conversaOpenBot(seguiu, "outra tarefa", false);
+    ob.principais.set(automatica, "agent-c");
+    conversaOpenBot(automatica, "<openbot_turn_style>x</openbot_turn_style>\n[Renovação automática] Troca de turno: reescreva a passagem");
+    // o texto de conversa nova traz o histórico em cima: a marca no histórico não conta, só o pedido de agora
+    ob.principais.set(s1, "agent-d");
+    conversaOpenBot(s1, "histórico: [Renovação automática] Troca de turno\n--- current message ---\nRevise o contrato");
+    ob.principais.set(s2, "agent-e");
+    conversaOpenBot(s2, "Monte a planilha");
+    const t0 = m.relogio.agora();
+    for (const s of [rotina, seguiu, automatica, s1, s2]) naFila(s, t0 - 60);
+    m.agente.retomarHeadless();
+    await m.agente.esperar();
+    const estado = (s: string) => e().fila.find((f) => f.sessao === s)!.estado;
+    assert.equal(estado(rotina), "descartada", "não é o chat principal: a próxima rodada da rotina cuida");
+    assert.equal(estado(seguiu), "retomada", "já voltou a trabalhar: nada a mandar");
+    assert.equal(estado(automatica), "descartada", "o remetente repete a mensagem automática sozinho");
+    assert.deepEqual(ob.enviadas.map((x) => x.agente), ["agent-d"], "uma por vez");
+    assert.equal(estado(s2), "aguardando");
+    m.relogio.t += 30;
+    await m.agente.ciclo();
+    await m.agente.esperar();
+    assert.equal(ob.enviadas.length, 1, "espaçadas: ainda não deu o intervalo");
+    m.relogio.t += 31;
+    await m.agente.ciclo();
+    await m.agente.esperar();
+    assert.deepEqual(ob.enviadas.map((x) => x.agente), ["agent-d", "agent-e"]);
+    assert.ok(e().eventos.some((x) => /não é o chat principal de um agente agora/.test(x.texto)));
+    assert.ok(e().eventos.some((x) => /mensagem automática que o remetente repete/.test(x.texto)));
+  });
+
+  test("OpenBot fora do ar: a continuação vira um erro no evento, e não se repete sozinha", async () => {
+    const ob = new OpenBotFalso();
+    ob.codigo = 5;
+    m = await montar({ openbot: ob });
+    await ativaEm(m, "A", 80);
+    contaEstacionada(m, "B", 3);
+    e().config.retomarHeadless = true;
+    e().trocadaEm = m.relogio.agora() - 600;
+    ob.principais.set(S9, "agent-0000");
+    conversaOpenBot(S9, "Faça o relatório");
+    naFila(S9, m.relogio.agora() - 60);
+    m.agente.retomarHeadless();
+    await m.agente.esperar();
+    assert.equal(ob.enviadas.length, 1);
+    assert.ok(e().eventos.some((x) => x.tipo === "erro" && /o OpenBot não respondeu/.test(x.texto)));
+    m.relogio.t += 120;
+    await m.agente.ciclo();
+    await m.agente.esperar();
+    assert.equal(ob.enviadas.length, 1);
   });
 });
 

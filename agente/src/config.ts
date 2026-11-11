@@ -69,6 +69,12 @@ export const BUSCA_S = 5;
 export const LER_ATIVA_S = 60;
 /** Sessão na fila há mais que isso não é retomada sozinha (a do terminal também tem prazo, como a interativa). */
 export const FILA_VALIDA_S = 2 * 3600;
+/** A conversa de agente do OpenBot cortada no limite continua até 6 h depois do corte (cobre a janela de 5 h voltar). */
+export const FILA_VALIDA_OPENBOT_S = 6 * 3600;
+/** Entre uma continuação mandada ao OpenBot e a próxima (as conversas cortadas juntas não voltam todas de uma vez). */
+export const OPENBOT_INTERVALO_S = 60;
+/** Depois da troca, a continuação ao OpenBot espera isto: o processo da conversa relê o login antes. */
+export const OPENBOT_APOS_TROCA_S = 30;
 /** Conta em uso perto do gatilho (no aviso ou a 10 pontos da troca): lê a cada ciclo, para trocar antes de esgotar. */
 export const LER_ATIVA_PERTO_S = 15;
 export const LER_ESTACIONADA_S = 300;

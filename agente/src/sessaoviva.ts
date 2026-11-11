@@ -154,3 +154,54 @@ export function parouNoErro(projetos: string, sessao: string, ate = 2 * 1024 * 1
   }
   return null;
 }
+
+/**
+ * O texto do último pedido da conversa (a última mensagem de quem conversa, sem resultado de ferramenta, resumo nem
+ * mensagem de bastidor), lido do fim da transcrição; null sem transcrição ou sem pedido no pedaço lido. Serve para não
+ * continuar um turno cortado que era uma mensagem automática que o remetente repete sozinho.
+ */
+export function ultimoPedido(projetos: string, sessao: string, ate = 2 * 1024 * 1024): string | null {
+  let pastas: string[];
+  try {
+    pastas = fs.readdirSync(projetos);
+  } catch {
+    return null;
+  }
+  for (const p of pastas) {
+    const arq = path.join(projetos, p, `${sessao}.jsonl`);
+    let fd: number;
+    try {
+      fd = fs.openSync(arq, "r");
+    } catch {
+      continue;
+    }
+    try {
+      const tam = fs.fstatSync(fd).size;
+      const ler = Math.min(tam, ate);
+      const buf = Buffer.alloc(ler);
+      fs.readSync(fd, buf, 0, ler, tam - ler);
+      const linhas = buf.toString("utf8").split("\n");
+      for (let i = linhas.length - 1; i >= 0; i--) {
+        const linha = linhas[i]!.trim();
+        if (!linha.startsWith("{")) continue;
+        let j: { type?: unknown; sessionId?: unknown; isSidechain?: unknown; isMeta?: unknown; isCompactSummary?: unknown; message?: { content?: unknown } };
+        try {
+          j = JSON.parse(linha) as typeof j;
+        } catch {
+          continue;
+        }
+        if (j.type !== "user" || j.isSidechain === true || j.isMeta === true || j.isCompactSummary === true) continue;
+        if (j.sessionId !== undefined && j.sessionId !== sessao) continue;
+        const c = j.message?.content;
+        if (typeof c === "string") return c;
+        if (!Array.isArray(c)) continue;
+        const textos = c.filter((b): b is { type: string; text: string } => !!b && b.type === "text" && typeof b.text === "string").map((b) => b.text);
+        if (textos.length) return textos.join("\n");
+      }
+      return null;
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+  return null;
+}

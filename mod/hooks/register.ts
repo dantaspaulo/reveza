@@ -276,6 +276,18 @@ export function entradaDaSessao(valor: unknown): string | null {
   return typeof valor === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(valor) ? valor : null
 }
 
+/**
+ * A rotina que lançou esta sessão (REVEZA_ROTINA no ambiente, posto por quem roda `claude -p` de tempos em tempos): o
+ * agente retoma só a passada mais nova de cada rotina, e nenhuma se outra passada dela já começou. A marca é explícita
+ * de propósito: o rótulo do serviço que lançou o processo pode juntar tarefas diferentes. Null sem a marca ou com valor
+ * fora do formato (letras, números, ponto, dois pontos, arroba, hífen e sublinhado, até 80).
+ */
+export function rotinaDaSessao(valor: unknown): string | null {
+  if (typeof valor !== 'string') return null
+  const v = valor.trim()
+  return /^[\w.:@-]{1,80}$/.test(v) ? v : null
+}
+
 /** O tempo que o agente pediu para esperar antes de a sessão continuar, em ms: 0 sem pedido, e no máximo 10 minutos. */
 export function aguardarMs(segundos: unknown): number {
   return typeof segundos === 'number' && Number.isFinite(segundos) && segundos > 0 ? Math.min(segundos * 1000, AGUARDAR_MAXIMO_MS) : 0
@@ -319,6 +331,8 @@ export const register: Register = (on, options) => {
   let statusMostrado: string | undefined | null = null
   // de onde a sessão roda (entradaDaSessao), lido no começo dela; vai na medida e no limite
   let entrada: string | null = null
+  // a rotina que lançou esta sessão sem tela (rotinaDaSessao), lida no começo dela; vai na medida e no limite
+  let rotina: string | null = null
   // sessões críticas: esta sessão é crítica; o agente manda segurar as comuns; o gatilho; e se uma ação desta sessão
   // foi recusada na espera (ela volta sozinha quando a espera acaba)
   let critica = false
@@ -385,6 +399,7 @@ export const register: Register = (on, options) => {
     interativa = e.isInteractive
     sessao = await $.session.id()
     entrada = entradaDaSessao(await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => undefined))
+    rotina = rotinaDaSessao(await $.env.get('REVEZA_ROTINA').catch(() => undefined))
     const raiz =
       (await $.env.get('REVEZA_HOME')) ??
       `${(await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''}/.reveza`
@@ -479,7 +494,14 @@ export const register: Register = (on, options) => {
         const agora = Date.now()
         const conta = await contaAtual(agora, () => lerContaDaSessao(() => $.session.authorize(), (url, init) => $.http.fetch(url, init)))
         try {
-          const p = await pedido('POST', '/api/medida', { sessao, versao, janelas, ...(conta ? { conta } : {}), ...(entrada ? { entrada } : {}) })
+          const p = await pedido('POST', '/api/medida', {
+            sessao,
+            versao,
+            janelas,
+            ...(conta ? { conta } : {}),
+            ...(entrada ? { entrada } : {}),
+            ...(rotina ? { rotina } : {}),
+          })
           const r = await $.http.fetch(`${BASE}/api/medida`, p.init)
           if (await doAgente(r, p.nonce)) {
             const resposta = lerJson<{ outraConta?: boolean; conta?: string }>(r)
@@ -561,6 +583,7 @@ export const register: Register = (on, options) => {
             versao: antesModelo,
             ...(conta ? { conta } : {}),
             ...(entrada ? { entrada } : {}),
+            ...(rotina ? { rotina } : {}),
           })
           const r = await f.buscar(`${BASE}/api/limite`, p.init)
           dito = (await doAgente(r, p.nonce)) ? lerJson(r) : null
@@ -602,6 +625,7 @@ export const register: Register = (on, options) => {
         versao: antes,
         ...(conta ? { conta } : {}),
         ...(entrada ? { entrada } : {}),
+        ...(rotina ? { rotina } : {}),
       })
       const r = await f.buscar(`${BASE}/api/limite`, p.init)
       resposta = (await doAgente(r, p.nonce)) ? lerJson(r) : null

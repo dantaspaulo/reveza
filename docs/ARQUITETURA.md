@@ -207,6 +207,45 @@ limite); se ele seguiu na conta nova e terminou, a fila a marca como retomada ("
 reabre. Sem resposta no fim lido, não dá para saber, e ela volta como antes. O **retomar** do painel com processo vivo
 responde 409 e a sessão segue esperando.
 
+**Uma retomada sem tela por vez, e passada superada não volta (0.16.2).** Numa troca de 10/11/2026 o Reveza reabriu
+no mesmo segundo 13 passadas sem tela, 9 delas de uma rotina de 5 em 5 minutos que o relógio da rotina já tinha deixado
+para trás (registros repetidos, crédito gasto à toa e uns 1,9 GB de memória juntos). Agora:
+
+- a fila retoma a mais antiga primeiro e uma por vez: a retomada que o Reveza abriu e ainda roda (`retomadaEm`, conferida
+  com o mesmo `sessaoviva.ts`) segura as outras, e o ciclo solta a próxima quando ela sai. A liberação (`liberadaEm`, a
+  hora da troca) é que conta para o prazo da fila, não a hora em que chega a vez;
+- quem lança `claude -p` de tempos em tempos pode marcar a passada com `REVEZA_ROTINA=<nome>` no ambiente. O mod manda a
+  marca na medida e no limite, a fila a guarda (`rotina`) e a retomada a leva adiante. Da mesma rotina só volta a
+  passada mais nova, e nenhuma quando outra sessão da rotina apareceu depois do corte (o relógio dela já seguiu). A
+  marca é explícita de propósito: agrupar pela pasta, pelo texto do pedido ou pelo rótulo do serviço que lançou o
+  processo (o `XPC_SERVICE_NAME` do launchd) juntaria tarefas diferentes e descartaria trabalho;
+- a sessão sem tela que bate o limite com a troca já feita (o pedido chega com a versão de antes) volta já, sem esperar a
+  troca seguinte;
+- sem conta livre para trocar, a sessão sem tela volta quando a própria conta volta: no limite a fila guarda `voltaEm`
+  (o reset mais tardio das janelas cheias) e o ciclo a solta quando a conta em uso é a que encheu, o reset passou e ela
+  está abaixo do gatilho.
+
+**Conversa de agente do OpenBot continua pelo próprio OpenBot (0.16.2).** A 0.16.1 deixou de reabrir essas conversas
+com `claude --resume -p`, supondo que o OpenBot as reabria. Não reabre: ele só abre o programa do agente quando chega
+mensagem ou rotina, e o turno cortado fica cortado (10/11/2026: 12 conversas cortadas às 20:58, nenhuma continuou
+quando o crédito voltou). Com o OpenBot instalado (`agente/src/openbot.ts`; por enquanto no macOS), a conversa cortada
+na pasta de agente dele continua uma vez por corte, pelo comando que o OpenBot traz para scripts locais
+(`openbot-cli run <agente> - --id reveza-<sessão>-<corte>`, que só enfileira; a chave impede a mesma continuação duas
+vezes), e só quando:
+
+- a conversa ainda parou no erro do limite (se chegou mensagem nova e ela seguiu, nada sai);
+- ela é o chat principal de um agente agora: a sessão do assistente ativa ligada à conversa do agente no banco do
+  OpenBot, lido só para leitura (`sqlite3 -readonly`). A rodada de rotina roda numa sessão temporária que o OpenBot não
+  guarda: fica com a próxima rodada da rotina. Sem o banco, ou sem resposta dele, nada sai;
+- o turno cortado não era uma mensagem automática que o remetente repete sozinho: uma por linha em
+  `~/.reveza/retomar-ignorar.txt`, comparada com o começo do pedido (sem o histórico e sem os blocos de instrução que o
+  OpenBot põe na frente).
+
+As cortadas juntas saem uma por vez, com 60 s entre elas, e 30 s depois da troca (o processo da conversa relê o login).
+O prazo é de 6 h depois do corte, para cobrir a janela de 5 h voltar. O texto diz a hora do corte, pede para continuar
+de onde parou, lembra que o que dependia de alguém continua esperando e pede só "nada pendente" quando nada ficou pela
+metade. Falha do comando (OpenBot fora do ar, agente sem scripts locais) vira um evento de erro, sem repetir sozinha.
+
 **A conta da sessão (0.10.3).** O uso ao vivo (`/api/medida`) e o limite (`/api/limite`) só valem para a conta em uso
 quando a sessão está nela. Relato de um usuário (22/10/2026): o app de desktop, com login próprio numa conta A, carregava
 o mod, e o uso dele era gravado na conta B, a em uso (o painel e a troca decidiam com o número errado). O mod lê a conta

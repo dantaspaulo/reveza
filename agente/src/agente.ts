@@ -15,15 +15,15 @@ import { ClaudeJson } from "./claudejson.js";
 import { tocarSom } from "./som.js";
 import { pedirConfirmacao } from "./confirmar.js";
 import type { Executor } from "./util/executor.js";
-import { CICLO_S, COMANDO_VALIDO_S, FATOR_LEITURA_SOMBRA, FILA_VALIDA_S, LER_ATIVA_PERTO_S, LER_ATIVA_S, LER_ESTACIONADA_AVISO_S, LER_ESTACIONADA_S, MEDIDA_FRESCA_S, POSSE_S, VERSAO, VENCIDO_EM_S, type Caminhos, type Sistema } from "./config.js";
+import { CICLO_S, COMANDO_VALIDO_S, FATOR_LEITURA_SOMBRA, FILA_VALIDA_OPENBOT_S, FILA_VALIDA_S, OPENBOT_APOS_TROCA_S, OPENBOT_INTERVALO_S, LER_ATIVA_PERTO_S, LER_ATIVA_S, LER_ESTACIONADA_AVISO_S, LER_ESTACIONADA_S, MEDIDA_FRESCA_S, POSSE_S, VERSAO, VENCIDO_EM_S, type Caminhos, type Sistema } from "./config.js";
 import { expiraEm, hashToken, temRenovacao } from "./credenciais/blob.js";
 import { PRINCIPAL } from "./credenciais/tipos.js";
 import { CredenciaisSombra } from "./credenciais/sombra.js";
 import type { Credenciais } from "./credenciais/tipos.js";
 import { agendarRodizio, candidata, decidir, gatilhoDeTroca, pctEfetivo, sorteioReal } from "./decisao.js";
 import { gatilhoValido, lembrarCritica, marcarCritica, sessaoCritica, sessaoValida, situacaoCriticas } from "./criticas.js";
-import { carregarEstadoDoAgente, salvarCopiaBoa, salvarEstado, type ContaLocal, type EstadoLocal, type Modo, type Recuperacao, type UltimaAtualizacaoAssistente } from "./estado.js";
-import { idiomaAtual, t } from "./i18n.js";
+import { carregarEstadoDoAgente, salvarCopiaBoa, salvarEstado, type ContaLocal, type EstadoLocal, type ItemFila, type Modo, type Recuperacao, type UltimaAtualizacaoAssistente } from "./estado.js";
+import { idiomaAtual, t, t as t_ } from "./i18n.js";
 import { aplicarAutoUpdater, ASSISTENTE_CONFERIR_S, autoDesligado, erroDoUpdate, modoAssistente, type ModoAssistente } from "./assistente.js";
 import { conferirCodigo, entregarChave, impressaoDaChave, LIGACAO_DUPLA } from "./ligar.js";
 import { Logins, EMAIL_VALIDO, type Login } from "./logins.js";
@@ -31,7 +31,7 @@ import { ErroNuvem, TIPOS_EVENTO_NUVEM, type Atribuicao, type ComandoNuvem, type
 import { PosseCofre } from "./posse.js";
 import { chaveDaPonte, criarPonte, type Resposta } from "./ponte.js";
 import { Contador } from "./registro/contador.js";
-import { ERRO_LOGIN_MORTO, Trocador } from "./troca.js";
+import { ERRO_LOGIN_MORTO, rotinaValida, Trocador } from "./troca.js";
 import { isoParaEpoch, epochParaIso, type Relogio } from "./util/tempo.js";
 import type { Log } from "./util/log.js";
 import type { Guarda } from "./cofre/guarda.js";
@@ -65,7 +65,8 @@ import { compararVersao, loginNoGerenciadorDoWindows } from "./doctor.js";
 import { abrirTokens, completaLigada, PUBLICA_DESDE, pendenteDaPublicacao, semSegredos } from "./completa.js";
 import { gravarAtomico, gravarJson, lerJson } from "./util/arquivos.js";
 import { aplicarResumo, contaGrande, janelaDaConta, RESUMO_MAXIMO, RESUMO_MINIMO } from "./resumo.js";
-import { parouNoErro } from "./sessaoviva.js";
+import { parouNoErro, ultimoPedido } from "./sessaoviva.js";
+import { lerIgnorar, OPENBOT_CODIGOS, pedidoDoTexto, type OpenBot } from "./openbot.js";
 import { aplicarModelo } from "./modelo.js";
 import { ESPERA_MAXIMA_S, esperarMemoria, TETO_ESPERA_PCT, trocaPodeEsperar, type Memoria } from "./memoria.js";
 
@@ -104,6 +105,11 @@ export interface Dependencias {
    * ela abre nos editores. Sem isto (ou com REVEZA_TROCA_ESPERA_MEMORIA=0), a troca não espera.
    */
   memoria?: () => Promise<Memoria | null>;
+  /**
+   * O OpenBot deste computador (openbot.ts): conversa de agente dele cortada pelo limite continua pelo próprio OpenBot.
+   * Sem isto, ela não é retomada (o Reveza não abre cópia da conversa de outro programa).
+   */
+  openbot?: OpenBot | null;
 }
 
 /** A publicação das funções e do painel que não terminou nisso é dada como falha. */
@@ -194,6 +200,11 @@ export class Agente {
   private emRegistro = false;
   private aviso: string | null = null;
   private semLivre: string | null = null;
+  /** Por rotina (REVEZA_ROTINA), as sessões que o agente já viu e quando viu cada uma pela primeira vez. */
+  private rotinas = new Map<string, Map<string, number>>();
+  /** A continuação ao OpenBot que está saindo agora, e quando saiu a última (uma por vez, espaçadas). */
+  private openbotEmVoo: string | null = null;
+  private openbotUltima = 0;
   private pastasEm = 0;
   private comandosVistos = new Set<number>();
   private usoEnviado = "";
@@ -556,6 +567,7 @@ export class Agente {
         this.trocador.registrarHistorico(t);
         this.vigiarCriticas(t);
         this.retomarAdiadas();
+        this.retomarNaVolta(t);
         if (!this.comNuvem && this.estado.config.modo === "rodizio" && !this.estado.proximoRodizioEm) {
           agendarRodizio(this.estado, t, this.d.aleatorio);
         }
@@ -681,18 +693,50 @@ export class Agente {
     });
   }
 
-  /** `so`: só esta sessão (a atrasada na troca volta sozinha, sem levar junto as que esperam uma conta livre). */
-  retomarHeadless(so?: string): void {
+  /**
+   * A troca (ou a volta da janela) liberou as sessões sem tela da fila. `so`: só esta sessão (a atrasada na troca volta
+   * sozinha, sem levar junto as que esperam uma conta livre). `liberadas`: só as que já foram liberadas e esperam (o
+   * processo delas sair, ou a vez delas): é o que o ciclo confere.
+   *
+   * Uma por vez: a retomada que o Reveza abriu e ainda roda segura as outras (10/11/2026: 13 passadas sem tela reabertas
+   * no mesmo segundo, uns 1,9 GB juntas). Da mesma rotina (REVEZA_ROTINA) só volta a passada mais nova, e nenhuma se
+   * outra passada dela começou depois do corte. Conversa de agente do OpenBot continua pelo próprio OpenBot
+   * (continuarNoOpenBot), sem cópia.
+   */
+  retomarHeadless(so?: string, liberadas = false): void {
     if (!this.estado.config.retomarHeadless) return;
     const t = this.d.relogio.agora();
-    for (const f of this.estado.fila) {
+    this.descartarSuperadas();
+    let ocupada: string | null | undefined;
+    const retomadaViva = (): string | null => (ocupada === undefined ? (ocupada = this.retomadaSemTelaViva(t)) : ocupada);
+    // a mais antiga primeiro (a fila guarda a mais nova na frente)
+    for (const f of [...this.estado.fila].reverse()) {
       if (f.tipo !== "headless" || f.estado !== "aguardando" || (so !== undefined && f.sessao !== so)) continue;
-      // entrada velha (de antes de ligar a opção, ou importada) não volta a rodar sozinha
-      if (t - f.em > FILA_VALIDA_S) {
+      if (liberadas && f.liberadaEm === undefined && f.vivo === undefined) continue;
+      const lida = lerSessao(this.d.c.projetos, f.sessao, this.d.c.home);
+      const openbot = lida?.programa === "openbot" && !!this.d.openbot;
+      // entrada velha (de antes de ligar a opção, ou importada) não volta a rodar sozinha; o prazo conta até a liberação
+      f.liberadaEm ??= t;
+      if (f.liberadaEm - f.em > (openbot ? FILA_VALIDA_OPENBOT_S : FILA_VALIDA_S)) {
         f.estado = "descartada";
         continue;
       }
-      const r = this.retomar(f.sessao, f.vivo !== undefined);
+      if (openbot) {
+        this.continuarNoOpenBot(f, t);
+        continue;
+      }
+      if (lida && !lida.programa) {
+        const outra = retomadaViva();
+        if (outra !== null && outra !== f.sessao) {
+          this.esperarVez(f, outra);
+          continue;
+        }
+      }
+      const r = this.retomar(f.sessao, f.vivo !== undefined, lida, f.rotina);
+      if (r && "cwd" in r) {
+        f.retomadaEm = t;
+        ocupada = f.sessao;
+      }
       if (r && "vivo" in r) {
         // A conversa ainda roda: o processo que bateu o limite (ele pode seguir relendo o login e trabalhando na conta
         // nova) ou uma retomada anterior. Outra cópia faria o mesmo trabalho de novo (10/11/2026: um claude -p reaberto
@@ -721,11 +765,170 @@ export class Agente {
     }
   }
 
-  /** As sessões sem tela que esperam o próprio processo sair: o ciclo confere de novo. */
+  /** As sessões sem tela já liberadas que esperam (o próprio processo sair, ou a vez delas): o ciclo confere de novo. */
   private retomarAdiadas(): void {
-    for (const f of this.estado.fila) {
-      if (f.tipo === "headless" && f.estado === "aguardando" && f.vivo !== undefined) this.retomarHeadless(f.sessao);
+    if (this.estado.fila.some((f) => f.tipo === "headless" && f.estado === "aguardando" && (f.liberadaEm !== undefined || f.vivo !== undefined))) {
+      this.retomarHeadless(undefined, true);
     }
+  }
+
+  /**
+   * Sem conta livre para trocar, a sessão sem tela volta quando a própria conta volta: a conta que encheu é a em uso, o
+   * reset das janelas que encheram já passou e ela está abaixo do gatilho de troca. Sem isso, só uma troca de conta
+   * fazia a fila andar.
+   */
+  private retomarNaVolta(t: number): void {
+    const ativa = this.estado.ativa;
+    const c = ativa ? this.estado.contas[ativa] : undefined;
+    if (!ativa || !c || c.precisaLogin || c.pausada) return;
+    if ((pctEfetivo(c, t) ?? 100) >= gatilhoDeTroca(this.estado)) return;
+    const voltaram = this.estado.fila.filter(
+      (f) => f.tipo === "headless" && f.estado === "aguardando" && f.liberadaEm === undefined && f.vivo === undefined && f.conta === ativa && f.voltaEm !== undefined && t >= f.voltaEm,
+    );
+    if (!voltaram.length || !this.estado.config.retomarHeadless) return;
+    this.trocador.evento("info", `${c.email} voltou a ter crédito: as sessões sem tela que pararam nela voltam, uma por vez.`, { conta: ativa });
+    for (const f of voltaram) f.liberadaEm = t;
+    this.retomarHeadless(undefined, true);
+  }
+
+  /** Uma retomada sem tela que o Reveza abriu e ainda roda (a sessão dela), ou null. */
+  private retomadaSemTelaViva(t: number): string | null {
+    for (const f of this.estado.fila) {
+      if (f.tipo !== "headless" || f.estado !== "retomada" || f.retomadaEm === undefined || t - f.retomadaEm > FILA_VALIDA_S) continue;
+      if (this.d.cli.sessaoViva(f.sessao, this.d.c.projetos) !== null) return f.sessao;
+    }
+    return null;
+  }
+
+  private vezAvisada = new Set<string>();
+
+  private esperarVez(f: ItemFila, outra: string): void {
+    if (this.vezAvisada.has(f.sessao)) return;
+    if (this.vezAvisada.size > 200) this.vezAvisada.clear();
+    this.vezAvisada.add(f.sessao);
+    this.d.log.info(`sessão ${f.sessao.slice(0, 8)}: espera a retomada ${outra.slice(0, 8)} terminar`);
+    this.trocador.evento(
+      "info",
+      `A sessão ${f.sessao.slice(0, 8)} espera a vez: o Reveza retoma uma sessão sem tela por vez, e a ${outra.slice(0, 8)} ainda roda.`,
+      { sessao: f.sessao },
+    );
+  }
+
+  /** O mod disse de qual rotina (REVEZA_ROTINA) é a sessão: guarda quando ela apareceu pela primeira vez. */
+  private verRotina(corpo: Record<string, unknown>): void {
+    const rotina = rotinaValida(corpo.rotina);
+    const sessao = sessaoValida(corpo.sessao);
+    if (!rotina || !sessao) return;
+    let vistas = this.rotinas.get(rotina);
+    if (!vistas) {
+      if (this.rotinas.size >= 100) this.rotinas.clear();
+      vistas = new Map();
+      this.rotinas.set(rotina, vistas);
+    }
+    if (vistas.has(sessao)) return;
+    if (vistas.size >= 200) vistas.delete(vistas.keys().next().value!);
+    vistas.set(sessao, this.d.relogio.agora());
+  }
+
+  /**
+   * Da mesma rotina, só a passada mais nova volta; e nenhuma quando outra passada dela apareceu depois do corte (o
+   * relógio da rotina já seguiu). 10/11/2026: uma troca reabriu 9 passadas antigas de uma rotina de 5 em 5 minutos, que
+   * repetiram registros e gastaram crédito à toa.
+   */
+  private descartarSuperadas(): void {
+    const porRotina = new Map<string, ItemFila[]>();
+    for (const f of this.estado.fila) {
+      if (f.tipo !== "headless" || f.estado !== "aguardando" || !f.rotina) continue;
+      porRotina.set(f.rotina, [...(porRotina.get(f.rotina) ?? []), f]);
+    }
+    for (const [rotina, itens] of porRotina) {
+      itens.sort((a, b) => b.em - a.em);
+      const nova = itens[0]!;
+      for (const f of itens.slice(1)) this.superada(f, `a passada mais nova da rotina ${rotina} é a ${nova.sessao.slice(0, 8)}`);
+      const depois = [...(this.rotinas.get(rotina) ?? [])].find(([s, desde]) => s !== nova.sessao && desde > nova.em);
+      if (depois) this.superada(nova, `outra passada da rotina ${rotina} (${depois[0].slice(0, 8)}) começou depois do corte`);
+    }
+  }
+
+  private superada(f: ItemFila, motivo: string): void {
+    f.estado = "descartada";
+    this.d.log.info(`sessão ${f.sessao.slice(0, 8)}: não volta (${motivo})`);
+    this.trocador.evento("info", `A sessão ${f.sessao.slice(0, 8)} não volta: ${motivo}.`, { sessao: f.sessao });
+  }
+
+  /**
+   * Conversa de agente do OpenBot cortada pelo limite: o turno cortado fica cortado (o OpenBot só abre o programa do
+   * agente quando chega mensagem ou rotina), e uma cópia aberta pelo Reveza trabalharia junto com a dele. A continuação
+   * vai pelo próprio OpenBot, ao chat principal do agente, uma vez por corte: só se a conversa ainda parou no erro, se
+   * o turno cortado não era uma mensagem automática que o remetente repete (retomar-ignorar.txt) e se ela é o chat
+   * principal do agente agora (rodada de rotina fica com a próxima rodada). Uma por vez, espaçadas, e depois de dar
+   * tempo de o processo da conversa reler o login.
+   */
+  private continuarNoOpenBot(f: ItemFila, t: number): void {
+    const ob = this.d.openbot!;
+    const curta = f.sessao.slice(0, 8);
+    // a vez antes das leituras: as que esperam não releem a transcrição nem o banco a cada ciclo
+    if (this.openbotEmVoo || t - this.openbotUltima < OPENBOT_INTERVALO_S || t - this.estado.trocadaEm < OPENBOT_APOS_TROCA_S) return;
+    const parou = parouNoErro(this.d.c.projetos, f.sessao);
+    if (parou === false) {
+      f.estado = "retomada";
+      this.trocador.evento("retomada", `A conversa ${curta} do OpenBot já voltou a trabalhar depois do corte; o Reveza não mandou nada.`, { sessao: f.sessao });
+      return;
+    }
+    if (parou === null) {
+      f.estado = "descartada";
+      this.d.log.info(`sessão ${curta}: do OpenBot, sem o erro do limite na transcrição; não mando continuar`);
+      return;
+    }
+    const pedido = pedidoDoTexto(ultimoPedido(this.d.c.projetos, f.sessao) ?? "");
+    const automatica = lerIgnorar(path.join(this.d.c.base, "retomar-ignorar.txt")).find((m) => pedido.startsWith(m));
+    if (automatica) {
+      f.estado = "descartada";
+      this.trocador.evento(
+        "info",
+        `O turno cortado da conversa ${curta} do OpenBot era uma mensagem automática que o remetente repete sozinho; o Reveza não a continua.`,
+        { sessao: f.sessao },
+      );
+      return;
+    }
+    const agente = ob.chatPrincipal(f.sessao);
+    if (!agente) {
+      f.estado = "descartada";
+      this.trocador.evento(
+        "info",
+        `A conversa ${curta} do OpenBot não é o chat principal de um agente agora (rodada de rotina ou conversa antiga): a próxima rodada cuida dela.`,
+        { sessao: f.sessao },
+      );
+      return;
+    }
+    f.estado = "retomada";
+    this.openbotUltima = t;
+    const hora = horaLocal(f.em);
+    if (this.d.sombra) {
+      this.d.log.faria(`mandar o agente ${agente} do OpenBot continuar a conversa ${curta}`);
+      return;
+    }
+    this.openbotEmVoo = f.sessao;
+    const texto = t_(
+      `[Reveza] A conta do Claude bateu o limite de uso às ${hora}, no meio da sua última tarefa, e o crédito voltou. Continue de onde parou. O que dependia de resposta ou aprovação de alguém continua esperando. Se nada ficou pela metade, responda só "nada pendente".`,
+      `[Reveza] The Claude account hit its usage limit at ${hora}, in the middle of your last task, and credit is back. Continue where you left off. Anything that was waiting for someone's reply or approval is still waiting. If nothing was left half done, reply only "nothing pending".`,
+    );
+    this.fundo(
+      (async () => {
+        const codigo = await ob.continuar(agente, texto, `reveza-${f.sessao}-${f.em}`).catch(() => 1);
+        this.openbotEmVoo = null;
+        if (codigo === 0) {
+          this.trocador.evento("retomada", `Mandei o agente ${agente} do OpenBot continuar a conversa ${curta}, cortada pelo limite às ${hora}.`, { sessao: f.sessao });
+        } else {
+          this.trocador.evento(
+            "erro",
+            `Não consegui mandar o agente ${agente} do OpenBot continuar a conversa ${curta}: ${OPENBOT_CODIGOS[codigo] ?? `o comando do OpenBot saiu com ${codigo}`}.`,
+            { sessao: f.sessao },
+          );
+        }
+        this.salvar();
+      })(),
+    );
   }
 
   /**
@@ -736,8 +939,13 @@ export class Agente {
    * faria o mesmo trabalho duas vezes), `sozinha` quando ela esperou o processo sair (`adiada`) e ele seguiu na conta
    * nova até o fim, sem parar no limite, ou null sem a transcrição.
    */
-  private retomar(sessao: string, adiada = false): { cwd: string } | { programa: string } | { vivo: number } | { sozinha: true } | null {
-    const lida = lerSessao(this.d.c.projetos, sessao, this.d.c.home);
+  private retomar(
+    sessao: string,
+    adiada = false,
+    jaLida?: SessaoLida | null,
+    rotina?: string,
+  ): { cwd: string } | { programa: string } | { vivo: number } | { sozinha: true } | null {
+    const lida = jaLida === undefined ? lerSessao(this.d.c.projetos, sessao, this.d.c.home) : jaLida;
     if (!lida || !fs.existsSync(lida.cwd)) {
       this.d.log.erro(`sessão ${sessao.slice(0, 8)}: não achei a transcrição dela; não retomo`);
       return null;
@@ -761,7 +969,7 @@ export class Agente {
     fs.mkdirSync(this.d.c.logs, { recursive: true, mode: 0o700 });
     const fd = fs.openSync(path.join(this.d.c.logs, `retomada-${sessao.slice(0, 40)}.log`), "a", 0o600);
     try {
-      this.d.cli.retomar(sessao, cwd, "A conta anterior bateu o limite de uso e o Reveza trocou de conta. Continue a tarefa de onde parou.", fd);
+      this.d.cli.retomar(sessao, cwd, "A conta anterior bateu o limite de uso e o Reveza trocou de conta. Continue a tarefa de onde parou.", fd, rotina);
     } finally {
       fs.closeSync(fd);
     }
@@ -2312,6 +2520,7 @@ export class Agente {
       },
       estado: () => this.publico(),
       medida: (corpo: Record<string, unknown>): Resposta => {
+        this.verRotina(corpo);
         const entrou = this.trocador.medidaDaSessao(corpo);
         if (entrou) this.fundo(this.comNuvem ? this.relatarUso() : this.agir());
         // a sessão mede outra conta (o app de desktop com login próprio, um token no ambiente): o mod diz isso a ela
@@ -2322,6 +2531,7 @@ export class Agente {
       },
       limite: (corpo: Record<string, unknown>): Resposta => {
         const sessao = String(corpo.sessao ?? "").slice(0, 80);
+        this.verRotina(corpo);
         // a conta não roda o modelo da sessão (sem créditos de uso): marca a conta fora deste computador e troca
         const modelo = corpo.erro === "modelo" ? this.trocador.modeloDaSessao(corpo) : null;
         const r = modelo ?? this.trocador.limiteDaSessao(corpo);
@@ -2332,9 +2542,10 @@ export class Agente {
         if (sessao) this.contador.marcarParada(sessao);
         this.salvar();
         if (r.anotado) this.fundo(modelo ? this.semModeloDepois(sessao, modelo.modelo) : this.limiteDepois(sessao));
-        // sessão de terminal atrasada na troca: a troca já aconteceu, então ela volta num processo novo, que lê o login,
-        // assim que o processo dela sair (ele mesmo pode seguir na conta nova; aí ela não volta)
-        if (r.aguardarS && corpo.tipo === "headless" && sessao) this.retomarHeadless(sessao);
+        // sessão de terminal atrasada na troca, ou que parou na conta que acabou de sair: a troca já aconteceu, então ela
+        // volta num processo novo, que lê o login, assim que o processo dela sair (ele mesmo pode seguir na conta nova; aí
+        // ela não volta). Antes, a que parou com a troca já feita esperava a troca seguinte.
+        if ((r.aguardarS || r.trocou) && corpo.tipo === "headless" && sessao) this.retomarHeadless(sessao);
         return { status: 200, corpo: { ok: true, versao: r.versao, trocou: r.trocou, ...(r.aguardarS ? { aguardarS: r.aguardarS } : {}) } };
       },
       fila: (sessao: string, acao: string): Resposta => {
@@ -2485,6 +2696,12 @@ export class Agente {
 }
 
 const SESSAO_VALIDA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** HH:MM no relógio deste computador. */
+function horaLocal(epoch: number): string {
+  const d = new Date(epoch * 1000);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 /**
  * Origens (`entrypoint` da transcrição) do próprio assistente: o terminal e o `claude -p`, que é também o que a retomada

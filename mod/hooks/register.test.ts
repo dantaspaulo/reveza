@@ -6,6 +6,7 @@ import {
   ambienteCritico,
   deveSegurar,
   entradaDaSessao,
+  rotinaDaSessao,
   hmacHex,
   janelasTexto,
   paradaDoTurno,
@@ -46,6 +47,8 @@ function agente(on: On, instalacao?: string) {
     limiteExtra: {} as Record<string, unknown>,
     // o CLAUDE_CODE_ENTRYPOINT da sessão
     entrada: undefined as string | undefined,
+    // o REVEZA_ROTINA da sessão (a rotina que a lançou)
+    rotina: undefined as string | undefined,
     // sessões críticas: o que /api/ativa manda (undefined: função desligada), a marca guardada e o REVEZA_CRITICA
     criticas: undefined as { segurar: boolean; gatilho: number } | undefined,
     marcada: false,
@@ -92,7 +95,15 @@ function agente(on: On, instalacao?: string) {
   on('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '' } }) as never)
   on('env.get', ($, e) => ({
     value:
-      e.name === 'HOME' ? '/home/teste' : e.name === 'CLAUDE_CODE_ENTRYPOINT' ? estado.entrada : e.name === 'REVEZA_CRITICA' ? estado.ambienteCritica : undefined,
+      e.name === 'HOME'
+        ? '/home/teste'
+        : e.name === 'CLAUDE_CODE_ENTRYPOINT'
+          ? estado.entrada
+          : e.name === 'REVEZA_CRITICA'
+            ? estado.ambienteCritica
+            : e.name === 'REVEZA_ROTINA'
+              ? estado.rotina
+              : undefined,
   }))
   on('fs.read', ($, e) => {
     if (e.path === '/home/teste/.reveza/ponte.chave') return { value: `${'c'.repeat(64)}\n` }
@@ -691,6 +702,45 @@ test('o limite leva de onde a sessão roda (o app de desktop tem login próprio,
   const limites = recebidos.filter(r => r.url.endsWith('/api/limite'))
   expect(limites).toHaveLength(2)
   expect(limites.every(r => r.corpo?.entrada === 'claude-desktop')).toBe(true)
+})
+
+test('a rotina que lançou a sessão (REVEZA_ROTINA) vai na medida e no limite; sem a marca, nada vai', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos, estado } = agente(on)
+  comModelo(on)
+  estado.rotina = 'com.exemplo.vigia-horaria'
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: false })
+  await andar(relogio, 10_000)
+  await $.session.measure(MEDIDA)
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  await $.classic.StopFailure(FABLE_SEM_CREDITO)
+  expect(recebidos.find(r => r.url.endsWith('/api/medida'))?.corpo?.rotina).toBe('com.exemplo.vigia-horaria')
+  const limites = recebidos.filter(r => r.url.endsWith('/api/limite'))
+  expect(limites).toHaveLength(2)
+  expect(limites.every(r => r.corpo?.rotina === 'com.exemplo.vigia-horaria')).toBe(true)
+})
+
+test('sem REVEZA_ROTINA o limite não leva rotina', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos } = agente(on)
+  comModelo(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: false })
+  await andar(relogio, 10_000)
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  const limite = recebidos.find(r => r.url.endsWith('/api/limite'))
+  expect(limite).toBeDefined()
+  expect('rotina' in (limite?.corpo ?? {})).toBe(false)
+})
+
+test('a rotina vai só com a forma de um nome', () => {
+  expect(rotinaDaSessao('com.exemplo.vigia')).toBe('com.exemplo.vigia')
+  expect(rotinaDaSessao(' relatorio:diario@1 ')).toBe('relatorio:diario@1')
+  expect(rotinaDaSessao(undefined)).toBe(null)
+  expect(rotinaDaSessao('')).toBe(null)
+  expect(rotinaDaSessao('duas palavras')).toBe(null)
+  expect(rotinaDaSessao('x'.repeat(81))).toBe(null)
+  expect(rotinaDaSessao('a\nb')).toBe(null)
+  expect(rotinaDaSessao('$(rm)')).toBe(null)
 })
 
 test('de onde a sessão roda vai só com a forma de um nome', () => {

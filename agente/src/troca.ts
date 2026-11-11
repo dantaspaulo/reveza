@@ -32,7 +32,7 @@ import type { Resultado } from "./util/executor.js";
 import { comLogin, expiraEm, hashToken, oauth, soLogin, temRenovacao, type Blob } from "./credenciais/blob.js";
 import { PRINCIPAL, type Credenciais } from "./credenciais/tipos.js";
 import { estadoDaConta, gatilhoDeTroca, pctEfetivo } from "./decisao.js";
-import { novaConta, type ContaLocal, type EstadoLocal, type TipoEvento } from "./estado.js";
+import { novaConta, type ContaLocal, type EstadoLocal, type ItemFila, type TipoEvento } from "./estado.js";
 import type { Log } from "./util/log.js";
 import type { Relogio } from "./util/tempo.js";
 import { lerJson } from "./util/arquivos.js";
@@ -82,6 +82,25 @@ export const ATRASADA_VALE_S = 3600;
  * mesmo conjunto que o assistente 2.1.312 trata como app de desktop (o Cowork é o `local-agent`).
  */
 const LOGIN_PROPRIO = new Set(["claude-desktop", "claude-desktop-3p", "local-agent"]);
+
+/** A rotina que o mod manda (REVEZA_ROTINA da sessão), só com a forma de um nome; null sem ela. */
+export function rotinaValida(v: unknown): string | null {
+  return typeof v === "string" && /^[\w.:@-]{1,80}$/.test(v) ? v : null;
+}
+
+/**
+ * Quando a conta cheia volta a ter crédito: o reset mais tardio entre as janelas cheias (100% ou mais). Null quando
+ * nenhuma está cheia ou quando uma cheia não diz quando renova (aí só a troca de conta faz a sessão voltar).
+ */
+export function voltaDaConta(c: ContaLocal): number | null {
+  let volta: number | null = null;
+  for (const j of c.janelas ?? []) {
+    if (!janelaDaConta(j.tipo) || j.pct === null || j.pct === undefined || Number(j.pct) < 100) continue;
+    if (!j.resetEm) return null;
+    volta = Math.max(volta ?? 0, j.resetEm);
+  }
+  return volta;
+}
 
 export type SituacaoDaSessao = "ativa" | "atrasada" | "outra" | "desconhecida";
 export type RespostaDoLimite = {
@@ -726,7 +745,7 @@ export class Trocador {
     const situacao = this.contaDaSessao(corpo);
     if (situacao === "outra") return { ok: true, trocou: false, versao: this.estado.versao, anotado: false, outraConta: true };
     if (situacao === "atrasada") return this.limiteAtrasada(corpo, sessao, null);
-    this.enfileirar(corpo, sessao);
+    const item = this.enfileirar(corpo, sessao);
     const v = corpo.versao;
     if (typeof v === "number" && Number.isInteger(v) && v < this.estado.versao) {
       // A troca já aconteceu depois que a sessão mandou o pedido: o limite foi da conta que saiu.
@@ -735,6 +754,9 @@ export class Trocador {
     if (ativa && this.estado.contas[ativa]) {
       const c = this.estado.contas[ativa]!;
       this.encherCinco(c);
+      // sem conta livre para trocar, a sessão sem tela volta quando a própria conta volta (o reset das janelas cheias)
+      const volta = voltaDaConta(c);
+      if (item && volta !== null) item.voltaEm = volta;
       this.evento("limite", `Uma sessão bateu o limite em ${c.email}.`, { conta: ativa, sessao });
     }
     return { ok: true, trocou: false, versao: this.estado.versao, anotado: true };
@@ -782,17 +804,23 @@ export class Trocador {
     return { ok: true, trocou: true, versao: this.estado.versao, anotado: false, aguardarS: ATRASADA_ESPERA_S[vezes - 1] };
   }
 
-  private enfileirar(corpo: Record<string, unknown>, sessao: string): void {
-    if (!sessao || this.estado.fila.some((f) => f.sessao === sessao && f.estado === "aguardando")) return;
-    this.estado.fila.unshift({
+  private enfileirar(corpo: Record<string, unknown>, sessao: string): ItemFila | null {
+    if (!sessao) return null;
+    const ja = this.estado.fila.find((f) => f.sessao === sessao && f.estado === "aguardando");
+    if (ja) return ja;
+    const rotina = rotinaValida(corpo.rotina);
+    const item: ItemFila = {
       sessao,
       cwd: String(corpo.cwd ?? "").slice(0, 500),
       tipo: corpo.tipo === "headless" ? "headless" : "interativa",
       em: this.agora(),
       estado: "aguardando",
       conta: this.estado.ativa,
-    });
+      ...(rotina ? { rotina } : {}),
+    };
+    this.estado.fila.unshift(item);
     this.estado.fila.splice(50);
+    return item;
   }
 
   /** O limite de uma sessão é a prova de que a janela de 5 horas da conta encheu. */

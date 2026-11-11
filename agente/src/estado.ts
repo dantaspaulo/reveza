@@ -52,6 +52,20 @@ export interface ItemFila {
    * confere de novo. Quando ele sai, ela só volta se a conversa parou no limite.
    */
   vivo?: number;
+  /**
+   * A rotina que lançou a conversa sem tela (REVEZA_ROTINA no ambiente dela). Da mesma rotina só a passada mais nova
+   * volta, e nenhuma se outra passada dela começou depois do corte: o relógio da rotina já seguiu.
+   */
+  rotina?: string;
+  /**
+   * Quando a troca (ou a volta da janela) liberou a sessão: dali em diante ela espera só a vez dela (uma retomada por
+   * vez), e o prazo da fila conta até essa hora.
+   */
+  liberadaEm?: number;
+  /** Quando a conta que encheu volta (o reset mais tardio das janelas cheias): sem troca, a sessão volta nessa hora. */
+  voltaEm?: number;
+  /** Quando o Reveza a retomou: a próxima sessão sem tela espera esta sair. */
+  retomadaEm?: number;
 }
 
 export type Modo = "limiar" | "limite" | "rodizio";

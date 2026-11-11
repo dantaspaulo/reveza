@@ -7,6 +7,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ApiContas, Janela, Perfil } from "../src/anthropic.js";
 import type { Cli } from "../src/claudecli.js";
+import type { OpenBot } from "../src/openbot.js";
 import { caminhos, type Caminhos } from "../src/config.js";
 import type { Blob } from "../src/credenciais/blob.js";
 import { CredenciaisFalsas } from "../src/credenciais/falsa.js";
@@ -150,12 +151,27 @@ export class ProcessoFalso implements Processo {
   }
 }
 
+/** O OpenBot: quem é o chat principal de cada conversa e as continuações que o agente mandou. */
+export class OpenBotFalso implements OpenBot {
+  /** conversa do assistente -> agente cujo chat principal ela é agora */
+  principais = new Map<string, string>();
+  enviadas: { agente: string; texto: string; chave: string }[] = [];
+  codigo = 0;
+  chatPrincipal(sessao: string) {
+    return this.principais.get(sessao) ?? null;
+  }
+  async continuar(agente: string, texto: string, chave: string) {
+    this.enviadas.push({ agente, texto, chave });
+    return this.codigo;
+  }
+}
+
 export class CliFalsa implements Cli {
   renovacoes: string[] = [];
   /** O que cada renovação faz e responde (a saída do assistente diz se o login morreu); sem resposta, nada claro. */
   aoRenovar: ((pasta: string, tentativa: number) => unknown) | null = null;
   logins: { pasta: string; email: string | null; proc: ProcessoFalso }[] = [];
-  retomadas: { sessao: string; cwd: string }[] = [];
+  retomadas: { sessao: string; cwd: string; rotina?: string }[] = [];
   /** A versão que o `--version` responde (null: programa não achado). */
   versaoAtual: string | null = "2.1.293";
   /** Cada `claude update`: o que ele responde e para qual versão o programa vai. */
@@ -194,8 +210,8 @@ export class CliFalsa implements Cli {
     this.logins.push({ pasta, email, proc });
     return proc;
   }
-  retomar(sessao: string, cwd: string) {
-    this.retomadas.push({ sessao, cwd });
+  retomar(sessao: string, cwd: string, _texto?: string, _saida?: number, rotina?: string) {
+    this.retomadas.push({ sessao, cwd, ...(rotina ? { rotina } : {}) });
   }
   /** As conversas que ainda têm processo vivo neste computador (o número dele). */
   vivas = new Map<string, number>();
@@ -723,6 +739,8 @@ export async function montar(
     memoria?: () => Promise<import("../src/memoria.js").Memoria | null>;
     /** Mexe nos arquivos antes de o agente nascer (um estado.json estragado, uma cópia boa). */
     antes?: (c: Caminhos) => void;
+    /** O OpenBot deste computador (sem ele, conversa de agente do OpenBot não continua). */
+    openbot?: OpenBotFalso;
   } = {},
 ): Promise<Montado> {
   const tmp = pastaTemporaria();
@@ -757,6 +775,7 @@ export async function montar(
     ambienteDoInstalador: { PATH: "/falso/bin" },
     refNuvem: opcoes.refNuvem ?? null,
     memoria: opcoes.memoria,
+    openbot: opcoes.openbot ?? null,
   });
   await agente.iniciar({ laços: false, ponte: false });
   const limpar = () => {
