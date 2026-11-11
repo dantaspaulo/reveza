@@ -9,10 +9,34 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 
 ## 0.16.2 · 10/11/2026
 
-Sessão sem tela que ainda roda não ganha outra cópia. Quando a conta trocava, a retomada abria `claude --resume -p` na
-sessão que bateu o limite mesmo com o processo dela ainda vivo, e na troca seguinte abria outra por cima da primeira.
-Precisa dos computadores na 0.16.2 (cada um se atualiza sozinho, ou pelo painel em **Computadores → Atualizar**); a
-nuvem e o painel não mudam.
+A retomada depois do limite ficou certa: conversa de agente do OpenBot cortada continua uma vez, pelo próprio OpenBot;
+sessão sem tela que ainda roda não ganha cópia; as sessões sem tela voltam uma por vez; e passada antiga de uma rotina
+não volta. Precisa dos computadores na 0.16.2 (cada um se atualiza sozinho, ou pelo painel em **Computadores →
+Atualizar**); a nuvem e o painel não mudam.
+
+### Conversa de agente do OpenBot continua depois do limite
+
+- **O que acontecia:** a 0.16.1 parou de abrir cópia dessas conversas, supondo que o OpenBot as reabria. Não reabre: o
+  turno cortado pelo limite ficava cortado até alguém mandar mensagem de novo.
+- **Agora:** com o OpenBot no computador (por enquanto no macOS), quando o crédito volta (pela troca de conta ou pela
+  janela que renova), o Reveza manda ao chat principal do agente, pelo comando do próprio OpenBot, um pedido curto para
+  continuar de onde parou, uma vez por corte, uma conversa por vez e com 60 s entre elas. Não manda quando a conversa já
+  seguiu sozinha, quando ela é uma rodada de rotina (a próxima rodada cuida) nem quando o turno cortado era uma mensagem
+  automática que o remetente repete (lista em `~/.reveza/retomar-ignorar.txt`). O banco do OpenBot é só lido.
+
+### Uma retomada sem tela por vez, e passada antiga não volta
+
+- **O que acontecia:** numa troca, o Reveza reabriu 13 sessões sem tela no mesmo segundo, 9 delas passadas antigas de
+  uma rotina de 5 em 5 minutos que já tinha seguido. Gastaram crédito à toa e repetiram registros.
+- **Agora:** as sessões sem tela voltam uma por vez: a próxima espera a anterior sair. Quem roda `claude -p` de tempos
+  em tempos pode pôr `REVEZA_ROTINA=<nome>` no ambiente da passada: da mesma rotina só a mais nova volta, e nenhuma se
+  outra passada dela já começou. Sem a marca, nada muda nesse ponto. A sessão sem tela que parou com a troca já feita
+  volta já, e, sem conta livre para trocar, volta quando a própria conta renova.
+
+### Sessão sem tela que ainda roda não ganha cópia
+
+Quando a conta trocava, a retomada abria `claude --resume -p` na sessão que bateu o limite mesmo com o processo dela
+ainda vivo, e na troca seguinte abria outra por cima da primeira.
 
 - **O que acontecia:** o processo que bate o limite pode seguir vivo, relendo o login e trabalhando na conta nova. Um
   `claude -p` agendado foi reaberto duas vezes, em duas trocas seguidas, com o processo original ainda vivo: as cópias
