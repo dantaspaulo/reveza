@@ -28,11 +28,12 @@ test("mesmo e-mail em duas organizações: duas contas, dois cofres, nenhuma sub
   assert.equal(pro.ok, true);
   assert.notEqual(team.conta_id, pro.conta_id, "a conta do Team e a do Pro individual são linhas diferentes");
 
-  const contas = await b.sql("select id, organizacao, organizacao_id, plano, nivel from public.contas where email = $1 order by organizacao_id", [CONTA.email]);
+  const contas = await b.sql("select id, organizacao, organizacao_id, plano, nivel from public.contas where email = $1", [CONTA.email]);
   assert.equal(contas.length, 2);
-  assert.deepEqual(contas.map((c) => [c.organizacao_id, c.plano]), [
-    [CONTA.pro.p_organizacao_id, "max"],
+  const identidades = contas.map((c) => [c.organizacao_id, c.plano]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  assert.deepEqual(identidades, [
     [CONTA.team.p_organizacao_id, "team"],
+    [CONTA.pro.p_organizacao_id, "max"],
   ]);
 
   const cofres = await b.sql(
