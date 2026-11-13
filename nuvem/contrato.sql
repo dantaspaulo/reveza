@@ -45,8 +45,10 @@ create table computadores (
 
 create table contas (
   id uuid primary key default gen_random_uuid(),
-  email text not null unique check (email = lower(email)),
+  email text not null check (email = lower(email)),
   organizacao text,
+  organizacao_id text,                       -- uuid da organização do Claude (0035): junto com o e-mail, identifica a conta
+  account_uuid text,                         -- uuid da conta do Claude (0035)
   plano text,                                -- pro, max, team...
   nivel text,                                -- multiplicador do plano (5x, 20x)
   cor smallint not null default 0,           -- índice da paleta do painel, estável
@@ -238,12 +240,13 @@ create table auditoria (
 -- ------------------------------------------------------------------------------------------------ funções do agente
 -- Todas exigem que auth.uid() seja um computador não revogado. Devolvem jsonb.
 -- agente_registrar(nome, sistema, versao)                       -> {computador_id}
--- agente_ola(versao, diagnostico jsonb)                         -> {atribuicao, config, comandos_pendentes, ligar_codigo?}
+-- agente_ola(versao, diagnostico jsonb, conta_local, organizacao_id) -> {atribuicao, config, comandos_pendentes, ligar_codigo?}
 --     (a "busca" de 5 em 5 s: renova visto_em e as posses deste computador, devolve o que fazer)
 -- agente_pegar_posse(conta_id, motivo, segundos)                -> {ok, cofre?: {cifrado, nonce, versao}}
 -- agente_devolver_cofre(conta_id, cifrado, nonce, versao_anterior, expira_em) -> {ok, versao}  (exige posse)
 -- agente_soltar_posse(conta_id)                                 -> {ok}
--- agente_registrar_conta(email, organizacao, plano, nivel, cifrado, nonce) -> {conta_id}  (login novo)
+-- agente_registrar_conta(email, organizacao, plano, nivel, cifrado, nonce, expira_em, organizacao_id, account_uuid)
+--                                                               -> {conta_id}  (login novo; e-mail + organização é a conta, 0035)
 -- agente_relatar_uso(janelas jsonb, historico jsonb)            -> {ok}
 -- agente_relatar_tokens(linhas jsonb, sessoes jsonb)            -> {ok}
 -- agente_limite(conta_id, sessao, tipo)                         -> {ok}  (sessão bateu o limite: decide na hora)

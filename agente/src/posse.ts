@@ -278,9 +278,12 @@ export class PosseCofre {
     if (!oauth(blob).refreshToken) return false;
     const { cifrado, nonce } = cifrarLogin(k, aadRegistro(c.email), blob!);
     const exp = expiraEm(blob);
-    const r = await this.nuvem.registrarConta(c.email, c.org, c.plano, nivelDoTier(c.tier), cifrado, nonce, exp ? epochParaIso(exp) : null);
+    const r = await this.nuvem.registrarConta(c.email, c.org, c.plano, nivelDoTier(c.tier), cifrado, nonce, exp ? epochParaIso(exp) : null, c.orgUuid, c.accountUuid);
     if (!r.ok || !r.conta_id) {
-      this.log.erro(`a nuvem não registrou ${c.email}: ${r.erro ?? "sem motivo"}`);
+      // conta em uso em outro computador é rotina na conferência de identidade: não é erro deste computador
+      if (r.erro !== "conta com outro computador agora; tente de novo em instantes") {
+        this.log.erro(`a nuvem não registrou ${c.email}: ${r.erro ?? "sem motivo"}`);
+      }
       return false;
     }
     c.contaId = r.conta_id;

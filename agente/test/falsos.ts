@@ -39,6 +39,10 @@ import type { Sistema } from "../src/config.js";
 import { novaChave } from "../src/cofre/cifra.js";
 import { SEGREDO_COFRE } from "../src/cofre/guarda.js";
 
+/** UUID de organização determinístico por letra, no formato que a nuvem aceita (0035). */
+export const uuidDaOrg = (letra: string): string =>
+  `00000000-0000-4000-8000-0000000000${(letra.charCodeAt(0) % 256).toString(16).padStart(2, "0")}`;
+
 export const T0 = 1_800_000_000;
 
 /** Token falso: a primeira letra diz de quem é ("A1" é da conta A). */
@@ -106,7 +110,7 @@ export class ApiFalsa implements ApiContas {
     const perfil: Perfil = {
       accountUuid: `acc-${l}`,
       email: `${l.toLowerCase()}@exemplo.com`,
-      orgUuid: `org-${l}`,
+      orgUuid: uuidDaOrg(l),
       org: `Org ${l}`,
       orgTipo: "x",
       tier: "default_max_5x",
@@ -248,6 +252,8 @@ export function pastaTemporaria(): { dir: string; c: Caminhos; limpar: () => voi
 interface ContaNuvemF {
   id: string;
   email: string;
+  /** Organização do Claude (0035): junto com o e-mail, identifica a conta. */
+  organizacaoId?: string | null;
   cofre: { cifrado: Buffer; nonce: Buffer; versao: number; expira_em: string | null } | null;
   precisaLogin?: boolean;
   /** O modelo da conta (0025); undefined imita a nuvem de antes, que não manda a chave. */
@@ -295,10 +301,17 @@ export class BancoFalso {
   agora = () => T0;
   foraDoAr = false;
 
-  conta(email: string): ContaNuvemF {
-    let c = [...this.contas.values()].find((x) => x.email === email);
+  conta(email: string, organizacaoId?: string | null): ContaNuvemF {
+    let c = [...this.contas.values()].find(
+      (x) => x.email === email && (organizacaoId == null || x.organizacaoId === organizacaoId),
+    );
+    if (!c && organizacaoId != null) {
+      // linha de antes da 0035: sem o uuid da organização, é adotada pelo primeiro registro que a conhece
+      c = [...this.contas.values()].find((x) => x.email === email && x.organizacaoId == null);
+      if (c) c.organizacaoId = organizacaoId;
+    }
     if (!c) {
-      c = { id: randomUUID(), email, cofre: null };
+      c = { id: randomUUID(), email, organizacaoId: organizacaoId ?? null, cofre: null };
       this.contas.set(c.id, c);
     }
     return c;
@@ -352,15 +365,18 @@ export class NuvemFalsa implements Nuvem {
     return { computador_id: this.pc };
   }
 
-  async ola(versao: string, diagnostico: Record<string, unknown> | null, contaLocal: string | null) {
-    this.registrarChamada("ola", versao, diagnostico, contaLocal);
+  async ola(versao: string, diagnostico: Record<string, unknown> | null, contaLocal: string | null, organizacaoId: string | null) {
+    this.registrarChamada("ola", versao, diagnostico, contaLocal, organizacaoId);
     const b = this.banco;
     b.versoes.set(this.pc, versao);
     // como o agente_ola (0025): renova só a posse de uso da conta atribuída; a de uma conta que saiu vence sozinha
     const atribuida = b.atribuicao.get(this.pc)?.conta;
     for (const [conta, p] of b.posse) if (p.pc === this.pc && p.motivo === "uso" && conta === atribuida) p.expira = b.agora() + 120;
     if (!b.atribuicao.has(this.pc) && contaLocal) {
-      const c = [...b.contas.values()].find((x) => x.email === contaLocal.toLowerCase());
+      const contas = [...b.contas.values()];
+      const c = contas.find(
+        (x) => x.email === contaLocal.toLowerCase() && (organizacaoId == null || x.organizacaoId === organizacaoId),
+      ) ?? contas.find((x) => x.email === contaLocal.toLowerCase() && x.organizacaoId == null);
       if (c && ![...b.atribuicao.values()].some((a) => a.conta === c.id)) b.atribuicao.set(this.pc, { conta: c.id, versao: 1, motivo: "conta que já estava no computador" });
     }
     const a = b.atribuicao.get(this.pc);
@@ -502,10 +518,11 @@ export class NuvemFalsa implements Nuvem {
     return { ok: true };
   }
 
-  async registrarConta(email: string, _o: string | null, _p: string | null, _n: string | null, cifrado: Buffer, nonce: Buffer, expiraEm: string | null) {
-    this.registrarChamada("registrarConta", email);
+  async registrarConta(email: string, organizacao: string | null, _p: string | null, _n: string | null, cifrado: Buffer, nonce: Buffer, expiraEm: string | null, organizacaoId: string | null, _accountUuid: string | null) {
+    this.registrarChamada("registrarConta", email, organizacao, organizacaoId);
     const b = this.banco;
-    const c = b.conta(email.toLowerCase());
+    const c = b.conta(email.toLowerCase(), organizacaoId);
+    if (!c.organizacaoId && organizacaoId) c.organizacaoId = organizacaoId;
     const dono = b.donoDaPosse(c.id);
     if (dono && dono !== this.pc) return { ok: false, conta_id: null, versao: null, erro: "conta com outro computador agora" };
     const versao = (c.cofre?.versao ?? 0) + 1;
@@ -794,7 +811,7 @@ export function contaEstacionada(m: Montado, letra: string, pct = 10, opcoes: { 
   const perfil: Perfil = {
     accountUuid: `acc-${letra}`,
     email: `${letra.toLowerCase()}@exemplo.com`,
-    orgUuid: `org-${letra}`,
+    orgUuid: uuidDaOrg(letra),
     org: `Org ${letra}`,
     orgTipo: "x",
     tier: "default_max_5x",

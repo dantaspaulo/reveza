@@ -236,6 +236,11 @@ export class Agente {
   private chaveDaInstalacao: boolean | null = null;
   private chaveLidaEm = 0;
   private registroTentado = new Map<string, number>();
+  /** Contas que já foram conferidas com a nuvem pela identidade (e-mail + organização, 0035). */
+  private reconciliadas = new Set<string>();
+  private reconciliacaoTentada = new Map<string, number>();
+  /** Duplicatas de contaId no estado local, calculadas uma vez por processo (a primeira que separa não esconde a outra). */
+  private duplicadas: Set<string> | null = null;
   /** Quanto levou a última conversa com a nuvem (o painel mostra em Saúde). */
   ultimaBuscaMs: number | null = null;
   /** A última atribuição que a nuvem mandou (o conserto da credencial põe esta conta). */
@@ -1035,7 +1040,7 @@ export class Agente {
       }
       const ativa = this.estado.ativa ? this.estado.contas[this.estado.ativa] : null;
       const inicio = Date.now();
-      const r = await nuvem.ola(VERSAO, diagnostico, ativa?.email ?? null);
+      const r = await nuvem.ola(VERSAO, diagnostico, ativa?.email ?? null, ativa?.orgUuid ?? null);
       this.ultimaBuscaMs = Date.now() - inicio;
       // só sai da fila depois de a nuvem receber (sem rede, vai na busca seguinte)
       if (pendente && this.diagnosticoParaMandar === pendente) this.diagnosticoParaMandar = null;
@@ -1062,6 +1067,7 @@ export class Agente {
       if (!this.d.sombra) {
         if (!this.possesLimpas) await this.limparPossesAntigas();
         await this.registrarPendentes();
+        await this.reconciliarContas();
         await this.informarLogins();
         await this.garantirPosseDaAtiva();
         await this.posse.processarSaidas();
@@ -1269,7 +1275,34 @@ export class Agente {
     for (const c of Object.values(this.estado.contas)) {
       if (c.contaId || c.precisaLogin || t - (this.registroTentado.get(c.id) ?? 0) < 300) continue;
       this.registroTentado.set(c.id, t);
-      await this.registrarNaNuvem(c.id);
+      if (await this.registrarNaNuvem(c.id)) this.reconciliadas.add(c.id);
+    }
+  }
+
+  /**
+   * A conta na nuvem é (e-mail, organização) desde a 0035. Antes disso, duas contas locais com o mesmo e-mail podiam
+   * acabar apontando para a mesma conta da nuvem: aqui só essas duplicatas são conferidas, uma vez; o que falhar
+   * tenta de novo em 5 min. Só a identidade muda; o cofre de cada uma é regravado com a cópia local.
+   */
+  private async reconciliarContas(): Promise<void> {
+    if (!this.chave) return;
+    if (!this.duplicadas) {
+      const porContaId = new Map<string, string[]>();
+      for (const c of Object.values(this.estado.contas)) {
+        if (!c.contaId) continue;
+        const ids = porContaId.get(c.contaId) ?? [];
+        ids.push(c.id);
+        porContaId.set(c.contaId, ids);
+      }
+      this.duplicadas = new Set<string>();
+      for (const ids of porContaId.values()) if (ids.length > 1) for (const id of ids) this.duplicadas.add(id);
+    }
+    const t = this.d.relogio.agora();
+    for (const c of Object.values(this.estado.contas)) {
+      if (!this.duplicadas.has(c.id) || c.precisaLogin || this.reconciliadas.has(c.id)) continue;
+      if (t - (this.reconciliacaoTentada.get(c.id) ?? 0) < 300) continue;
+      this.reconciliacaoTentada.set(c.id, t);
+      if (await this.registrarNaNuvem(c.id)) this.reconciliadas.add(c.id);
     }
   }
 
@@ -2375,13 +2408,16 @@ export class Agente {
     this.salvar();
   }
 
-  async registrarNaNuvem(id: string): Promise<void> {
-    if (!this.posse || this.d.sombra) return;
+  async registrarNaNuvem(id: string): Promise<boolean> {
+    if (!this.posse || this.d.sombra) return false;
     if (!this.chave) {
       this.trocador.evento("alerta", "Conta conectada só neste computador: falta a chave do cofre (`reveza ligar`).", { conta: id });
-      return;
+      return false;
     }
-    await this.posse.registrarNaNuvem(id).catch((e) => this.d.log.erro(`registrar conta na nuvem: ${(e as Error).message}`));
+    return this.posse.registrarNaNuvem(id).catch((e) => {
+      this.d.log.erro(`registrar conta na nuvem: ${(e as Error).message}`);
+      return false;
+    });
   }
 
   // ------------------------------------------------------------------------------------------------ relatos

@@ -34,11 +34,11 @@ describe("contrato das funções agente_*", () => {
     const n = new NuvemRpc(r);
     const b = Buffer.from([1, 2, 3]);
     await n.registrar("pc", "macos", "0.1.0");
-    await n.ola("0.1.0", null, "a@exemplo.com");
+    await n.ola("0.1.0", null, "a@exemplo.com", "00000000-0000-4000-8000-000000000001");
     await n.pegarPosse("c", "leitura", 60);
     await n.devolverCofre("c", b, b, 4, null);
     await n.soltarPosse("c");
-    await n.registrarConta("a@exemplo.com", "Org", "max", "5x", b, b, null);
+    await n.registrarConta("a@exemplo.com", "Org", "max", "5x", b, b, null, "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002");
     await n.relatarUso([], []);
     await n.relatarTokens([], []);
     await n.limite("c", "s");
@@ -65,11 +65,11 @@ describe("contrato das funções agente_*", () => {
     const assinaturas = r.chamadas.map((c) => `${c.fn}(${Object.keys(c.args).join(",")})`);
     assert.deepEqual(assinaturas, [
       "agente_registrar(p_nome,p_sistema,p_versao)",
-      "agente_ola(p_versao,p_diagnostico,p_conta_local)",
+      "agente_ola(p_versao,p_diagnostico,p_conta_local,p_organizacao_id)",
       "agente_pegar_posse(p_conta,p_motivo,p_segundos)",
       "agente_devolver_cofre(p_conta,p_cifrado,p_nonce,p_versao_anterior,p_expira_em)",
       "agente_soltar_posse(p_conta)",
-      "agente_registrar_conta(p_email,p_organizacao,p_plano,p_nivel,p_cifrado,p_nonce,p_expira_em)",
+      "agente_registrar_conta(p_email,p_organizacao,p_plano,p_nivel,p_cifrado,p_nonce,p_expira_em,p_organizacao_id,p_account_uuid)",
       "agente_relatar_uso(p_janelas,p_historico)",
       "agente_relatar_tokens(p_linhas,p_sessoes)",
       "agente_limite(p_conta,p_sessao)",
@@ -105,7 +105,7 @@ describe("contrato das funções agente_*", () => {
         { computador_id: "pc-ruim", publica: { kty: "EC", crv: "P-256", x: "curta", y: "b".repeat(43) } },
       ],
     };
-    const ola = await n.ola("v", null, null);
+    const ola = await n.ola("v", null, null, null);
     assert.deepEqual(ola.atribuicao, { conta_id: "c1", email: "a@exemplo.com", versao: 3, motivo: "x" });
     assert.deepEqual(ola.comandos.map((c) => c.id), [5]);
     assert.equal(ola.ligacao_pendente, true);

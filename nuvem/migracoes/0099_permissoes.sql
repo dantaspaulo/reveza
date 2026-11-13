@@ -15,9 +15,9 @@ grant execute on function public.rvz_papel(), public.rvz_eh_membro(), public.rvz
   to authenticated;
 
 grant execute on function
-  public.agente_registrar(text, text, text), public.agente_ola(text, jsonb, text),
+  public.agente_registrar(text, text, text), public.agente_ola(text, jsonb, text, text),
   public.agente_pegar_posse(uuid, text, integer), public.agente_devolver_cofre(uuid, text, text, bigint, timestamptz),
-  public.agente_soltar_posse(uuid), public.agente_registrar_conta(text, text, text, text, text, text, timestamptz),
+  public.agente_soltar_posse(uuid), public.agente_registrar_conta(text, text, text, text, text, text, timestamptz, text, text),
   public.agente_relatar_uso(jsonb, jsonb), public.agente_relatar_tokens(jsonb, jsonb), public.agente_limite(uuid, text),
   public.agente_sem_modelo(uuid, text, text), public.agente_contas_removidas(),
   public.agente_reservar_comando(bigint), public.agente_responder_comando(bigint, integer, jsonb),

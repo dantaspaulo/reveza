@@ -150,7 +150,7 @@ export class ErroNuvem extends Error {
 
 export interface Nuvem {
   registrar(nome: string, sistema: Sistema, versao: string): Promise<{ computador_id: string }>;
-  ola(versao: string, diagnostico: Record<string, unknown> | null, contaLocal: string | null): Promise<RespostaOla>;
+  ola(versao: string, diagnostico: Record<string, unknown> | null, contaLocal: string | null, organizacaoId: string | null): Promise<RespostaOla>;
   pegarPosse(contaId: string, motivo: MotivoPosse, segundos: number): Promise<{ ok: boolean; erro: string | null; cofre: CofreNuvem | null }>;
   devolverCofre(
     contaId: string,
@@ -168,6 +168,8 @@ export interface Nuvem {
     cifrado: Buffer,
     nonce: Buffer,
     expiraEm: string | null,
+    organizacaoId: string | null,
+    accountUuid: string | null,
   ): Promise<{ ok: boolean; conta_id: string | null; versao: number | null; erro: string | null }>;
   relatarUso(janelas: JanelaNuvem[], historico: PontoNuvem[]): Promise<{ ok: boolean }>;
   relatarTokens(linhas: LinhaTokens[], sessoes: SessaoNuvem[]): Promise<{ ok: boolean }>;

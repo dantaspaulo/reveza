@@ -112,8 +112,13 @@ export class NuvemRpc implements Nuvem {
     return { computador_id: String(r.computador_id) };
   }
 
-  async ola(versao: string, diagnostico: Record<string, unknown> | null, contaLocal: string | null): Promise<RespostaOla> {
-    const r = await this.chamar("agente_ola", { p_versao: versao, p_diagnostico: diagnostico, p_conta_local: contaLocal });
+  async ola(versao: string, diagnostico: Record<string, unknown> | null, contaLocal: string | null, organizacaoId: string | null): Promise<RespostaOla> {
+    const r = await this.chamar("agente_ola", {
+      p_versao: versao,
+      p_diagnostico: diagnostico,
+      p_conta_local: contaLocal,
+      p_organizacao_id: organizacaoId,
+    });
     return {
       computador_id: texto(r.computador_id),
       atribuicao: atribuicaoDe(r.atribuicao),
@@ -154,6 +159,8 @@ export class NuvemRpc implements Nuvem {
     cifrado: Buffer,
     nonce: Buffer,
     expiraEm: string | null,
+    organizacaoId: string | null,
+    accountUuid: string | null,
   ) {
     const r = await this.chamar("agente_registrar_conta", {
       p_email: email,
@@ -163,6 +170,8 @@ export class NuvemRpc implements Nuvem {
       p_cifrado: paraB64(cifrado),
       p_nonce: paraB64(nonce),
       p_expira_em: expiraEm,
+      p_organizacao_id: organizacaoId,
+      p_account_uuid: accountUuid,
     });
     return { ok: r.ok === true, conta_id: texto(r.conta_id), versao: numero(r.versao), erro: texto(r.erro) };
   }

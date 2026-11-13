@@ -7,6 +7,23 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.16.3 · 12/11/2026
+
+A mesma pessoa em dois planos do Claude (Team e Pro individual) agora são duas contas no Reveza, cada uma com o seu
+login e o seu consumo. Antes, a segunda substituía a primeira: o e-mail sozinho era a identidade da conta.
+
+### Duas contas com o mesmo e-mail, uma em cada plano
+
+- **O que acontecia:** a conta do Team foi registrada no cofre. Quando a mesma conta foi conectada no plano individual,
+  o registro encontrou a linha pelo e-mail e gravou por cima: a conta do Team sumiu do painel, o login dela foi
+  substituído pelo do plano individual e o computador entrava em troca a cada ciclo, porque as duas apontavam para a
+  mesma conta da nuvem.
+- **Agora:** a identidade da conta é o e-mail **e** a organização do Claude. As duas linhas coexistem, cada uma com o
+  seu cofre, o seu consumo e a sua prioridade. O computador confere as contas locais na primeira conversa com a nuvem
+  e separa as que estavam fundidas: a linha antiga, sem o uuid da organização, é adotada pelo registro da mesma
+  organização textual, e as outras são criadas com o login que já está no computador. Agente antigo não registra por
+  cima de um e-mail com duas contas: a nuvem recusa e pede a atualização.
+
 ## 0.16.2 · 10/11/2026
 
 A retomada depois do limite ficou certa: conversa de agente do OpenBot cortada continua uma vez, pelo próprio OpenBot;

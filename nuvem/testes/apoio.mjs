@@ -69,10 +69,13 @@ class Banco {
   }
 
   // Conta com cofre (como se o computador tivesse feito o login) e uso de 5 h.
-  async conta(pc, email, pct5 = 10, extra = {}) {
+  // `identidade` distingue a mesma pessoa em organizações diferentes (0035): { organizacao, organizacaoId, accountUuid, plano, nivel }.
+  async conta(pc, email, pct5 = 10, extra = {}, identidade = {}) {
     const r = await this.rpc(pc, "agente_registrar_conta", {
-      p_email: email, p_organizacao: "Org", p_plano: "max", p_nivel: "5x",
+      p_email: email, p_organizacao: identidade.organizacao ?? "Org", p_plano: identidade.plano ?? "max",
+      p_nivel: identidade.nivel ?? "5x",
       p_cifrado: Buffer.alloc(40, 1).toString("base64"), p_nonce: Buffer.alloc(12, 2).toString("base64"),
+      p_organizacao_id: identidade.organizacaoId ?? null, p_account_uuid: identidade.accountUuid ?? null,
     });
     const conta = r.conta_id;
     await this.sql(
