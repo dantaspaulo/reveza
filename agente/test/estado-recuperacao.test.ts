@@ -10,7 +10,7 @@ import * as path from "node:path";
 import { syncBuiltinESMExports } from "node:module";
 import { carregarEstadoDoAgente, copiaBoaDo, estadoInicial, novaConta } from "../src/estado.js";
 import { gravarAtomico } from "../src/util/arquivos.js";
-import { ativaEm, blob, contaEstacionada, montar, type Montado } from "./falsos.js";
+import { ativaEm, blob, contaEstacionada, montar, uuidDaOrg, type Montado } from "./falsos.js";
 
 let m: Montado | null = null;
 let pastas: string[] = [];
@@ -25,7 +25,7 @@ const tmp = () => {
   pastas.push(p);
   return p;
 };
-const perfil = (l: string) => ({ accountUuid: `acc-${l}`, email: `${l.toLowerCase()}@exemplo.com`, orgUuid: `org-${l}`, org: `Org ${l}`, orgTipo: "x", tier: null });
+const perfil = (l: string) => ({ accountUuid: `acc-${l}`, email: `${l.toLowerCase()}@exemplo.com`, orgUuid: uuidDaOrg(l), org: `Org ${l}`, orgTipo: "x", tier: null });
 function comContas(...letras: string[]) {
   const e = estadoInicial();
   for (const l of letras) e.contas[l.toLowerCase()] = novaConta(l.toLowerCase(), perfil(l), `/contas/${l.toLowerCase()}`, 1);
@@ -138,7 +138,7 @@ describe("conta perdida do estado volta pela pasta", () => {
   function pastaDe(c: { contas: string }, nome: string, email: string, letra: string) {
     const p = path.join(c.contas, nome);
     fs.mkdirSync(p, { recursive: true });
-    fs.writeFileSync(path.join(p, ".claude.json"), JSON.stringify({ oauthAccount: { accountUuid: `acc-${letra}`, organizationUuid: `org-${letra}`, emailAddress: email, organizationName: `Org ${letra}` } }));
+    fs.writeFileSync(path.join(p, ".claude.json"), JSON.stringify({ oauthAccount: { accountUuid: `acc-${letra}`, organizationUuid: uuidDaOrg(letra), emailAddress: email, organizationName: `Org ${letra}` } }));
     return p;
   }
 

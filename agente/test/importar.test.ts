@@ -10,7 +10,7 @@ import { servicoDaPasta } from "../src/credenciais/blob.js";
 import { CredenciaisFalsas } from "../src/credenciais/falsa.js";
 import { carregarEstado } from "../src/estado.js";
 import { Contador } from "../src/registro/contador.js";
-import { blob, ExecutorFalso, pastaTemporaria, T0 } from "./falsos.js";
+import { blob, ExecutorFalso, pastaTemporaria, T0, uuidDaOrg } from "./falsos.js";
 import { executorReal } from "../src/util/executor.js";
 
 let tmp: ReturnType<typeof pastaTemporaria>;
@@ -45,7 +45,7 @@ function roteadorFalso(base: string) {
     email,
     org: `Org ${l}`,
     accountUuid: `acc-${l}`,
-    orgUuid: `org-${l}`,
+    orgUuid: uuidDaOrg(l),
     plano: "max",
     tier: "default_max_20x",
     pasta,

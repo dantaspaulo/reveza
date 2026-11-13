@@ -5,13 +5,13 @@ import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { ativaEm, contaEstacionada, montar, type Montado } from "./falsos.js";
+import { ativaEm, contaEstacionada, montar, uuidDaOrg, type Montado } from "./falsos.js";
 
 let m: Montado;
 afterEach(() => m?.limpar());
 const e = () => m.agente.estado;
 const tr = () => m.agente.trocador;
-const conta = (letra: string) => ({ accountUuid: `acc-${letra}`, orgUuid: `org-${letra}` });
+const conta = (letra: string) => ({ accountUuid: `acc-${letra}`, orgUuid: uuidDaOrg(letra) });
 const cinco = (id: string) => e().contas[id]!.janelas.find((j) => j.tipo === "five_hour")!.pct;
 
 describe("a conta da sessão", () => {
