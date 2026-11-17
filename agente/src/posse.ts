@@ -23,6 +23,9 @@ import { epochParaIso, type Relogio } from "./util/tempo.js";
 import type { ClaudeJson } from "./claudejson.js";
 import { POSSE_CURTA_S, POSSE_S } from "./config.js";
 
+/** Conta que saiu de uso e o cofre ainda não aceitou (outro computador está com ela): de quanto em quanto tentar. */
+export const SAIDA_DE_NOVO_S = 300;
+
 export function nivelDoTier(tier: string | null | undefined): string | null {
   const m = /(\d+x)\b/i.exec(tier ?? "");
   return m ? m[1]!.toLowerCase() : null;
@@ -77,6 +80,10 @@ export class PosseCofre {
   versaoServidor = new Map<string, number>();
   subirAtiva = false;
   ultimaSubidaAtiva = 0;
+  /** Contas cuja devolução ao cofre já foi recusada e avisada no log (sai quando uma devolução dá certo). */
+  private recusaAvisada = new Set<string>();
+  /** Contas que saíram de uso e o cofre ainda não aceitou porque outro computador está com elas (avisadas no log). */
+  private saidaPresaAvisada = new Set<string>();
 
   constructor(
     private estado: () => EstadoLocal,
@@ -124,30 +131,38 @@ export class PosseCofre {
   /**
    * A cópia do cofre entra no lugar da local quando é mais nova. Nunca para a conta em uso (a principal é a fonte),
    * a não ser com `principalSemConta`: o assistente saiu da conta, e a principal deixou de ser a fonte de nada.
+   *
+   * "Mais nova" é a que vence depois, não a de versão maior (0.16.4). O token de renovação gira: o login emitido por
+   * último (login feito agora ou renovação) é o único que ainda renova, e o de versão maior pode ser só uma cópia
+   * velha que outro computador devolveu ao sair dela. Caso de 16/11/2026: uma conta entrou de novo num computador, o
+   * login novo não chegou ao cofre, e o outro computador seguia devolvendo a cópia morta com versão maior; a próxima
+   * sincronização trocaria o login vivo pelo morto. Devolve true quando a cópia local é a mais nova e precisa subir.
    */
-  async sincronizar(id: string, cofre: CofreNuvem | null, principalSemConta = false): Promise<void> {
+  async sincronizar(id: string, cofre: CofreNuvem | null, principalSemConta = false): Promise<boolean> {
     const c = this.conta(id);
-    if (!c || !cofre) return;
+    if (!c || !cofre) return false;
     this.versaoServidor.set(id, cofre.versao);
-    if (id === this.estado().ativa && !principalSemConta) return;
+    if (id === this.estado().ativa && !principalSemConta) return false;
     const local = await this.cred.ler(c.pasta);
-    if (c.versaoCofre !== null && cofre.versao <= c.versaoCofre && local) return;
+    if (c.versaoCofre !== null && cofre.versao <= c.versaoCofre && local) return false;
     const k = this.chave();
     const aberto = k && c.contaId ? abrirCofreComOrigem(k, c.contaId, c.email, cofre) : null;
     if (!aberto) {
       this.abrir(c, cofre); // registra o erro de chave
-      return;
+      return false;
     }
     const login = aberto.login;
-    if (aberto.registro && local && expiraEm(local) >= expiraEm(login)) return;
-    if (c.versaoCofre === null && local && expiraEm(local) > expiraEm(login)) {
-      // A cópia local nunca foi ao cofre e é mais nova que a de lá (importada, ou login feito aqui): fica a local.
-      return;
+    if (aberto.registro && local && expiraEm(local) >= expiraEm(login)) return false;
+    if (local && oauth(local).refreshToken && expiraEm(local) > expiraEm(login)) {
+      // A cópia local foi emitida depois da do cofre (login feito aqui, renovação daqui, ou importada): fica a local,
+      // e ela sobe na devolução seguinte.
+      return true;
     }
     await this.cred.gravar(c.pasta, comLogin(local, login));
     c.versaoCofre = cofre.versao;
     c.precisaLogin = false;
     c.tokenExpiraEm = expiraEm(login) || null;
+    return false;
   }
 
   async pegar(id: string, motivo: MotivoPosse, segundos = POSSE_S): Promise<{ ok: boolean; erro: string | null; cofre: CofreNuvem | null }> {
@@ -175,11 +190,20 @@ export class PosseCofre {
     const exp = expiraEm(blob);
     const r = await this.nuvem.devolverCofre(c.contaId, cifrado, nonce, anterior, exp ? epochParaIso(exp) : null);
     if (!r.ok) {
-      if (!(silencioso && /sem posse/.test(r.erro ?? ""))) this.log.erro(`o cofre recusou a versão nova de ${c.email}: ${r.erro ?? "sem motivo"}`);
+      const semPosse = /sem posse/.test(r.erro ?? "");
+      // Uma vez por episódio: antes, a mesma recusa saía a cada ciclo de 15 s, o dia todo (16/11/2026: 2.274 vezes).
+      if (!(silencioso && semPosse) && !this.recusaAvisada.has(id)) {
+        this.log.erro(`o cofre recusou a versão nova de ${c.email}: ${r.erro ?? "sem motivo"}`);
+        this.recusaAvisada.add(id);
+      }
+      // A posse que este computador achava ter já venceu na nuvem: sai da lista, para a próxima tentativa pedir uma
+      // nova em vez de repetir a devolução sem posse para sempre (o login novo da conta nunca chegava ao cofre).
+      if (semPosse) this.posses.delete(id);
       // "versão do cofre mudou": a nuvem diz qual é a atual; a próxima tentativa parte dela.
       if (r.versao !== null) this.versaoServidor.set(id, r.versao);
       return false;
     }
+    this.recusaAvisada.delete(id);
     if (r.versao !== nova) this.log.erro(`o cofre gravou ${c.email} na versão ${r.versao}, e não ${nova}: o cifrado não vai abrir`);
     c.versaoCofre = r.versao ?? nova;
     this.versaoServidor.set(id, c.versaoCofre);
@@ -202,10 +226,11 @@ export class PosseCofre {
     opcoes: { sincronizar?: boolean; devolverSempre?: boolean } = {},
   ): Promise<T | null> {
     const jaTinha = this.posses.has(id);
+    let subir = false;
     if (!jaTinha) {
       const r = await this.pegar(id, motivo, POSSE_CURTA_S);
       if (!r.ok) return null;
-      if (opcoes.sincronizar !== false) await this.sincronizar(id, r.cofre);
+      if (opcoes.sincronizar !== false) subir = await this.sincronizar(id, r.cofre);
     }
     const c = this.conta(id)!;
     const antes = hashToken(await this.cred.ler(c.pasta));
@@ -215,7 +240,8 @@ export class PosseCofre {
       if (!jaTinha) {
         const depois = hashToken(await this.cred.ler(c.pasta));
         let pode = true;
-        if (opcoes.devolverSempre || antes !== depois) pode = await this.devolver(id).catch(() => false);
+        // a cópia daqui é mais nova que a do cofre: sobe já, mesmo sem mudar agora
+        if (opcoes.devolverSempre || subir || antes !== depois) pode = await this.devolver(id).catch(() => false);
         if (pode) await this.soltar(id).catch(() => undefined);
         else this.soltarDepois.set(id, this.relogio.agora()); // tenta devolver de novo na próxima busca
       }
@@ -308,25 +334,49 @@ export class PosseCofre {
     const t = this.relogio.agora();
     for (const [id, desde] of [...this.soltarDepois]) {
       if (t < desde) continue;
-      if (id === this.estado().ativa || !this.conta(id)?.contaId) {
+      const c = this.conta(id);
+      if (id === this.estado().ativa || !c?.contaId) {
         this.soltarDepois.delete(id);
+        this.saidaPresaAvisada.delete(id);
         continue;
       }
       if (!this.posses.has(id)) {
-        // Saiu de uso sem posse (a nuvem não a tinha atribuído aqui): posse curta só para devolver.
+        // Saiu de uso sem posse (a nuvem não a tinha atribuído aqui, ou a posse curta venceu): posse curta só para
+        // devolver. Com outro computador usando a conta, tenta de novo daqui a pouco, sem desistir: a cópia daqui pode
+        // ser a única viva (um login feito agora), e desistir a deixava fora do cofre para sempre (16/11/2026).
         const p = await this.pegar(id, "renovacao", 60).catch(() => null);
         if (!p?.ok) {
-          this.log.erro(`${this.conta(id)!.email} saiu de uso sem posse e o cofre não aceitou a cópia daqui`);
+          if (!this.saidaPresaAvisada.has(id)) {
+            this.log.erro(`${c.email} saiu de uso sem posse e o cofre não aceitou a cópia daqui (${p?.erro ?? "sem resposta"}); tento de novo a cada ${SAIDA_DE_NOVO_S / 60} min`);
+            this.saidaPresaAvisada.add(id);
+          }
+          this.soltarDepois.set(id, t + SAIDA_DE_NOVO_S);
+          continue;
+        }
+        // Com a posse de novo, vale a mais nova: se a do cofre é a mais nova (outro computador entrou de novo nela
+        // ou a renovou), ela fica aqui e não há o que devolver.
+        const versao = c.versaoCofre;
+        const subir = await this.sincronizar(id, p.cofre);
+        if (!subir && c.versaoCofre !== versao) {
+          await this.soltar(id).catch(() => undefined);
           this.soltarDepois.delete(id);
+          this.saidaPresaAvisada.delete(id);
           continue;
         }
       }
       if (await this.devolver(id).catch(() => false)) {
+        // ainda com a posse: a nuvem só aceita a marca de login de quem está com a conta
+        await this.aposDevolver(id).catch(() => undefined);
         await this.soltar(id).catch(() => undefined);
         this.soltarDepois.delete(id);
+        this.saidaPresaAvisada.delete(id);
       }
+      // devolução recusada: fica na lista; sem posse (venceu na nuvem), a próxima volta pede outra
     }
   }
+
+  /** Depois que uma conta parada subiu ao cofre (o agente usa para dizer à nuvem que o login dela voltou a valer). */
+  aposDevolver: (id: string) => Promise<void> = async () => undefined;
 
   /** As sessões renovaram a conta em uso: sobe a cópia nova ao cofre (no máximo uma vez por minuto). */
   async subirAtivaSePreciso(): Promise<void> {

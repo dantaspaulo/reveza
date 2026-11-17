@@ -15,6 +15,7 @@ import { idiomaAtual, t } from "./i18n.js";
 import { lerChave } from "./ligar.js";
 import type { StatusServico } from "./servico.js";
 import { carregarEstado } from "./estado.js";
+import { openBotCarregaConfiguracao } from "./openbot.js";
 
 export type Situacao = "ok" | "aviso" | "falha";
 
@@ -270,6 +271,28 @@ export async function doctor(d: DepsDoctor): Promise<Conferencia[]> {
         ? { fazer: t(`instale o assistente de código primeiro: ${INSTALAR_ASSISTENTE}`, `install the coding assistant first: ${instalarAssistenteEn()}`) }
         : { conserto: "mod" },
   );
+
+  // As conversas do OpenBot só carregam o mod com a opção dele ligada (0.16.4)
+  const openbot = openBotCarregaConfiguracao(d.c.home);
+  if (openbot !== null) {
+    add(
+      "openbot",
+      t("Conversas do OpenBot", "OpenBot conversations"),
+      openbot ? "ok" : "aviso",
+      openbot
+        ? t("carregam o mod (a opção de usar a configuração do Claude Code está ligada)", "they load the mod (the option to use the Claude Code setup is on)")
+        : t(
+            "rodam sem o mod: o Reveza não vê o limite nem o uso ao vivo delas, e a troca automática fica só com a leitura da conta",
+            "they run without the mod: Reveza does not see their limit or live usage, and the automatic switch relies only on the account reading",
+          ),
+      {
+        fazer: t(
+          'no OpenBot deste computador, ligue "Usar minha configuração do Claude Code" (nas configurações, em Claude Code)',
+          'in this computer\'s OpenBot, turn on "Use my Claude Code setup" (in the settings, under Claude Code)',
+        ),
+      },
+    );
+  }
 
   const estado = carregarEstado(d.c.estado);
   const contas = Object.values(estado.contas);

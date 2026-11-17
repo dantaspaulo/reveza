@@ -41,6 +41,8 @@ import { Trava, Travas } from "./util/trava.js";
 
 /** Login vencido, com renovação, recusado pela API e parado há tanto tempo: o assistente não consegue usá-lo. */
 export const PRINCIPAL_MORTA_APOS_S = 15 * 60;
+/** Leitura de uso com a cópia guardada mais nova que isto dispensa a conferência do login antes da troca. */
+export const LOGIN_LIDO_HA_POUCO_S = 10 * 60;
 
 export interface Ganchos {
   /** Pode renovar esta conta agora? (sem nuvem: sempre; com nuvem: só com a posse; modo sombra: nunca) */
@@ -134,12 +136,19 @@ export class Trocador {
   principalLida = false;
   /** Desde quando a principal está sem login de conta (null: com login, ou ainda não lida). */
   principalSemLoginDesde: number | null = null;
+  /**
+   * O login da conta em uso venceu e as sessões não conseguem renovar (a API recusa e ninguém o renovou em 15 min),
+   * com o hash dele: para o agente, é o mesmo que o assistente sem login, e a busca repõe a conta (0.16.4).
+   */
+  principalMorta: { desde: number; hash: string } | null = null;
 
   /** Anota o que a leitura da principal mostrou: com login, ou desde quando está sem. */
   private anotarPrincipal(blob: Blob | null): void {
     this.principalLida = true;
-    if (hashToken(blob)) this.principalSemLoginDesde = null;
+    const h = hashToken(blob);
+    if (h) this.principalSemLoginDesde = null;
     else this.principalSemLoginDesde ??= this.agora();
+    if (this.principalMorta && this.principalMorta.hash !== h) this.principalMorta = null;
   }
 
   constructor(
@@ -366,7 +375,11 @@ export class Trocador {
     let atual = await this.cred.ler(PRINCIPAL);
     // A principal não tem login de conta nenhuma (vazia, só os logins MCP, ou um login morto de ninguém conhecido).
     let semConta = !hashToken(atual);
-    if (atual && !(await this.identidade(atual))) {
+    // O login da conta em uso morreu (0.16.4): o token segue na principal, mas ninguém consegue usá-lo. Vale como sem
+    // conta: "já está nela" não serve (a reposição não fazia nada), e o login morto não vai para a pasta da conta.
+    const morta = !semConta && !!this.principalMorta && this.principalMorta.hash === hashToken(atual);
+    if (morta) semConta = true;
+    if (!morta && atual && !(await this.identidade(atual))) {
       // Sem login nenhum na principal (computador novo, ou o assistente saiu da conta) ou com um login que não vale
       // mais, não há conta em uso a proteger: a troca segue. Antes ela era adiada para sempre, e o computador novo
       // nunca recebia a conta que a nuvem mandou (12/10/2026).
@@ -399,6 +412,22 @@ export class Trocador {
           alvo.precisaLogin = true;
           this.evento("erro", `${alvo.email}: o login venceu e não renova mais; entre de novo nela pelo painel (Contas, Entrar de novo).`, { conta: destino });
           return { ok: false, erro: ERRO_LOGIN_MORTO };
+        }
+      }
+      // Dentro da validade pelo relógio não quer dizer vivo: o provedor cancela o login quando a renovação dele é usada
+      // em outro lugar. Uma cópia assim ia para o assistente, ele a apagava ao tentar renovar e a busca repunha a
+      // mesma cópia de 10 em 10 minutos, sem a nuvem saber (16/11/2026). Sem leitura de uso recente com ela, o perfil
+      // confere; recusado, renova antes, e o login morto volta como morto.
+      if (blobAlvo && oauth(blobAlvo).accessToken && expiraEm(blobAlvo) > this.agora() && !this.loginLidoHaPouco(alvo)) {
+        const { status } = await this.api.perfil(oauth(blobAlvo).accessToken!);
+        if (status === 401 || status === 403) {
+          const renovou = await this.renovarDentro(destino, semConta);
+          if (renovou === true) blobAlvo = await this.cred.ler(alvo.pasta);
+          else if (renovou === false) {
+            alvo.precisaLogin = true;
+            this.evento("erro", `${alvo.email}: o login foi recusado e não renova mais; entre de novo nela pelo painel (Contas, Entrar de novo).`, { conta: destino });
+            return { ok: false, erro: ERRO_LOGIN_MORTO };
+          }
         }
       }
       if (!temRenovacao(blobAlvo)) {
@@ -467,6 +496,11 @@ export class Trocador {
   }
 
   private principalRecusadaDesde: Record<string, number> = {};
+
+  /** A cópia guardada da conta serviu numa leitura de uso há pouco (o login dela estava vivo agora mesmo). */
+  private loginLidoHaPouco(c: ContaLocal): boolean {
+    return !c.erro && c.fonte === "api" && c.lidoEm !== null && this.agora() - c.lidoEm < LOGIN_LIDO_HA_POUCO_S;
+  }
 
   /**
    * A principal ficou sem a conta `id` (o assistente saiu dela): o último login dela visto na principal vai para a pasta
@@ -599,6 +633,18 @@ export class Trocador {
     if (exp && exp < t + VENCIDO_EM_S) {
       if (ativa) {
         c.erro = "token da conta em uso vencido; as sessões renovam na próxima chamada";
+        // As sessões não renovaram e a API recusa o login há 15 min: ele morreu (caso de 16/11/2026: o computador
+        // ficou dias assim, sem ler o uso e sem trocar, com o assistente pedindo login). Vira "sem login" para a
+        // busca repor a conta; se a cópia do cofre também estiver morta, a troca avisa a nuvem e ela manda outra.
+        const motivo = exp <= t ? await this.principalSemConta(blob!) : null;
+        if (motivo) {
+          const h = hashToken(blob)!;
+          if (this.principalMorta?.hash !== h) {
+            this.principalMorta = { desde: t, hash: h };
+            this.evento("erro", `O assistente está ${motivo} em ${c.email} (as sessões não conseguem usá-lo); reponho a conta ou troco para outra.`, { conta: id });
+          }
+          c.erro = `o assistente está ${motivo}`;
+        }
         return;
       }
       const r = await this.renovarSeguro(id);

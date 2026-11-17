@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { consultaDoChatPrincipal, lerIgnorar, OpenBotLocal, pedidoDoTexto } from "../src/openbot.js";
+import { consultaDoChatPrincipal, lerIgnorar, OpenBotLocal, openBotCarregaConfiguracao, pedidoDoTexto } from "../src/openbot.js";
 import { ultimoPedido } from "../src/sessaoviva.js";
 import type { Executor, Resultado } from "../src/util/executor.js";
 
@@ -110,6 +110,28 @@ describe("OpenBot", () => {
       assert.equal(new OpenBotLocal({ banco: path.join(d, "nao-existe.db"), comando: "/x" }, { rodar: async () => ({ codigo: 0, saida: "", erro: "" }), iniciar: () => { throw new Error(); } }).chatPrincipal(S), null);
     } finally {
       fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("as conversas do OpenBot carregam o mod? (0.16.4)", () => {
+  test("sem OpenBot: null; com ele e sem o arquivo da opção: desligada; com a opção ligada: true; fora do macOS: null", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "reveza-openbot-opcao-"));
+    try {
+      assert.equal(openBotCarregaConfiguracao(home, "darwin"), null);
+      const pasta = path.join(home, "Library", "Application Support", "OpenBot");
+      fs.mkdirSync(pasta, { recursive: true });
+      fs.writeFileSync(path.join(pasta, "openbot.db"), "");
+      assert.equal(openBotCarregaConfiguracao(home, "darwin"), false, "o arquivo só existe depois que alguém mexe na opção");
+      fs.writeFileSync(path.join(pasta, "openbot-claude-user-setup-v1.json"), JSON.stringify({ version: 1, enabled: false }));
+      assert.equal(openBotCarregaConfiguracao(home, "darwin"), false);
+      fs.writeFileSync(path.join(pasta, "openbot-claude-user-setup-v1.json"), JSON.stringify({ version: 1, enabled: true }));
+      assert.equal(openBotCarregaConfiguracao(home, "darwin"), true);
+      fs.writeFileSync(path.join(pasta, "openbot-claude-user-setup-v1.json"), "{quebrado");
+      assert.equal(openBotCarregaConfiguracao(home, "darwin"), false);
+      assert.equal(openBotCarregaConfiguracao(home, "linux"), null);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
     }
   });
 });

@@ -47,6 +47,25 @@ export function locaisDoOpenBot(home: string, plataforma: NodeJS.Platform = proc
   return comando && fs.existsSync(banco) ? { banco, comando } : null;
 }
 
+/**
+ * As conversas do OpenBot carregam a configuração do assistente (os hooks e plugins de `~/.claude`, onde mora o mod)?
+ * Ele tem a opção "Usar minha configuração do Claude Code", desligada de fábrica: desligada, as conversas dele rodam
+ * sem o mod, e o Reveza não vê o limite nem o uso ao vivo delas (16/11/2026: um computador que só usava o OpenBot nunca
+ * avisou um limite e nunca trocou sozinho). O arquivo da opção só existe depois que alguém mexe nela: sem ele, desligada.
+ * null: sem OpenBot neste computador (por enquanto só no macOS).
+ */
+export function openBotCarregaConfiguracao(home: string, plataforma: NodeJS.Platform = process.platform): boolean | null {
+  if (plataforma !== "darwin") return null;
+  const pasta = path.join(home, "Library", "Application Support", "OpenBot");
+  if (!fs.existsSync(path.join(pasta, "openbot.db"))) return null;
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(pasta, "openbot-claude-user-setup-v1.json"), "utf8")) as { enabled?: unknown } | null;
+    return j?.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 /** A consulta do chat principal: a sessão do assistente ativa ligada à conversa (thread) de um agente. */
 export function consultaDoChatPrincipal(sessao: string): string | null {
   if (!SESSAO_VALIDA.test(sessao)) return null;

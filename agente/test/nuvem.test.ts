@@ -860,3 +860,178 @@ describe("login morto da conta em uso", () => {
     assert.equal(banco.posse.get(bId), undefined, "a posse curta da conferência foi solta");
   });
 });
+
+// 16/11/2026: um computador ficou o dia sem trocar sozinho. A nuvem via a conta dele em 57% (o número de horas antes,
+// reenviado a cada minuto como se fosse novo) quando ela estava em 100%; o login da conta em uso tinha morrido e o
+// agente esperava "as sessões renovarem"; e o login novo de uma conta, feito em outro computador, nunca chegou ao cofre,
+// porque o agente achava ter uma posse que a nuvem já tinha vencido e repetia a devolução recusada a cada 15 s.
+describe("0.16.4: leitura velha, login cancelado e posse vencida", () => {
+  test("leitura velha da conta em mãos não vai à nuvem como se fosse nova", async () => {
+    await preparar();
+    const a = await ativaEm(m, "A", 50);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const contaId = e().contas[a]!.contaId!;
+    const antes = banco.janelas.filter((j) => j.conta_id === contaId).length;
+    assert.ok(antes > 0, "a leitura recente foi");
+    e().contas[a]!.lidoEm = m.relogio.agora() - 901;
+    await m.agente.relatarUso(true);
+    assert.equal(banco.janelas.filter((j) => j.conta_id === contaId).length, antes, "a velha não foi");
+    e().contas[a]!.lidoEm = m.relogio.agora();
+    await m.agente.relatarUso(true);
+    assert.ok(banco.janelas.filter((j) => j.conta_id === contaId).length > antes, "a nova vai");
+  });
+
+  test("conta em uso sem leitura há mais de 15 min vira alerta, uma vez, com o motivo", async () => {
+    await preparar();
+    const a = await ativaEm(m, "A", 50);
+    await m.agente.esperar();
+    await m.agente.busca();
+    m.api.statusUso["A"] = 500;
+    m.relogio.t += 1000;
+    e().contas[a]!.lidoEm = m.relogio.agora() - 1000;
+    e().contas[a]!.erro = "leitura falhou (500)";
+    await m.agente.busca();
+    await m.agente.busca();
+    const alertas = e().eventos.filter((x) => /Não leio o uso de a@exemplo\.com, a conta em uso/.test(x.texto));
+    assert.equal(alertas.length, 1, "uma vez por episódio");
+    assert.match(alertas[0]!.texto, /leitura falhou \(500\)/);
+    e().contas[a]!.lidoEm = m.relogio.agora();
+    await m.agente.busca();
+    assert.ok(m.log.linhas.some((l) => /voltei a ler o uso de a@exemplo\.com/.test(l)));
+  });
+
+  test("cópia local emitida depois da do cofre fica, mesmo com o cofre em versão maior, e sobe na posse curta", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 5, "B-morto");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    await m.agente.posse!.com(b, "leitura", async () => true);
+    assert.equal(m.cred.token(pasta(b)), "B-novo", "o login vivo não foi trocado pelo do cofre");
+    assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B-novo", "e subiu ao cofre");
+    assert.equal(banco.posse.get(bId), undefined, "a posse curta foi solta");
+  });
+
+  test("posse vencida na nuvem: sai da lista, a próxima volta pede outra, o login sobe e o erro sai uma vez só", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    const posse = m.agente.posse!;
+    posse.posses.set(b, "login"); // o agente acha que tem; a nuvem não tem posse nenhuma
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    await posse.processarSaidas();
+    assert.equal(m.log.linhas.filter((l) => /o cofre recusou a versão nova de b@exemplo\.com/.test(l)).length, 1);
+    assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B-novo", "com a posse nova, o login subiu");
+    assert.equal(posse.soltarDepois.has(b), false);
+    assert.equal(banco.posse.get(bId), undefined);
+  });
+
+  test("saída presa (outro computador usa a conta): tenta de novo a cada 5 min, não desiste, e não troca o vivo pelo morto", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 4, "B-morto");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    banco.atribuir("pc-2", bId);
+    const posse = m.agente.posse!;
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    assert.equal(posse.soltarDepois.get(b), m.relogio.agora() + 300, "fica na lista, para daqui a 5 min");
+    await posse.processarSaidas();
+    assert.equal(fns("pegarPosse").filter((c) => c.args[0] === bId).length, 1, "antes da hora não insiste");
+    banco.atribuir("pc-2", null);
+    m.relogio.t += 301;
+    await posse.processarSaidas();
+    assert.equal(m.cred.token(pasta(b)), "B-novo");
+    assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B-novo");
+    assert.equal(m.log.linhas.filter((l) => /saiu de uso sem posse/.test(l)).length, 1, "o aviso saiu uma vez");
+  });
+
+  test("conta parada que sobe ao cofre com o login provado tira a marca de precisar de login, ainda com a posse", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    Object.assign(e().contas[b]!, { versaoCofre: 2, lidoEm: m.relogio.agora(), erro: null, fonte: "api" });
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    banco.contas.get(bId)!.precisaLogin = true;
+    const posse = m.agente.posse!;
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    assert.equal(banco.contas.get(bId)!.precisaLogin, false);
+    const ordem = banco.chamadas.filter((c) => c.args[0] === bId && ["devolverCofre", "marcarLogin", "soltarPosse"].includes(c.fn)).map((c) => c.fn);
+    assert.deepEqual(ordem, ["devolverCofre", "marcarLogin", "soltarPosse"]);
+  });
+
+  test("login cancelado dentro da validade: o perfil confere, ele não vai ao assistente e a nuvem sabe", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    Object.assign(e().contas[b]!, { versaoCofre: 2, lidoEm: null });
+    m.api.recusados.add("B1");
+    m.cli.aoRenovar = () => ({ codigo: 1, saida: "", erro: "OAuth token refresh failed: invalid_grant" });
+    banco.atribuir("pc-1", bId, "pedido pelo painel");
+    await m.agente.busca();
+    assert.equal(m.cred.token("principal"), "A1", "o login cancelado não entrou");
+    assert.equal(e().contas[b]!.precisaLogin, true);
+    assert.ok(e().eventos.some((x) => x.tipo === "erro" && /b@exemplo\.com: o login foi recusado e não renova mais/.test(x.texto)));
+    assert.ok(fns("marcarLogin").some((x) => x.args[0] === bId && x.args[1] === true));
+  });
+
+  test("login vivo lido há pouco entra sem conferir o perfil de novo", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    Object.assign(e().contas[b]!, { versaoCofre: 2, lidoEm: m.relogio.agora(), erro: null, fonte: "api" });
+    m.api.recusados.add("B1"); // se conferisse, recusaria: prova de que não conferiu
+    banco.atribuir("pc-1", bId);
+    await m.agente.busca();
+    assert.equal(m.cred.token("principal"), "B1");
+  });
+
+  test("login da conta em uso vencido e recusado, sem renovação das sessões por 15 min: a busca repõe pela cópia viva do cofre", async () => {
+    await preparar();
+    const a = await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const aId = e().contas[a]!.contaId!;
+    m.cred.d.set("principal", blob("A1", true, -10, m.relogio.agora()));
+    m.api.recusados.add("A1");
+    await m.agente.lerUsoConta(a, true);
+    assert.equal(m.agente.trocador.principalMorta, null, "nos primeiros 15 min pode ser só a sessão demorando");
+    // outro computador entrou de novo nela: o cofre tem o login vivo
+    const k = (await lerChave(m.guarda))!;
+    m.relogio.t += 16 * 60;
+    const vivo = cifrarLogin(k, aadConta(aId, 9), blob("A9", true, 7200, m.relogio.agora()));
+    banco.contas.get(aId)!.cofre = { ...vivo, versao: 9, expira_em: null };
+    m.cred.d.set("principal", blob("A1", true, -10, m.relogio.agora()));
+    await m.agente.lerUsoConta(a, true);
+    assert.ok(m.agente.trocador.principalMorta, "virou login morto");
+    assert.ok(e().eventos.some((x) => x.tipo === "erro" && /O assistente está com um login que não abre mais em a@exemplo\.com/.test(x.texto)));
+    await m.agente.busca();
+    assert.equal(m.cred.token("principal"), "A9", "a conta voltou com o login vivo do cofre");
+    assert.equal(e().ativa, a);
+    assert.equal(m.agente.trocador.principalMorta, null);
+  });
+});

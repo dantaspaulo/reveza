@@ -15,7 +15,7 @@ import { ClaudeJson } from "./claudejson.js";
 import { tocarSom } from "./som.js";
 import { pedirConfirmacao } from "./confirmar.js";
 import type { Executor } from "./util/executor.js";
-import { CICLO_S, COMANDO_VALIDO_S, FATOR_LEITURA_SOMBRA, FILA_VALIDA_OPENBOT_S, FILA_VALIDA_S, OPENBOT_APOS_TROCA_S, OPENBOT_INTERVALO_S, LER_ATIVA_PERTO_S, LER_ATIVA_S, LER_ESTACIONADA_AVISO_S, LER_ESTACIONADA_S, MEDIDA_FRESCA_S, POSSE_S, VERSAO, VENCIDO_EM_S, type Caminhos, type Sistema } from "./config.js";
+import { CICLO_S, COMANDO_VALIDO_S, FATOR_LEITURA_SOMBRA, FILA_VALIDA_OPENBOT_S, FILA_VALIDA_S, OPENBOT_APOS_TROCA_S, OPENBOT_INTERVALO_S, LEITURA_VALIDA_S, LER_ATIVA_PERTO_S, LER_ATIVA_S, LER_ESTACIONADA_AVISO_S, LER_ESTACIONADA_S, MEDIDA_FRESCA_S, POSSE_S, VERSAO, VENCIDO_EM_S, type Caminhos, type Sistema } from "./config.js";
 import { expiraEm, hashToken, temRenovacao } from "./credenciais/blob.js";
 import { PRINCIPAL } from "./credenciais/tipos.js";
 import { CredenciaisSombra } from "./credenciais/sombra.js";
@@ -318,6 +318,14 @@ export class Agente {
         this.salvar(),
       );
       this.posse.semEscrita = () => (this.chaveDaInstalacao === false ? "a chave do cofre deste computador não é a da instalação" : null);
+      // Uma conta parada subiu ao cofre com a posse curta: se o login dela vale aqui e a nuvem a tinha como "precisa
+      // entrar de novo", a marca sai agora, enquanto a posse dá direito a isso (fora dela, a nuvem recusava).
+      this.posse.aposDevolver = async (id) => {
+        const c = this.estado.contas[id];
+        if (!c || c.precisaLogin || this.loginInformado.get(id) === false) return;
+        if (!this.loginProvado(c, this.d.relogio.agora())) return;
+        await this.informarLogin(c);
+      };
     }
   }
 
@@ -1079,6 +1087,7 @@ export class Agente {
       await this.vigiarLigacoes(r.ligacoes ?? []);
       if (!this.d.sombra) await this.esquecerRemovidas();
       await this.relatarUso();
+      this.vigiarLeituraDaAtiva();
     } catch (e) {
       const msg = (e as Error).message;
       if (this.online !== false || this.ultimaFalhaNuvem !== msg) this.d.log.erro(`nuvem: ${msg}; mantenho a conta atual e tento de novo`);
@@ -2108,10 +2117,47 @@ export class Agente {
     return !destino || destino !== this.estado.ativa;
   }
 
-  /** O assistente está sem login de conta há mais tempo que a espera da conta a caminho (a principal já foi lida). */
+  /**
+   * O assistente está sem login de conta há mais tempo que a espera da conta a caminho (a principal já foi lida), ou
+   * com o login da conta em uso morto (vencido, recusado pela API e sem renovação das sessões há 15 min, 0.16.4).
+   */
   private principalSemLoginHaMuito(): boolean {
     const tr = this.trocador;
-    return tr.principalLida && tr.principalSemLoginDesde !== null && this.d.relogio.agora() - tr.principalSemLoginDesde > ESPERA_CONTA_S;
+    if (!tr.principalLida) return false;
+    if (tr.principalMorta) return true;
+    return tr.principalSemLoginDesde !== null && this.d.relogio.agora() - tr.principalSemLoginDesde > ESPERA_CONTA_S;
+  }
+
+  /** Conta em uso cuja falta de leitura já foi avisada (uma vez por episódio). */
+  private leituraParadaAvisada: string | null = null;
+
+  /**
+   * A conta em uso sem leitura de uso recente (nem da API nem das sessões) por mais de 15 min: a nuvem decide a troca
+   * com esse número, então o painel fica sabendo, uma vez por episódio, com o motivo (16/11/2026: um computador ficou
+   * 7 horas sem ler a conta em uso, mandando o número velho, e ninguém viu).
+   */
+  private vigiarLeituraDaAtiva(): void {
+    const ativa = this.estado.ativa;
+    const c = ativa ? this.estado.contas[ativa] : undefined;
+    if (!ativa || !c || this.d.sombra) return;
+    const t = this.d.relogio.agora();
+    const desde = Math.max(c.lidoEm ?? 0, this.estado.trocadaEm || 0, this.iniciadoEm);
+    if (t - desde <= LEITURA_VALIDA_S) {
+      if (this.leituraParadaAvisada === ativa) {
+        this.leituraParadaAvisada = null;
+        this.d.log.info(`[uso] voltei a ler o uso de ${c.email}`);
+      }
+      return;
+    }
+    if (this.leituraParadaAvisada === ativa) return;
+    this.leituraParadaAvisada = ativa;
+    const min = Math.round((t - desde) / 60);
+    const porque = c.erro ?? (this.trocador.principalSemLoginDesde !== null ? "o assistente está sem login" : "nenhuma leitura deu certo");
+    this.trocador.evento(
+      "alerta",
+      `Não leio o uso de ${c.email}, a conta em uso, há ${min} min (${porque}). Sem esse número, a troca automática deste computador não sabe quando trocar.`,
+      { conta: ativa },
+    );
   }
 
   /** O e-mail da conta com login de pé na principal (dentro da validade, ou com renovação), ou null. */
@@ -2431,7 +2477,11 @@ export class Agente {
     const historico: PontoNuvem[] = [];
     for (const c of Object.values(this.estado.contas)) {
       if (!c.contaId || !c.lidoEm || !this.posse.temPosse(c.id)) continue;
-      for (const j of c.janelas) {
+      // Só leitura recente: a nuvem grava a hora da chegada como a hora da leitura, e a decisão confia nela. Antes o
+      // último número conhecido ia de novo a cada minuto, e uma conta que o computador não conseguia mais ler parecia
+      // lida agora (16/11/2026: a nuvem viu 57% por 7 horas numa conta que estava em 100%, e não trocou).
+      const fresca = t - c.lidoEm <= LEITURA_VALIDA_S;
+      for (const j of fresca ? c.janelas : []) {
         janelas.push({
           conta_id: c.contaId,
           tipo: j.tipo,

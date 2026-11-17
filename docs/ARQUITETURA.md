@@ -78,6 +78,12 @@ O token de renovação gira a cada uso. Dois computadores com a mesma cópia que
   devolve ao cofre o login mais novo, e só então solta.
 - Leitura de uso de conta parada: a nuvem escolhe um computador ligado, que pega a posse curta, renova se precisar,
   lê, devolve ao cofre e solta.
+- A cópia mais nova vence (0.16.4). Ao pegar a posse, o computador compara a cópia local com a do cofre: a local com
+  token de renovação e validade mais longa é um login mais novo (entrada de novo feita aqui, renovação que não chegou a
+  subir) e fica, e é ela que sobe ao cofre ao soltar; senão vale a do cofre. Antes, a do cofre sempre passava por cima:
+  em 16/11/2026 um login refeito num computador nunca chegou ao cofre, e os outros seguiram recebendo a cópia cancelada.
+  A devolução recusada por "sem posse" (a posse venceu e outro pegou) larga a posse local e avisa uma vez, sem repetir
+  a cada busca; a retomada para devolver na saída que a nuvem recusa volta a tentar 5 minutos depois.
 
 ## 6. Decisão (na nuvem)
 
@@ -302,6 +308,23 @@ registro de uso, que se refaz sozinho, não espera). Na partida, um estado ileg�
 contas muda e de hora em hora) e sai um evento de erro, que vai ao painel. Uma pasta de conta fora da lista volta pelo
 `.claude.json` dela quando o perfil não responde (token vencido depois de horas parado), e a pasta sem login de uma conta
 fora da lista não é apagada (é a única pista dela; o evento pede para entrar de novo).
+
+**O uso relatado e o login morto (0.16.4).** A nuvem grava cada janela relatada com a hora da chegada (`lido_em`) e
+decide pelas lidas há menos de 15 minutos. O agente só relata a leitura que tem até 15 minutos (`LEITURA_VALIDA_S`):
+antes, com a leitura da conta em uso parada (login vencido), ele mandava o último número de novo a cada busca, a nuvem
+o tomava por novo e a conta parecia longe do limite (16/11/2026: 57% na nuvem com a conta em 100%; nenhuma troca
+automática, só a manual). Sem leitura da conta em uso por 15 minutos, sai um aviso de erro uma vez (e um registro quando
+volta a ler). O login da conta em uso que venceu e não renova (o assistente apaga o login do chaveiro depois de uma
+renovação recusada, e as sessões param pedindo para entrar) conta como conta sem login: o agente repõe a cópia do cofre
+ou troca para outra, sem esperar. Antes de trocar para uma conta cujo login parece válido pelo prazo mas não foi lido
+nos últimos 10 minutos, o agente confere o perfil; recusado (401 ou 403) e sem renovação, a conta fica marcada como
+"precisa entrar de novo" e a troca vai para outra.
+
+**Conversas do OpenBot e o mod (0.16.4).** O OpenBot só carrega os hooks e plugins de `~/.claude` (onde mora o mod)
+com a opção "Usar minha configuração do Claude Code", desligada de fábrica. Desligada, as conversas dele rodam sem o mod:
+o Reveza não vê o limite nem o uso ao vivo delas e só troca pela leitura do uso. O `reveza doctor` (e a Saúde) mostra a
+conferência `openbot`, com o caminho para ligar. O plano sem janela de 5 horas (a API manda `five_hour` vazio, como no
+Max 20x) é normal: a decisão usa a semana e a semana por modelo.
 
 ## 7c. Atualização do banco
 
