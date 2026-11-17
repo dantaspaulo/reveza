@@ -7,6 +7,73 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.16.4 · 16/11/2026
+
+A troca automática voltou a funcionar no computador que não conseguia ler a própria conta. A nuvem decide a troca
+pelo consumo que cada computador conta a ela, e um computador contava um número velho como se fosse novo; ao mesmo
+tempo, o login da conta em uso dele tinha morrido, e um login novo, feito em outro computador, não chegava ao cofre.
+Precisa dos computadores na 0.16.4 (cada um se atualiza sozinho, ou pelo painel em **Computadores → Atualizar**); a
+nuvem e o painel não mudam.
+
+### O consumo velho não vai mais à nuvem como se fosse novo
+
+- **O que acontecia:** o computador mandava à nuvem, a cada minuto, o último consumo que conhecia das contas que tinha
+  em mãos, sem dizer de quando era a leitura, e a nuvem o gravava como lido agora. Quando a leitura parava de dar certo,
+  a nuvem seguia vendo o número de horas antes: num caso, 57% por 7 horas numa conta que já estava em 100%, e nenhuma
+  troca saiu.
+- **Agora:** só vai à nuvem a leitura dos últimos 15 minutos. E quando a conta em uso passa 15 minutos sem leitura (nem
+  da conta nem das sessões), sai um alerta no painel, uma vez, com o motivo: sem esse número, a troca automática não
+  sabe quando trocar.
+
+### Login da conta em uso que morreu
+
+- **O que acontecia:** o login da conta em uso venceu e as sessões não conseguiam renovar (o provedor recusava). O
+  agente esperava "as sessões renovarem na próxima chamada" para sempre: sem ler o uso, sem trocar, com o assistente
+  pedindo login.
+- **Agora:** vencido, recusado pelo provedor e sem renovação por 15 minutos, ele vale como assistente sem login: a
+  conta volta pela cópia do cofre (se outro computador entrou de novo nela, é a cópia viva) e, se ela também estiver
+  morta, a nuvem fica sabendo e manda outra conta.
+
+### Login cancelado que parecia válido
+
+- **O que acontecia:** a troca só renovava o login de destino quando ele estava perto de vencer pelo relógio. Um login
+  que o provedor já tinha cancelado, mas com o horário ainda válido, ia para o assistente, ele o apagava ao tentar
+  renovar, e a reposição punha a mesma cópia de volta a cada 10 minutos, sem a nuvem saber.
+- **Agora:** sem leitura de uso recente com aquele login, a troca confere o perfil da conta antes; recusado, renova; e
+  o login que não renova volta como "precisa entrar de novo", com a nuvem avisada na hora.
+
+### Login novo que não chegava ao cofre
+
+- **O que acontecia:** o computador guardava na memória uma posse de conta que a nuvem já tinha vencido. Ao entrar de
+  novo numa conta, ele não pedia posse nova, a nuvem recusava a gravação no cofre, e ele repetia a mesma recusa a cada
+  15 segundos, o dia todo (2.274 vezes num computador). Os outros computadores seguiam recebendo a cópia morta.
+- **Agora:** a recusa por falta de posse tira a posse da lista, a próxima volta pede outra, e o login sobe. Com outro
+  computador usando a conta, ele tenta de novo a cada 5 minutos, sem desistir. O erro sai no registro uma vez.
+
+### A cópia mais nova é a que vence depois
+
+- **O que acontecia:** entre a cópia do login guardada no computador e a do cofre, valia a de versão maior. Um
+  computador que largava a conta devolvia a cópia morta dele com versão maior, e a próxima sincronização trocaria o
+  login vivo pelo morto.
+- **Agora:** vale a cópia emitida por último (a que vence depois): é a única que ainda renova, porque a renovação gira.
+  A cópia local mais nova fica e sobe ao cofre.
+
+### Conversas do OpenBot sem o mod
+
+- **O que acontecia:** o OpenBot só carrega a configuração do assistente (onde mora o mod do Reveza) com a opção
+  **Usar minha configuração do Claude Code** ligada, e ela vem desligada. Sem o mod, o Reveza não vê o limite nem o
+  uso ao vivo dessas conversas.
+- **Agora:** a Saúde do computador (e o `reveza doctor`) mostra "Conversas do OpenBot" com aviso quando a opção está
+  desligada, dizendo onde ligar.
+
+Conta sem janela de 5 horas (há planos que não têm): o provedor manda essa janela vazia, e a decisão usa só as janelas
+que existem. Nada muda para elas.
+
+Dica para quem usa o OpenBot: quando a conta bate o limite, o próprio OpenBot segura os agentes e só confere de novo
+de 15 em 15 minutos (às vezes até a hora em que a conta antiga renova), mesmo com o Reveza já em outra conta. Mandar
+uma mensagem ao agente solta na hora. Isso é do OpenBot, e o pedido para ele perceber a troca já foi feito à equipe
+dele.
+
 ## 0.16.3 · 12/11/2026
 
 A mesma pessoa em dois planos do Claude (Team e Pro individual) agora são duas contas no Reveza, cada uma com o seu
