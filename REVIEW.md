@@ -18,9 +18,13 @@ teste, o CHANGELOG ou a release.
   auditoria; permissões novas no `0099_permissoes.sql`.
 - **entrada de fora**: o que o agente lê do disco, do assistente e da nuvem (tamanho, tipo, caracteres de controle).
 - **CI e instalador**: `.github/workflows` e `instalador/`.
+- **trilhas** (0.18.0): `agente/src/trilhas.ts`, o lançador em `instalador/lib/programa.mjs` e a 0039. A mesma conta
+  nunca em duas trilhas nem na trilha e na principal; o login renovado da trilha volta ao cofre; renovação e retomada
+  tiram `CLAUDE_SECURESTORAGE_CONFIG_DIR` e `REVEZA_TRILHA` herdados; o `oauthAccount` fica o da principal; tudo
+  desligado sem empresa com `separar`.
 
 ## Sempre precisa de gente (risco alto)
-- login e permissão, migração da nuvem, CI e instalador.
+- login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.
 
 ## Ignorar
 - `node_modules`, arquivo gerado, dependência de terceiro e dado de teste.

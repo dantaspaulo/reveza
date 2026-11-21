@@ -7,6 +7,42 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.18.0 · 21/11/2026
+
+Cada empresa nas contas dela. Na 0.17.0 as marcas só separavam os números; agora a empresa pode **separar as contas**:
+as sessões abertas nas pastas dela usam só as contas marcadas para ela, e o transbordo escolhido diz o que fazer quando
+elas acabam. Vem **desligado**: nada muda até alguém ligar a chave numa empresa e abrir as sessões pelo lançador do
+Reveza. Precisa da nuvem e do computador na 0.18.0 (o instalador atualiza a nuvem; cada computador se atualiza
+sozinho, ou pelo painel em **Computadores → Atualizar**). macOS e Linux; no Windows segue como na 0.17.0.
+
+### Como ligar
+
+1. No painel, em **Empresas**, edite a empresa e ligue **Separar as contas desta empresa**. Confira, na aba
+   **Contas**, que ela tem contas marcadas, e escolha o transbordo.
+2. Abra as sessões pelo lançador `~/.reveza/lancador/claude` (no terminal, um alias ou o PATH; em outro programa, a
+   opção dele de caminho do assistente). Ele pergunta ao agente qual é a empresa da pasta e abre a sessão no login
+   dela; pasta sem dono ou empresa sem separar segue na conta da vez, como antes.
+
+### O que acontece por baixo
+
+- **Uma trilha por empresa em cada computador:** um lugar de login só dela (`~/.reveza/trilhas/<empresa>`), com uma
+  conta escolhida pela nuvem entre as da empresa. A mesma conta nunca está em duas trilhas nem na trilha e na conta da
+  vez ao mesmo tempo, e a conta só de empresas separadas não vai para as outras sessões.
+- **Limite e troca na trilha:** o uso e o limite da sessão vão para a conta da trilha; no limite a nuvem escolhe outra
+  conta da empresa (ou do transbordo), e a sessão parada continua na conta nova. As sessões das outras empresas e as
+  sem dono não são tocadas.
+- **Login devolvido:** quando a conta sai da trilha (a empresa parou de usar por 10 min, ou a conta foi para outra), o
+  login renovado volta para o cofre, para o próximo uso não pedir para entrar de novo.
+- **Sem conta para a empresa:** a sessão abre na conta da vez e o agente grava um aviso, no máximo um a cada 10 min.
+- **No painel:** a chave por empresa (some com a nuvem de antes da 0.18.0) e, em cada empresa separada, a conta em uso
+  em cada computador. Empresa com sessão na trilha só sai depois de desligar a chave e as sessões terminarem.
+
+### Limites desta versão
+
+- A sessão que já está aberta não muda de empresa: vale para as abertas depois de ligar.
+- O login de servidor MCP com OAuth mora junto com o login da conta: dentro de uma trilha ele é pedido de novo.
+- Windows: sem lançador.
+
 ## 0.17.0 · 21/11/2026
 
 O uso separado por empresa ou projeto. Quem usa as mesmas contas para trabalhos diferentes (clientes, empresas,

@@ -40,6 +40,11 @@ pelo Claude Code, e o Node tem AES-256-GCM e scrypt nativos (o Python padrão n�
 | macOS | chaveiro, serviço `Claude Code-credentials` (gravação por `security -i` quando cabe em ~4 KB, argv quando não, como o próprio Claude Code) | chaveiro, serviço `Claude Code-credentials-<sha256(pasta)[:8]>` da pasta `~/.reveza/contas/<id>` |
 | Linux e Windows | `~/.claude/.credentials.json` (modo 600 no Linux; ACL do perfil no Windows) | `~/.reveza/contas/<id>/.credentials.json` |
 
+Trilha de empresa (0.18.0, seção 6b): a pasta `~/.reveza/trilhas/<empresa>` faz o papel da credencial ativa para as
+sessões daquela empresa, com o mesmo formato das pastas de conta (macOS: chaveiro, serviço
+`Claude Code-credentials-<sha256(pasta)[:8]>`; Linux: `<pasta>/.credentials.json`). O assistente usa essa pasta quando
+o processo nasce com `CLAUDE_SECURESTORAGE_CONFIG_DIR` apontando para ela.
+
 Regras herdadas do roteador (provadas em 10 e 11/10, com teste):
 - trocar mexe só em `claudeAiOauth` e `organizationUuid`; o `mcpOAuth` é da máquina e fica;
 - nunca renovar pela cópia guardada da conta ativa (o token de renovação gira);
@@ -142,6 +147,35 @@ recebe o pedido fixo de continuar. A crítica segue: marcada por `/reveza critic
 `REVEZA_CRITICA=1` no ambiente da sessão. Sessão noutra conta (o app de desktop) não espera, e com o agente fora do ar
 ninguém espera. O começo e o fim da espera viram evento.
 
+## 6b. Trilhas: cada empresa nas contas dela (0.18.0)
+
+Desligado de fábrica. Liga por empresa, no painel (**Empresas**, editar, **Separar as contas desta empresa**), e só
+vale nas sessões abertas pelo lançador do Reveza.
+
+- **Nuvem (0038, 0039):** `empresas.separar` (falso de fábrica) e `atribuicao_trilhas(computador_id, empresa_id,
+  conta_id, motivo, versao, decidido_em, pedida_em)`, uma conta por empresa separada em cada computador, com a conta
+  única na tabela (a mesma conta nunca está em duas trilhas) e nunca a mesma da principal. `agente_trilhas(empresas)`
+  decide e devolve as trilhas pedidas: contas marcadas para a empresa e, quando acabam, o transbordo dela (nenhum,
+  qualquer ou as escolhidas); a trilha sem pedido há 10 min sai. A conta só de empresas separadas não vai para a
+  principal (`rvz_principal_pode`), nem pelo painel. `agente_ola` diz se há alguma empresa separada (`trilhas`): sem
+  nenhuma, o agente não pede nada.
+- **Lançador** (`~/.reveza/lancador/claude`, macOS e Linux, fora do PATH): acha o assistente de verdade (pulando a
+  própria pasta, ou `REVEZA_CLAUDE_REAL`), e só pergunta ao agente quando existe `~/.reveza/trilhas/ligadas` e o
+  processo ainda não tem `REVEZA_TRILHA` nem `CLAUDE_SECURESTORAGE_CONFIG_DIR`. A pergunta (`reveza trilha --cwd --pid`,
+  até 20 s) devolve a pasta da trilha; o lançador exporta `CLAUDE_SECURESTORAGE_CONFIG_DIR` e `REVEZA_TRILHA` e roda o
+  assistente. Sem resposta, sem empresa ou sem conta para ela, a sessão abre na principal (sem conta, o agente grava
+  um aviso). Para usar: apontar o programa que abre o assistente para o lançador (no terminal, PATH ou alias; no
+  OpenBot, `OPENBOT_CLAUDE_PATH`). Windows: sem lançador nesta versão.
+- **Agente** (`agente/src/trilhas.ts`): classifica a pasta com as regras da nuvem (a mesma do painel), pede a trilha,
+  põe o login da conta na pasta da trilha (`trocarTrilha`, com as mesmas travas da troca principal e a posse de uso
+  na nuvem) e devolve ao cofre o login renovado quando a conta sai da trilha. A sessão da trilha manda `trilha` na
+  medida e no limite (o mod lê `REVEZA_TRILHA`): o limite enche a conta da trilha, a nuvem escolhe outra, e a sessão
+  parada continua na conta nova pela retomada da própria trilha (a retomada da principal não pega item de trilha). O
+  `oauthAccount` do `~/.claude.json` (o perfil mostrado pelo assistente) fica sempre o da principal.
+- **Limites:** sessão já aberta não muda de trilha; o login de servidor MCP (`mcpOAuth`) mora com a credencial, então
+  cada trilha pede de novo o login desses servidores; renovação e retomada sem tela tiram as duas variáveis do
+  ambiente herdado antes de pôr as da trilha.
+
 ## 7. Nuvem: tabelas (todas com RLS ligado)
 
 | Tabela | Quem lê | Quem escreve |
@@ -156,10 +190,11 @@ ninguém espera. O começo e o fim da espera viram evento.
 | `uso_janelas(conta_id, tipo, pct, reset_em, lido_em, fonte)` | membro | computador |
 | `uso_tokens(dia, hora, conta_id, computador_id, projeto, pasta, modelo, entrada, saida, cache_escrita, cache_leitura, usd, respostas, agentes)` | membro | computador |
 | `sessoes(id, computador_id, projeto, pasta, inicio, fim, agentes, usd, contas)` | membro | computador |
-| `empresas(id, nome, cor, transbordo, transbordo_contas)` (0.17.0) | membro | admin, pela função |
+| `empresas(id, nome, cor, transbordo, transbordo_contas, separar)` (0.17.0; `separar` na 0.18.0) | membro | admin, pela função |
 | `conta_empresas(conta_id, empresa_id)` as empresas que cada conta atende; sem linha, a conta atende todas | membro | admin, pela função |
 | `pastas_empresa(id, tipo, padrao, empresa_id)` tipo `pasta` (caminho ou nome) ou `titulo` (agente do OpenBot) | membro | admin, pela função |
 | `agentes_openbot(computador_id, pasta, nome, titulo, visto_em)` | membro | computador, pela função |
+| `atribuicao_trilhas(computador_id, empresa_id, conta_id, motivo, versao, decidido_em, pedida_em)` (0.18.0) | membro | só as funções das trilhas |
 | `eventos(em, tipo, texto, dados)` | membro | funções e computador |
 | `comandos(id, criado_por, computador_id, acao, corpo, estado, resposta)` | membro | admin cria; computador reserva e responde |
 | `ligacao_pedidos(computador_id, aprovador, idioma, publica, pedido_em, expira_em, envelope, entregue_por, entregue_em, lido_em, recusado)` | membro, sem `publica` e `envelope` | o computador novo registra a chave pública (uma vez); computador ativo entrega ou recusa; admin escolhe o aprovador |
@@ -255,6 +290,12 @@ As cortadas juntas saem uma por vez, com 60 s entre elas, e 30 s depois da troca
 O prazo é de 6 h depois do corte, para cobrir a janela de 5 h voltar. O texto diz a hora do corte, pede para continuar
 de onde parou, lembra que o que dependia de alguém continua esperando e pede só "nada pendente" quando nada ficou pela
 metade. Falha do comando (OpenBot fora do ar, agente sem scripts locais) vira um evento de erro, sem repetir sozinha.
+
+**Rotas das trilhas (0.18.0).** `POST /api/trilha { cwd, pid }` (o lançador, pela linha de comando): `cwd` absoluto
+de até 4096 caracteres, `pid` inteiro; devolve a trilha da empresa da pasta (ou nada, com aviso). `POST
+/api/trilha/ativa { trilha, sessao }` (o mod, no lugar de `GET /api/ativa`, quando a sessão nasceu com
+`REVEZA_TRILHA`): a conta da trilha e a versão dela; trilha desconhecida dá 404. Medida e limite com `trilha` no corpo
+vão para a conta da trilha e nunca mexem na principal. Mesma prova da chave local das outras rotas.
 
 **A conta da sessão (0.10.3).** O uso ao vivo (`/api/medida`) e o limite (`/api/limite`) só valem para a conta em uso
 quando a sessão está nela. Relato de um usuário (22/10/2026): o app de desktop, com login próprio numa conta A, carregava
@@ -527,9 +568,9 @@ Menu lateral, nada empilhado numa tela só:
    (com o transbordo: esperar, qualquer conta ou só as escolhidas). As trocas são contadas uma vez: o evento do agente
    leva `para_nuvem` (0.17.0), a decisão da nuvem (com `para` em uuid) fica de fora, e o evento antigo é lido pelo
    último e-mail de conta no texto. A pasta de cada uso é a raiz do repositório git (árvore de trabalho conta como o
-   principal; submódulo é ele mesmo), relativa à pasta pessoal, até 300 caracteres. Na 0.17.0 nada disso muda a troca.
-   O próximo passo (trilhas): uma entrada de login por empresa (`CLAUDE_SECURESTORAGE_CONFIG_DIR`), escolhida por um
-   lançador do assistente pela pasta do processo, com a conta de cada trilha escolhida entre as contas da empresa.
+   principal; submódulo é ele mesmo), relativa à pasta pessoal, até 300 caracteres. Desde a 0.18.0 a empresa pode
+   **separar as contas** (seção 6b): o cadastro tem a chave, e cada empresa separada mostra a conta em uso em cada
+   computador. Com a nuvem de antes da 0038, a chave some e o resto segue igual.
 5. **Plano da semana** (até a 0.12.0): saiu do menu na 0.13.0. O ritmo da semana virou o selo **Gastando rápido** na tela
    Contas, e o endereço `/plano` abre Contas.
 6. **Troca automática**: liga e desliga, modo (só no limite, limiar, rodízio), limiares, intervalo, ordem, agenda.
