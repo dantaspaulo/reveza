@@ -14,7 +14,7 @@
 import * as path from "node:path";
 import { aadConta, aadRegistro, cifrarLogin, decifrarLogin } from "./cofre/cifra.js";
 import { comLogin, expiraEm, hashToken, oauth, type Blob } from "./credenciais/blob.js";
-import { PRINCIPAL, type Credenciais } from "./credenciais/tipos.js";
+import type { Credenciais } from "./credenciais/tipos.js";
 import type { ContaLocal, EstadoLocal } from "./estado.js";
 import type { CofreNuvem, MotivoPosse, Nuvem } from "./nuvem/tipos.js";
 import type { Trocador } from "./troca.js";
@@ -143,6 +143,8 @@ export class PosseCofre {
     if (!c || !cofre) return false;
     this.versaoServidor.set(id, cofre.versao);
     if (id === this.estado().ativa && !principalSemConta) return false;
+    // na trilha de uma empresa (0.18.0) o login vivo é o da trilha, como o da principal
+    if (this.trocador.trilhaDe(id)) return false;
     const local = await this.cred.ler(c.pasta);
     if (c.versaoCofre !== null && cofre.versao <= c.versaoCofre && local) return false;
     const k = this.chave();
@@ -182,7 +184,8 @@ export class PosseCofre {
     const c = this.conta(id);
     const k = this.chave();
     if (!c?.contaId || !k || !this.posses.has(id) || this.recusarEscrita()) return false;
-    const blob = await this.cred.ler(id === this.estado().ativa ? PRINCIPAL : c.pasta);
+    // o login vivo: o da principal, o da trilha em que a conta está, ou o da pasta dela
+    const blob = await this.cred.ler(this.trocador.entradaDe(id));
     if (!oauth(blob).refreshToken) return false;
     const anterior = this.versaoServidor.get(id) ?? c.versaoCofre ?? 0;
     const nova = anterior + 1;
@@ -300,7 +303,7 @@ export class PosseCofre {
     const k = this.chave();
     if (!c || !k || this.recusarEscrita()) return false;
     const ativa = id === this.estado().ativa;
-    const blob = await this.cred.ler(ativa ? PRINCIPAL : c.pasta);
+    const blob = await this.cred.ler(this.trocador.entradaDe(id));
     if (!oauth(blob).refreshToken) return false;
     const { cifrado, nonce } = cifrarLogin(k, aadRegistro(c.email), blob!);
     const exp = expiraEm(blob);
@@ -335,7 +338,7 @@ export class PosseCofre {
     for (const [id, desde] of [...this.soltarDepois]) {
       if (t < desde) continue;
       const c = this.conta(id);
-      if (id === this.estado().ativa || !c?.contaId) {
+      if (id === this.estado().ativa || this.trocador.trilhaDe(id) || !c?.contaId) {
         this.soltarDepois.delete(id);
         this.saidaPresaAvisada.delete(id);
         continue;

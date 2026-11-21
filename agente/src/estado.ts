@@ -66,6 +66,8 @@ export interface ItemFila {
   voltaEm?: number;
   /** Quando o Reveza a retomou: a próxima sessão sem tela espera esta sair. */
   retomadaEm?: number;
+  /** A trilha (empresa) em que a sessão roda: ela volta com o login da trilha, e é a troca da trilha que a libera. */
+  trilha?: string;
 }
 
 export type Modo = "limiar" | "limite" | "rodizio";
@@ -141,6 +143,34 @@ export interface EstadoLocal {
   semModelo?: Record<string, { modelo: string; ate: number }>;
   /** Sessões marcadas como críticas neste computador, pelo id da sessão: quando foram marcadas ou lembradas (epoch s). */
   sessoesCriticas?: Record<string, number>;
+  /**
+   * As trilhas deste computador (0.18.0), pelo id da empresa na nuvem: as sessões de uma empresa separada rodam com o
+   * login guardado na pasta da trilha, numa conta escolhida pela nuvem entre as da empresa.
+   */
+  trilhas?: Record<string, TrilhaLocal>;
+  /** De que trilha é cada sessão, como o mod disse (pelo id da sessão): o contador põe as respostas dela na conta da trilha. */
+  sessoesTrilha?: Record<string, { empresa: string; em: number }>;
+}
+
+export interface TrilhaLocal {
+  /** O id da empresa na nuvem. */
+  empresa: string;
+  nome: string;
+  /** Onde fica o login da trilha (o CLAUDE_SECURESTORAGE_CONFIG_DIR das sessões dela). */
+  pasta: string;
+  /** A conta em uso na trilha (id local). */
+  conta: string | null;
+  /** Sobe a cada troca na trilha: o mod compara, como a `versao` da principal. */
+  versao: number;
+  /** A versão da atribuição da nuvem que está aplicada. */
+  versaoNuvem: number;
+  trocadaEm: number;
+  /** Linha do tempo da conta da trilha: [desde, id]. */
+  linha: [number, string][];
+  /** Processos abertos pelo lançador nesta trilha (o pid continua o mesmo depois do exec). */
+  pids: number[];
+  /** O último pedido do lançador (epoch em segundos). */
+  pedidaEm: number;
 }
 
 export interface UltimaAtualizacaoAssistente {

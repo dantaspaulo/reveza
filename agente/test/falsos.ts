@@ -21,6 +21,7 @@ import type {
   ChavePublica,
   CofreNuvem,
   ComandoNuvem,
+  EmpresaSeparada,
   EnvelopeChave,
   JanelaNuvem,
   LinhaTokens,
@@ -29,6 +30,7 @@ import type {
   Nuvem,
   PedidoLigacao,
   PontoNuvem,
+  RegraEmpresa,
   RespostaReceber,
   SessaoNuvem,
   TokenNuvem,
@@ -183,7 +185,7 @@ export class CliFalsa implements Cli {
   /** O que cada renovação faz e responde (a saída do assistente diz se o login morreu); sem resposta, nada claro. */
   aoRenovar: ((pasta: string, tentativa: number) => unknown) | null = null;
   logins: { pasta: string; email: string | null; proc: ProcessoFalso }[] = [];
-  retomadas: { sessao: string; cwd: string; rotina?: string }[] = [];
+  retomadas: { sessao: string; cwd: string; rotina?: string; trilha?: { pasta: string; empresa: string } }[] = [];
   /** A versão que o `--version` responde (null: programa não achado). */
   versaoAtual: string | null = "2.1.293";
   /** Cada `claude update`: o que ele responde e para qual versão o programa vai. */
@@ -222,8 +224,8 @@ export class CliFalsa implements Cli {
     this.logins.push({ pasta, email, proc });
     return proc;
   }
-  retomar(sessao: string, cwd: string, _texto?: string, _saida?: number, rotina?: string) {
-    this.retomadas.push({ sessao, cwd, ...(rotina ? { rotina } : {}) });
+  retomar(sessao: string, cwd: string, _texto?: string, _saida?: number, rotina?: string, trilha?: { pasta: string; empresa: string }) {
+    this.retomadas.push({ sessao, cwd, ...(rotina ? { rotina } : {}), ...(trilha ? { trilha } : {}) });
   }
   /** As conversas que ainda têm processo vivo neste computador (o número dele). */
   vivas = new Map<string, number>();
@@ -283,6 +285,13 @@ export class BancoFalso {
   tokens = new Map<string, LinhaTokens>();
   sessoes = new Map<string, SessaoNuvem>();
   agentesOpenBot = new Map<string, AgenteNuvem>();
+  /** Empresas separadas (0.18.0) e as regras delas, como o agente_empresas devolve. */
+  empresas: EmpresaSeparada[] = [];
+  regras: RegraEmpresa[] = [];
+  /** A conta de cada trilha, por computador e empresa: o teste decide (o agente_trilhas de verdade escolhe). */
+  trilhas = new Map<string, Map<string, { conta: string; versao: number; motivo: string }>>();
+  /** As empresas pedidas na última chamada de cada computador. */
+  trilhasPedidas = new Map<string, string[]>();
   ligacoes: { embrulho: Buffer; sal: Buffer; por: string; usada: boolean; expira: number }[] = [];
   /** Pedidos de computador novo (0019), por computador novo. */
   pedidos = new Map<string, PedidoFalso>();
@@ -397,7 +406,30 @@ export class NuvemFalsa implements Nuvem {
       ligacao_pendente: b.ligacoes.some((l) => !l.usada && l.expira > b.agora()),
       ligacoes: this.abertos(),
       enxugar: b.computadores.get(this.pc)?.enxugar === true,
+      trilhas: b.empresas.length > 0,
     };
+  }
+
+  async empresas() {
+    this.registrarChamada("empresas");
+    return { empresas: this.banco.empresas.map((e) => ({ ...e })), regras: this.banco.regras.map((r) => ({ ...r })) };
+  }
+
+  async trilhas(empresas: string[]) {
+    this.registrarChamada("trilhas", empresas);
+    const b = this.banco;
+    b.trilhasPedidas.set(this.pc, [...empresas]);
+    const minhas = b.trilhas.get(this.pc) ?? new Map();
+    // como o agente_trilhas: só as pedidas seguem com conta, e a posse de uso delas se renova
+    for (const e of [...minhas.keys()]) if (!empresas.includes(e)) minhas.delete(e);
+    b.trilhas.set(this.pc, minhas);
+    const r = [];
+    for (const [empresa, x] of minhas) {
+      const p = b.posse.get(x.conta);
+      if (p?.pc === this.pc && p.motivo === "uso") p.expira = b.agora() + 120;
+      r.push({ empresa, ...this.atribuicaoDe(x.conta, x.versao, x.motivo) });
+    }
+    return { ok: true, trilhas: r };
   }
 
   private atribuicaoDe(conta: string, versao: number, motivo: string) {
@@ -496,10 +528,16 @@ export class NuvemFalsa implements Nuvem {
   async pegarPosse(contaId: string, motivo: MotivoPosse, segundos: number) {
     this.registrarChamada("pegarPosse", contaId, motivo, segundos);
     const b = this.banco;
-    if (motivo === "uso" && b.atribuicao.get(this.pc)?.conta !== contaId) {
+    // como a 0039: a conta da principal ou a de uma trilha deste computador
+    const naTrilha = (pc: string) => [...(b.trilhas.get(pc)?.values() ?? [])].some((x) => x.conta === contaId);
+    if (motivo === "uso" && b.atribuicao.get(this.pc)?.conta !== contaId && !naTrilha(this.pc)) {
       return { ok: false, erro: "a nuvem não atribuiu esta conta a este computador", cofre: null };
     }
-    if (motivo !== "uso" && [...b.atribuicao.entries()].some(([pc, a]) => pc !== this.pc && a.conta === contaId)) {
+    if (
+      motivo !== "uso" &&
+      ([...b.atribuicao.entries()].some(([pc, a]) => pc !== this.pc && a.conta === contaId) ||
+        [...b.trilhas.keys()].some((pc) => pc !== this.pc && naTrilha(pc)))
+    ) {
       return { ok: false, erro: "conta em uso por outro computador", cofre: null };
     }
     const dono = b.donoDaPosse(contaId);

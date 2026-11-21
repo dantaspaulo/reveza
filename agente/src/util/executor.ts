@@ -191,7 +191,8 @@ export const executorReal: Executor = {
 export function envDaPasta(pasta: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(base)) {
-    if (k.startsWith("CLAUDE_CODE_") || k.startsWith("ANTHROPIC_") || k === "CLAUDE_CONFIG_DIR") continue;
+    // o login de uma trilha (0.18.0) também não passa: a pasta da conta é que diz onde fica o login
+    if (k.startsWith("CLAUDE_CODE_") || k.startsWith("ANTHROPIC_") || k === "CLAUDE_CONFIG_DIR" || k === "CLAUDE_SECURESTORAGE_CONFIG_DIR" || k === "REVEZA_TRILHA") continue;
     env[k] = v;
   }
   env.CLAUDE_CONFIG_DIR = pasta;

@@ -22,6 +22,8 @@ export interface Caminhos {
   base: string;
   /** ~/.reveza/contas: uma pasta por conta, que vira o CLAUDE_CONFIG_DIR dela */
   contas: string;
+  /** ~/.reveza/trilhas: uma pasta de login por empresa separada (0.18.0), o CLAUDE_SECURESTORAGE_CONFIG_DIR das sessões dela */
+  trilhas: string;
   estado: string;
   logs: string;
   log: string;
@@ -49,6 +51,7 @@ export function caminhos(home = os.homedir(), env: NodeJS.ProcessEnv = process.e
     home,
     base,
     contas: path.join(base, "contas"),
+    trilhas: path.join(base, "trilhas"),
     estado: path.join(base, "estado.json"),
     logs: path.join(base, "logs"),
     log: path.join(base, "logs", "agente.log"),

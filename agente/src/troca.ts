@@ -6,7 +6,9 @@
 // - conferir a principal 5 s depois da troca e refazer se uma sessão regravou a conta antiga (até 3 vezes);
 // - mudança feita por fora (um login à mão) é aceita, mas antes o último token visto da conta que saiu é guardado;
 // - o `oauthAccount` do ~/.claude.json acompanha a troca, com a trava de diretório do assistente;
-// - sem saber de quem é o token da principal, não troca (guardar na conta errada perderia o login certo).
+// - sem saber de quem é o token da principal, não troca (guardar na conta errada perderia o login certo);
+// - a conta que está na trilha de uma empresa (0.18.0, trilhas.ts) é tratada como a em uso: o login vivo dela mora na
+//   pasta da trilha, as sessões de lá renovam, e a principal não a pega.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -32,7 +34,7 @@ import type { Resultado } from "./util/executor.js";
 import { comLogin, expiraEm, hashToken, oauth, soLogin, temRenovacao, type Blob } from "./credenciais/blob.js";
 import { PRINCIPAL, type Credenciais } from "./credenciais/tipos.js";
 import { estadoDaConta, gatilhoDeTroca, pctEfetivo } from "./decisao.js";
-import { novaConta, type ContaLocal, type EstadoLocal, type ItemFila, type TipoEvento } from "./estado.js";
+import { novaConta, type ContaLocal, type EstadoLocal, type ItemFila, type TipoEvento, type TrilhaLocal } from "./estado.js";
 import type { Log } from "./util/log.js";
 import type { Relogio } from "./util/tempo.js";
 import { lerJson } from "./util/arquivos.js";
@@ -186,7 +188,7 @@ export class Trocador {
     return this.geral.com(() =>
       this.travaConta(id).com(async () => {
         const c = this.estado.contas[id];
-        if (!c || id === this.estado.ativa) return false;
+        if (!c || id === this.estado.ativa || this.trilhaDe(id)) return false;
         await this.cred.apagar(c.pasta).catch((e: Error) => this.log.erro(`apagar o login de ${c.email}: ${e.message}`));
         // só a pasta da própria conta, direto dentro de ~/.reveza/contas
         const dentro = path.relative(this.c.contas, c.pasta);
@@ -209,6 +211,19 @@ export class Trocador {
 
   travaConta(id: string): Trava {
     return this.travasConta.de(id);
+  }
+
+  /** A trilha (empresa separada, 0.18.0) em que a conta está agora neste computador, ou null. */
+  trilhaDe(id: string): TrilhaLocal | null {
+    for (const t of Object.values(this.estado.trilhas ?? {})) if (t.conta === id) return t;
+    return null;
+  }
+
+  /** Onde mora o login vivo da conta: a principal (em uso), a pasta da trilha em que ela está, ou a pasta dela. */
+  entradaDe(id: string): string {
+    if (id === this.estado.ativa) return PRINCIPAL;
+    const t = this.trilhaDe(id);
+    return t ? t.pasta : (this.estado.contas[id]?.pasta ?? "");
   }
 
   async identidade(blob: Blob | null): Promise<Perfil | null> {
@@ -281,7 +296,18 @@ export class Trocador {
     }
   }
 
-  contaEm(ts: number): string | null {
+  /** A conta em uso num instante: a da principal, ou a da trilha da sessão (0.18.0) quando ela é de uma. */
+  contaEm(ts: number, sessao?: string): string | null {
+    const empresa = sessao ? this.estado.sessoesTrilha?.[sessao]?.empresa : undefined;
+    const t = empresa ? this.estado.trilhas?.[empresa] : undefined;
+    if (t) {
+      let daTrilha: string | null = null;
+      for (const [desde, id] of t.linha) {
+        if (desde > ts) break;
+        daTrilha = id || null;
+      }
+      return daTrilha;
+    }
     let conta: string | null = null;
     for (const [desde, id] of this.estado.linhaContas) {
       if (desde > ts) break;
@@ -292,6 +318,23 @@ export class Trocador {
 
   private claudeJsonDa(conta: ContaLocal): string {
     return path.join(conta.pasta, ".claude.json");
+  }
+
+  /**
+   * O `oauthAccount` do ~/.claude.json vai para a pasta da conta só quando é dela: com trilhas, uma sessão de outra
+   * empresa pode ter regravado ali a conta dela (o assistente relê o perfil a cada 24 h), e a pasta ficaria dizendo que
+   * a conta é outra. Só um dado conhecido e diferente (conta, organização ou e-mail) diz que não é dela.
+   */
+  private async copiarParaConta(conta: ContaLocal): Promise<void> {
+    const o = this.cj.lerConta(this.c.claudeJson);
+    if (!o) return;
+    const difere = (lido: unknown, nosso: string | null | undefined) =>
+      typeof lido === "string" && !!lido && !!nosso && lido.toLowerCase() !== nosso.toLowerCase();
+    if (difere(o.accountUuid, conta.accountUuid) || difere(o.organizationUuid, conta.orgUuid) || difere(o.emailAddress, conta.email)) {
+      this.log.info(`o oauthAccount do .claude.json não é de ${conta.email}; não copio para a pasta dela`);
+      return;
+    }
+    await this.copiarConta(this.c.claudeJson, this.claudeJsonDa(conta));
   }
 
   private async copiarConta(de: string, para: string): Promise<void> {
@@ -320,7 +363,7 @@ export class Trocador {
     if (!id) {
       const pasta = this.novaPasta();
       id = this.registrar(perfil, pasta, blob);
-      await this.copiarConta(this.c.claudeJson, this.claudeJsonDa(this.estado.contas[id]!));
+      await this.copiarParaConta(this.estado.contas[id]!);
       this.evento("conexao", `${perfil.email} (${perfil.org ?? "sem organização"}) estava em uso e entrou no rodízio.`, {
         conta: id,
         email: perfil.email,
@@ -372,6 +415,8 @@ export class Trocador {
     const contas = this.estado.contas;
     const alvo = contas[destino];
     if (!alvo) return { ok: false, erro: "conta desconhecida" };
+    // o login vivo dela está na trilha de uma empresa: as duas renovariam o mesmo login
+    if (this.trilhaDe(destino)) return { ok: false, erro: "a conta está na trilha de uma empresa separada" };
     let atual = await this.cred.ler(PRINCIPAL);
     // A principal não tem login de conta nenhuma (vazia, só os logins MCP, ou um login morto de ninguém conhecido).
     let semConta = !hashToken(atual);
@@ -400,41 +445,9 @@ export class Trocador {
     const de = semConta ? null : await this.conferirPrincipalDentro();
     if (de === destino) return { ok: true, de };
     const r = await this.travaConta(destino).com(async () => {
-      let blobAlvo = await this.cred.ler(alvo.pasta);
-      if (blobAlvo && expiraEm(blobAlvo) < this.agora() + RENOVAR_ANTES_S) {
-        // Token perto de vencer: renova antes de pôr na principal, ainda com a conta travada. Com a principal sem conta,
-        // vale também para a conta que consta em uso: o assistente saiu dela e ninguém aqui guarda um token mais novo.
-        const renovou = await this.renovarDentro(destino, semConta);
-        if (renovou === true) blobAlvo = await this.cred.ler(alvo.pasta);
-        else if (renovou === false && expiraEm(blobAlvo) <= this.agora()) {
-          // Vencido e o assistente disse que o login morreu: na principal, ele só seria apagado pelo assistente, que
-          // pede login (09/11/2026: o Corrigir repunha o mesmo login morto no AIR e dizia "corrigido").
-          alvo.precisaLogin = true;
-          this.evento("erro", `${alvo.email}: o login venceu e não renova mais; entre de novo nela pelo painel (Contas, Entrar de novo).`, { conta: destino });
-          return { ok: false, erro: ERRO_LOGIN_MORTO };
-        }
-      }
-      // Dentro da validade pelo relógio não quer dizer vivo: o provedor cancela o login quando a renovação dele é usada
-      // em outro lugar. Uma cópia assim ia para o assistente, ele a apagava ao tentar renovar e a busca repunha a
-      // mesma cópia de 10 em 10 minutos, sem a nuvem saber (16/11/2026). Sem leitura de uso recente com ela, o perfil
-      // confere; recusado, renova antes, e o login morto volta como morto.
-      if (blobAlvo && oauth(blobAlvo).accessToken && expiraEm(blobAlvo) > this.agora() && !this.loginLidoHaPouco(alvo)) {
-        const { status } = await this.api.perfil(oauth(blobAlvo).accessToken!);
-        if (status === 401 || status === 403) {
-          const renovou = await this.renovarDentro(destino, semConta);
-          if (renovou === true) blobAlvo = await this.cred.ler(alvo.pasta);
-          else if (renovou === false) {
-            alvo.precisaLogin = true;
-            this.evento("erro", `${alvo.email}: o login foi recusado e não renova mais; entre de novo nela pelo painel (Contas, Entrar de novo).`, { conta: destino });
-            return { ok: false, erro: ERRO_LOGIN_MORTO };
-          }
-        }
-      }
-      if (!temRenovacao(blobAlvo)) {
-        alvo.precisaLogin = true;
-        this.evento("erro", `${alvo.email} está sem login guardado; entre de novo pelo painel.`, { conta: destino });
-        return { ok: false, erro: "conta sem login guardado" };
-      }
+      const p = await this.prepararDestino(destino, semConta);
+      if (!p.ok) return p;
+      const blobAlvo = p.blob;
       // Leitura estrita: se o chaveiro não respondeu, não dá para tratar a principal como vazia (perderia os logins
       // de MCP desta máquina e o token mais novo da conta que sai). Troca adiada.
       try {
@@ -446,9 +459,9 @@ export class Trocador {
       if (atual && de && contas[de]) {
         const guardada = await this.cred.ler(contas[de]!.pasta);
         await this.cred.gravar(contas[de]!.pasta, comLogin(guardada, soLogin(atual)));
-        await this.copiarConta(this.c.claudeJson, this.claudeJsonDa(contas[de]!));
+        await this.copiarParaConta(contas[de]!);
       }
-      const nova = comLogin(atual, soLogin(blobAlvo!));
+      const nova = comLogin(atual, soLogin(blobAlvo));
       await this.cred.gravar(PRINCIPAL, nova);
       this.ultimaPrincipal = [destino, nova];
       this.anotarPrincipal(nova);
@@ -475,6 +488,51 @@ export class Trocador {
     this.relogio.agendar(() => void this.conferirTroca(destino, de, 1), CONFERIR_TROCA_MS);
     // a conta que constava em uso saiu (a posse dela é solta depois), mesmo com a principal sem login
     return { ok: true, de: de ?? (anterior !== destino ? anterior : null) };
+  }
+
+  /**
+   * O login de `destino` pronto para entrar no lugar de outro (a principal ou uma trilha): renovado antes quando está
+   * perto de vencer, conferido com o perfil quando não foi lido há pouco, e recusado sem renovação. Chamar com a trava
+   * da conta. `semConta`: a principal está sem login (a conta que consta em uso também renova).
+   */
+  private async prepararDestino(destino: string, semConta: boolean): Promise<{ ok: true; blob: Blob } | { ok: false; erro: string }> {
+    const alvo = this.estado.contas[destino]!;
+    let blobAlvo = await this.cred.ler(alvo.pasta);
+    if (blobAlvo && expiraEm(blobAlvo) < this.agora() + RENOVAR_ANTES_S) {
+      // Token perto de vencer: renova antes de pôr na principal, ainda com a conta travada. Com a principal sem conta,
+      // vale também para a conta que consta em uso: o assistente saiu dela e ninguém aqui guarda um token mais novo.
+      const renovou = await this.renovarDentro(destino, semConta);
+      if (renovou === true) blobAlvo = await this.cred.ler(alvo.pasta);
+      else if (renovou === false && expiraEm(blobAlvo) <= this.agora()) {
+        // Vencido e o assistente disse que o login morreu: na principal, ele só seria apagado pelo assistente, que
+        // pede login (09/11/2026: o Corrigir repunha o mesmo login morto no AIR e dizia "corrigido").
+        alvo.precisaLogin = true;
+        this.evento("erro", `${alvo.email}: o login venceu e não renova mais; entre de novo nela pelo painel (Contas, Entrar de novo).`, { conta: destino });
+        return { ok: false, erro: ERRO_LOGIN_MORTO };
+      }
+    }
+    // Dentro da validade pelo relógio não quer dizer vivo: o provedor cancela o login quando a renovação dele é usada
+    // em outro lugar. Uma cópia assim ia para o assistente, ele a apagava ao tentar renovar e a busca repunha a
+    // mesma cópia de 10 em 10 minutos, sem a nuvem saber (16/11/2026). Sem leitura de uso recente com ela, o perfil
+    // confere; recusado, renova antes, e o login morto volta como morto.
+    if (blobAlvo && oauth(blobAlvo).accessToken && expiraEm(blobAlvo) > this.agora() && !this.loginLidoHaPouco(alvo)) {
+      const { status } = await this.api.perfil(oauth(blobAlvo).accessToken!);
+      if (status === 401 || status === 403) {
+        const renovou = await this.renovarDentro(destino, semConta);
+        if (renovou === true) blobAlvo = await this.cred.ler(alvo.pasta);
+        else if (renovou === false) {
+          alvo.precisaLogin = true;
+          this.evento("erro", `${alvo.email}: o login foi recusado e não renova mais; entre de novo nela pelo painel (Contas, Entrar de novo).`, { conta: destino });
+          return { ok: false, erro: ERRO_LOGIN_MORTO };
+        }
+      }
+    }
+    if (!temRenovacao(blobAlvo)) {
+      alvo.precisaLogin = true;
+      this.evento("erro", `${alvo.email} está sem login guardado; entre de novo pelo painel.`, { conta: destino });
+      return { ok: false, erro: "conta sem login guardado" };
+    }
+    return { ok: true, blob: blobAlvo! };
   }
 
   /**
@@ -558,6 +616,159 @@ export class Trocador {
     });
   }
 
+  // ------------------------------------------------------------------------------------------------ trilhas (0.18.0)
+
+  /**
+   * O login que está numa trilha é mesmo da conta que a trilha diz ter? Só uma identidade conhecida e diferente diz que
+   * não (o perfil não responde com o token vencido, e o token de renovação dele ainda é o mais novo da conta).
+   */
+  private async loginDaTrilhaE(blob: Blob, id: string): Promise<boolean> {
+    const perfil = await this.identidade(blob).catch(() => null);
+    if (!perfil) return true;
+    const quem = this.contaDoPerfil(perfil);
+    return quem === null || quem === id;
+  }
+
+  /** O login mais novo da conta que sai da trilha volta à pasta dela (as sessões da empresa o renovaram lá). */
+  private async guardarDaTrilha(t: TrilhaLocal, id: string, blob: Blob | null): Promise<void> {
+    const c = this.estado.contas[id];
+    if (!c || !hashToken(blob)) return;
+    if (!(await this.loginDaTrilhaE(blob!, id))) {
+      // alguém entrou noutra conta dentro da trilha: o login fica guardado, mas não na pasta desta conta
+      this.guardarCopiaDaPrincipal(blob!);
+      this.evento("aviso", `A trilha de ${t.nome} estava num login que não é de ${c.email}; guardei uma cópia dele e não o pus na pasta da conta.`, { conta: id, empresa: t.empresa });
+      return;
+    }
+    const guardada = await this.cred.ler(c.pasta);
+    if (hashToken(guardada) === hashToken(blob)) return;
+    await this.cred.gravar(c.pasta, comLogin(guardada, soLogin(blob!)));
+  }
+
+  /**
+   * Põe a conta `destino` na trilha `t`: o mesmo preparo da troca da principal, e o login da conta que estava na trilha
+   * volta à pasta dela. A principal não muda. Devolve a conta que saiu (a posse dela é solta depois da conferência).
+   */
+  trocarTrilha(t: TrilhaLocal, destino: string, motivo: string): Promise<{ ok: boolean; erro?: string; de?: string | null }> {
+    return this.geral.com(async () => {
+      const alvo = this.estado.contas[destino];
+      if (!alvo) return { ok: false, erro: "conta desconhecida" };
+      if (destino === this.estado.ativa) return { ok: false, erro: "a conta está em uso na principal" };
+      const outra = this.trilhaDe(destino);
+      if (outra && outra.empresa !== t.empresa) return { ok: false, erro: "a conta está na trilha de outra empresa" };
+      if (t.conta === destino) return { ok: true, de: null };
+      if (this.sombra) {
+        this.log.faria(`pôr ${alvo.email} na trilha de ${t.nome} (${motivo})`);
+        return { ok: false, erro: "modo sombra" };
+      }
+      const de = t.conta && this.estado.contas[t.conta] ? t.conta : null;
+      const r = await this.travaConta(destino).com(async () => {
+        const p = await this.prepararDestino(destino, false);
+        if (!p.ok) return p;
+        let atual: Blob | null;
+        try {
+          atual = this.cred.lerEstrito ? await this.cred.lerEstrito(t.pasta) : await this.cred.ler(t.pasta);
+        } catch {
+          this.evento("erro", `Não consegui ler o login da trilha de ${t.nome}; troca adiada.`, { empresa: t.empresa });
+          return { ok: false, erro: "não consegui ler o login da trilha" };
+        }
+        if (de) await this.guardarDaTrilha(t, de, atual);
+        else if (hashToken(atual)) this.guardarCopiaDaPrincipal(atual!); // login sem dono conhecido na trilha: nada se perde
+        await this.cred.gravar(t.pasta, comLogin(atual, soLogin(p.blob)));
+        return { ok: true };
+      });
+      if (!r.ok) return r;
+      const agora = this.agora();
+      t.conta = destino;
+      t.versao += 1;
+      t.trocadaEm = agora;
+      t.linha.push([agora, destino]);
+      t.linha.splice(0, Math.max(0, t.linha.length - 500));
+      const pct = (id: string) => {
+        const v = pctEfetivo(this.estado.contas[id]!, agora);
+        return v !== null ? ` (${v.toFixed(0)}%)` : "";
+      };
+      this.evento(
+        "troca",
+        de
+          ? `${t.nome}: troquei de ${this.estado.contas[de]!.email}${pct(de)} para ${alvo.email}${pct(destino)}. Motivo: ${motivo}.`
+          : `${t.nome}: ${alvo.email}${pct(destino)} entrou na trilha da empresa. Motivo: ${motivo}.`,
+        { de, para: destino, motivo, empresa: t.empresa },
+      );
+      this.salvar();
+      this.relogio.agendar(() => void this.conferirTrilha(t.empresa, destino, de, 1), CONFERIR_TROCA_MS);
+      return { ok: true, de };
+    });
+  }
+
+  /** Corrida com uma sessão da trilha que renovava o login antigo no meio da troca: refaz, como na principal. */
+  conferirTrilha(empresa: string, destino: string, de: string | null, tentativa: number): Promise<void> {
+    return this.geral.com(async () => {
+      const t = this.estado.trilhas?.[empresa];
+      if (!t || t.conta !== destino || !de) return;
+      try {
+        const blob = await this.cred.ler(t.pasta);
+        const perfil = blob ? await this.identidade(blob) : null;
+        const id = perfil ? this.contaDoPerfil(perfil) : null;
+        if (id === destino) return;
+        if (id && id === de && tentativa <= 3) {
+          await this.guardarDaTrilha(t, de, blob);
+          const alvo = await this.cred.ler(this.estado.contas[destino]!.pasta);
+          await this.cred.gravar(t.pasta, comLogin(blob, soLogin(alvo)));
+          this.evento("info", `${t.nome}: uma sessão renovou o login antigo no meio da troca; refiz a troca.`, { empresa });
+          this.relogio.agendar(() => void this.conferirTrilha(empresa, destino, de, tentativa + 1), CONFERIR_TROCA_MS);
+        } else if (tentativa > 3) {
+          this.evento("erro", `${t.nome}: a troca não firmou depois de 3 tentativas; a trilha continua em outra conta.`, {
+            motivo: "troca_falhou",
+            empresa,
+            de: id ? this.estado.contas[id]?.contaId ?? null : null,
+            para: this.estado.contas[destino]?.contaId ?? null,
+          });
+        }
+      } catch (e) {
+        this.log.erro(`conferir a troca da trilha: ${(e as Error).message}`);
+      } finally {
+        this.salvar();
+      }
+    });
+  }
+
+  /**
+   * A trilha ficou sem conta (a nuvem a soltou: nenhuma sessão dela há 10 minutos, ou a conta saiu): o login mais novo
+   * volta à pasta da conta e sai da trilha (ninguém mais o renova lá). Devolve a conta que saiu, ou null quando não deu
+   * para ler a trilha agora (fica para a próxima busca).
+   */
+  liberarTrilha(t: TrilhaLocal, motivo: string): Promise<string | null> {
+    return this.geral.com(async () => {
+      const id = t.conta;
+      if (!id) return null;
+      if (this.sombra) {
+        this.log.faria(`tirar ${this.estado.contas[id]?.email ?? id} da trilha de ${t.nome} (${motivo})`);
+        return null;
+      }
+      const ok = await this.travaConta(id).com(async () => {
+        let atual: Blob | null;
+        try {
+          atual = this.cred.lerEstrito ? await this.cred.lerEstrito(t.pasta) : await this.cred.ler(t.pasta);
+        } catch {
+          return false;
+        }
+        await this.guardarDaTrilha(t, id, atual);
+        await this.cred.apagar(t.pasta);
+        return true;
+      });
+      if (!ok) return null;
+      const agora = this.agora();
+      t.conta = null;
+      t.versao += 1;
+      t.trocadaEm = agora;
+      t.linha.push([agora, ""]);
+      t.linha.splice(0, Math.max(0, t.linha.length - 500));
+      this.evento("info", `${t.nome}: ${this.estado.contas[id]?.email ?? "a conta"} saiu da trilha da empresa (${motivo}).`, { conta: id, empresa: t.empresa });
+      this.salvar();
+      return id;
+    });
+  }
+
   // ------------------------------------------------------------------------------------------------ renovação
 
   renovarSeguro(id: string): Promise<ResultadoRenovar> {
@@ -573,6 +784,8 @@ export class Trocador {
     const c = this.estado.contas[id];
     if (!c) return false;
     if (id === this.estado.ativa && !principalSemConta) return "bloqueado";
+    // na trilha de uma empresa, as sessões de lá renovam: a cópia da pasta queimaria o login delas
+    if (this.trilhaDe(id)) return "bloqueado";
     if (this.sombra) {
       this.log.faria(`renovar o login de ${c.email}`);
       return "bloqueado";
@@ -620,10 +833,12 @@ export class Trocador {
     if (!c) return;
     if ((this.recuo[id] ?? 0) > t && !forcar) return;
     const ativa = id === this.estado.ativa;
-    const blob = await this.cred.ler(ativa ? PRINCIPAL : c.pasta);
+    // na trilha de uma empresa, o login vivo é o da pasta da trilha, e quem renova são as sessões de lá
+    const trilha = ativa ? null : this.trilhaDe(id);
+    const blob = await this.cred.ler(ativa ? PRINCIPAL : trilha ? trilha.pasta : c.pasta);
     let o = oauth(blob);
     if (!o.accessToken) {
-      if (!ativa) {
+      if (!ativa && !trilha) {
         c.precisaLogin = true;
         c.erro = "sem login guardado";
       }
@@ -647,6 +862,10 @@ export class Trocador {
         }
         return;
       }
+      if (trilha) {
+        c.erro = "token da trilha vencido; as sessões da empresa renovam na próxima chamada";
+        return;
+      }
       const r = await this.renovarSeguro(id);
       if (r === "bloqueado") {
         c.erro = this.sombra ? "modo sombra: o login precisaria ser renovado" : "o login venceu; renova quem tiver a posse";
@@ -666,13 +885,14 @@ export class Trocador {
     const { status, janelas } = await this.api.uso(o.accessToken!);
     this.ultimaLeitura[id] = t;
     if (id === this.estado.ativa && !ativa) return; // virou a ativa durante a leitura; o número é de antes da troca
+    if (!trilha && this.trilhaDe(id)) return; // entrou numa trilha durante a leitura
     if (status === 200 && janelas) {
       delete this.tropecoDesde[id];
       Object.assign(c, { janelas, lidoEm: t, fonte: "api", erro: null, precisaLogin: false, tokenExpiraEm: exp || null });
     } else if (status === 429) {
       this.recuo[id] = t + RECUO_429_S;
       c.erro = "leitura de uso limitada pelo provedor; tento de novo em 10 min";
-    } else if ((status === 401 || status === 403) && !ativa) {
+    } else if ((status === 401 || status === 403) && !ativa && !trilha) {
       const r = await this.renovarSeguro(id);
       if (r === true) return this.lerUso(id, true);
       if (r === "bloqueado") {
@@ -718,6 +938,14 @@ export class Trocador {
     return null;
   }
 
+  /** A conta deste computador em que a sessão está, pela conta que o mod leu (null: de fora, ou mod antigo). */
+  contaDoCorpo(corpo: Record<string, unknown>): string | null {
+    const d = corpo.conta as Record<string, unknown> | undefined;
+    if (!d || typeof d !== "object" || typeof d.accountUuid !== "string" || typeof d.orgUuid !== "string") return null;
+    for (const [id, c] of Object.entries(this.estado.contas)) if (c.accountUuid === d.accountUuid && c.orgUuid === d.orgUuid) return id;
+    return null;
+  }
+
   /**
    * O mod mostra à sessão que ela está noutra conta: login de fora, ou uma conta deste computador passados 2 minutos da
    * troca (antes disso é só a sessão que ainda não releu o login).
@@ -737,6 +965,12 @@ export class Trocador {
     if (situacao === "outra" || situacao === "atrasada") return false;
     const versao = corpo.versao;
     if (versao !== null && versao !== undefined && versao !== this.estado.versao) return false;
+    return this.medidaNaConta(ativa, corpo);
+  }
+
+  /** As janelas que uma sessão mediu entram na conta `id` (a em uso, ou a de uma trilha). */
+  medidaNaConta(id: string, corpo: Record<string, unknown>): boolean {
+    const t = this.agora();
     const janelas: Janela[] = [];
     for (const j of Array.isArray(corpo.janelas) ? corpo.janelas : []) {
       const tipo = (j as Record<string, unknown>)?.tipo;
@@ -745,12 +979,12 @@ export class Trocador {
         janelas.push({ tipo, pct: Math.round(pct * 10) / 10, resetEm: isoParaEpoch((j as Record<string, unknown>).resetEm) });
       }
     }
-    if (!janelas.length) return false;
-    const c = this.estado.contas[ativa]!;
+    const c = this.estado.contas[id];
+    if (!janelas.length || !c) return false;
     const antigas = new Map(c.janelas.map((j) => [j.tipo, j]));
     for (const j of janelas) antigas.set(j.tipo, j);
     Object.assign(c, { janelas: [...antigas.values()], lidoEm: t, fonte: "sessao", erro: null });
-    this.ultimaLeitura[ativa] = t;
+    this.ultimaLeitura[id] = t;
     return true;
   }
 
@@ -850,7 +1084,7 @@ export class Trocador {
     return { ok: true, trocou: true, versao: this.estado.versao, anotado: false, aguardarS: ATRASADA_ESPERA_S[vezes - 1] };
   }
 
-  private enfileirar(corpo: Record<string, unknown>, sessao: string): ItemFila | null {
+  enfileirar(corpo: Record<string, unknown>, sessao: string, trilha?: TrilhaLocal): ItemFila | null {
     if (!sessao) return null;
     const ja = this.estado.fila.find((f) => f.sessao === sessao && f.estado === "aguardando");
     if (ja) return ja;
@@ -861,8 +1095,9 @@ export class Trocador {
       tipo: corpo.tipo === "headless" ? "headless" : "interativa",
       em: this.agora(),
       estado: "aguardando",
-      conta: this.estado.ativa,
+      conta: trilha ? trilha.conta : this.estado.ativa,
       ...(rotina ? { rotina } : {}),
+      ...(trilha ? { trilha: trilha.empresa } : {}),
     };
     this.estado.fila.unshift(item);
     this.estado.fila.splice(50);
@@ -870,7 +1105,7 @@ export class Trocador {
   }
 
   /** O limite de uma sessão é a prova de que a janela de 5 horas da conta encheu. */
-  private encherCinco(c: ContaLocal): void {
+  encherCinco(c: ContaLocal): void {
     const mapa = new Map(c.janelas.map((j) => [j.tipo, j]));
     const cinco = mapa.get("five_hour") ?? { tipo: "five_hour" as const, pct: null, resetEm: null };
     mapa.set("five_hour", { ...cinco, pct: 100 });
@@ -923,6 +1158,7 @@ export class Trocador {
         this.ganchos.aoConectar?.(id);
       } else if (
         existente !== this.estado.ativa &&
+        !this.trilhaDe(existente) &&
         // a pasta que a lista guarda ficou sem login (pedia para entrar de novo, ou a lista voltou de uma cópia de antes
         // de um login refeito noutra pasta): a pasta achada, com login, passa a ser a dela, em vez de ir embora
         (this.estado.contas[existente]!.precisaLogin || !(await this.cred.ler(this.estado.contas[existente]!.pasta).catch(() => null)))

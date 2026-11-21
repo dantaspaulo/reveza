@@ -85,6 +85,13 @@ export interface AlvoPonte {
    * (a linha de comando).
    */
   critica(corpo: Record<string, unknown>): Resposta | Promise<Resposta>;
+  /**
+   * Trilhas (0.18.0): `{ cwd, pid }` do lançador ~/.reveza/lancador/claude, que pergunta em qual pasta de login a sessão
+   * abre (a da empresa separada, ou nenhuma: a principal).
+   */
+  trilha?(corpo: Record<string, unknown>): Resposta | Promise<Resposta>;
+  /** `{ trilha, sessao }`: a conta em uso na trilha da sessão (o mod de uma sessão de trilha pergunta aqui, não em /api/ativa). */
+  trilhaAtiva?(corpo: Record<string, unknown>): Resposta | Promise<Resposta>;
 }
 
 const SESSAO = /^[A-Za-z0-9_-]{1,80}$/;
@@ -179,6 +186,8 @@ export function criarPonte(alvo: AlvoPonte, porta: number, chave: string | null 
         if (caminho === "/api/sessao/erro") return alvo.sessaoErro(c);
         if (caminho === "/api/consertar") return alvo.consertar(c);
         if (caminho === "/api/critica") return alvo.critica(c);
+        if (caminho === "/api/trilha" && alvo.trilha) return alvo.trilha(c);
+        if (caminho === "/api/trilha/ativa" && alvo.trilhaAtiva) return alvo.trilhaAtiva(c);
         const m = /^\/api\/fila\/([^/]+)\/(retomada|descartar)$/.exec(caminho);
         if (m) {
           const sessao = decodeURIComponent(m[1]!);

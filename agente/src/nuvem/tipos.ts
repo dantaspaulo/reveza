@@ -37,6 +37,33 @@ export interface RespostaOla {
   ligacoes: PedidoLigacao[];
   /** Saída enxuta ligada neste computador (0025). */
   enxugar: boolean;
+  /** Alguma empresa está marcada "separar" (0039): o agente lê as regras e cuida das trilhas. Undefined: nuvem antiga. */
+  trilhas?: boolean;
+}
+
+/** Uma empresa marcada "separar" e as regras de pasta das empresas assim (0039, agente_empresas). */
+export interface EmpresaSeparada {
+  id: string;
+  nome: string;
+}
+export interface RegraEmpresa {
+  tipo: "pasta" | "titulo";
+  padrao: string;
+  empresa: string;
+}
+export interface RespostaEmpresas {
+  empresas: EmpresaSeparada[];
+  regras: RegraEmpresa[];
+}
+
+/** A conta de uma trilha (empresa) deste computador (0039, agente_trilhas). */
+export interface TrilhaNuvem {
+  empresa: string;
+  conta_id: string;
+  email: string | null;
+  versao: number;
+  motivo: string;
+  modelo?: string | null;
 }
 
 /** Chave pública ECDH P-256 em JWK, só o que importa. */
@@ -186,6 +213,10 @@ export interface Nuvem {
   /** Os agentes do OpenBot deste computador (0.17.0): o painel liga a pasta de cada um a uma empresa pelo título. */
   relatarAgentes(lista: AgenteNuvem[]): Promise<{ ok: boolean }>;
   limite(contaId: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
+  /** As empresas separadas e as regras delas (0039). */
+  empresas(): Promise<RespostaEmpresas>;
+  /** As trilhas com sessão neste computador (até 50 empresas) e a conta de cada uma (0039). */
+  trilhas(empresas: string[]): Promise<{ ok: boolean; trilhas: TrilhaNuvem[] }>;
   /** A conta em uso não roda o modelo da sessão (0028): fora da escolha deste computador por 6 horas, e decide na hora. */
   semModelo(contaId: string, modelo: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
   /** As contas que o painel removeu (0031), para apagar a cópia do login que este computador guarda delas. */

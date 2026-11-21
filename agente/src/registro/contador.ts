@@ -109,7 +109,7 @@ export class Contador {
   constructor(
     private dir: string,
     private projetosDir: string,
-    private contaEm: (ts: number) => string | null,
+    private contaEm: (ts: number, sessao?: string) => string | null,
     private agora: () => number = () => Math.floor(Date.now() / 1000),
     private pastas: Pick<Pastas, "de"> | null = null,
   ) {
@@ -291,7 +291,8 @@ export class Contador {
     if (modelo === "<synthetic>") return;
     const ts = isoParaEpoch(d.timestamp) ?? this.agora();
     const { usd } = custo(u, modeloBruto);
-    const conta = this.contaEm(ts) ?? "";
+    // a sessão de uma empresa separada (0.18.0) conta na conta da trilha dela, não na da principal
+    const conta = this.contaEm(ts, typeof d.sessionId === "string" ? d.sessionId : undefined) ?? "";
     const projeto = projetoDe(d.cwd);
     const pasta = this.pastas ? this.pastas.de(d.cwd) : "";
     const hora = ts - (ts % 3600);

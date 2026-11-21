@@ -40,6 +40,19 @@ describe("troca", () => {
     assert.equal(m.cli.renovacoes.length, 0);
   });
 
+  test("o perfil do ~/.claude.json que é de outra conta (uma sessão de trilha o regravou) não vai para a pasta da que sai", async () => {
+    m = await montar();
+    const a = await ativaEm(m, "A", 96);
+    const b = contaEstacionada(m, "B", 3);
+    const pa = path.join(pasta(a), ".claude.json");
+    const antes = fs.existsSync(pa) ? fs.readFileSync(pa, "utf8") : null;
+    fs.writeFileSync(m.c.claudeJson, JSON.stringify({ oauthAccount: { emailAddress: "c@exemplo.com" }, outra: 1 }));
+    const r = await tr().trocar(b, "teste");
+    assert.ok(r.ok, r.erro);
+    assert.equal(fs.existsSync(pa) ? fs.readFileSync(pa, "utf8") : null, antes);
+    assert.equal(JSON.parse(fs.readFileSync(m.c.claudeJson, "utf8")).oauthAccount.emailAddress, "b@exemplo.com");
+  });
+
   test("só claudeAiOauth e organizationUuid mudam na principal", async () => {
     m = await montar();
     await ativaEm(m, "A", 96);

@@ -66,7 +66,8 @@ import { compararVersao, loginNoGerenciadorDoWindows } from "./doctor.js";
 import { abrirTokens, completaLigada, PUBLICA_DESDE, pendenteDaPublicacao, semSegredos } from "./completa.js";
 import { gravarAtomico, gravarJson, lerJson } from "./util/arquivos.js";
 import { aplicarResumo, contaGrande, janelaDaConta, RESUMO_MAXIMO, RESUMO_MINIMO } from "./resumo.js";
-import { parouNoErro, ultimoPedido } from "./sessaoviva.js";
+import { parouNoErro, processoVivo, ultimoPedido } from "./sessaoviva.js";
+import { Trilhas, type AgentePasta } from "./trilhas.js";
 import { lerIgnorar, OPENBOT_CODIGOS, pedidoDoTexto, type AgenteOpenBot, type OpenBot } from "./openbot.js";
 import { aplicarModelo } from "./modelo.js";
 import { ESPERA_MAXIMA_S, esperarMemoria, TETO_ESPERA_PCT, trocaPodeEsperar, type Memoria } from "./memoria.js";
@@ -251,6 +252,11 @@ export class Agente {
   private duplicadas: Set<string> | null = null;
   /** Quanto levou a última conversa com a nuvem (o painel mostra em Saúde). */
   ultimaBuscaMs: number | null = null;
+  /** As trilhas das empresas separadas (0.18.0); só com nuvem. */
+  trilhas: Trilhas | null = null;
+  /** A pasta de cada cwd como a nuvem guarda (o contador e as trilhas usam a mesma). */
+  private pastas: Pastas;
+  private agentesConvertidos: { de: AgenteOpenBot[]; lista: AgentePasta[] } | null = null;
   /** A última atribuição que a nuvem mandou (o conserto da credencial põe esta conta). */
   ultimaAtribuicao: Atribuicao | null = null;
   /** Quando o agente subiu (a conta que a nuvem manda chega na primeira busca). */
@@ -309,7 +315,8 @@ export class Agente {
         const t = tipo === "alerta" ? "aviso" : tipo;
         if (d.nuvem && !d.sombra && tipo !== "info" && TIPOS_EVENTO_NUVEM.has(t))
           void d.nuvem.evento(t, texto, tipo === "troca" ? this.comIdsDaNuvem(dados) : dados).catch(() => undefined);
-        if (tipo === "troca") {
+        // a troca na trilha de uma empresa (0.18.0) não muda a principal: sem som, resumo nem modelo
+        if (tipo === "troca" && !dados.empresa) {
           this.somDaTroca(); // em sombra o trocador não troca, então não chega aqui
           this.aplicarResumo();
           this.aplicarModelo(true);
@@ -320,11 +327,11 @@ export class Agente {
       },
     }, () => this.salvar());
     this.trocador.sombra = d.sombra;
-    this.contador = new Contador(d.c.registro, d.c.projetos, (ts) => this.trocador.contaEm(ts), () => d.relogio.agora(),
-      new Pastas(d.c.home, undefined, () => {
-        this.agentesOpenBot();
-        return this.pastasDosAgentes;
-      }));
+    this.pastas = new Pastas(d.c.home, undefined, () => {
+      this.agentesOpenBot();
+      return this.pastasDosAgentes;
+    });
+    this.contador = new Contador(d.c.registro, d.c.projetos, (ts, sessao) => this.trocador.contaEm(ts, sessao), () => d.relogio.agora(), this.pastas);
     this.logins = new Logins(this.trocador, this.cred, d.cli, d.relogio, (login, id) => this.loginTerminou(login, id));
     if (d.nuvem) {
       this.posse = new PosseCofre(() => this.estado, this.trocador, this.cred, d.nuvem, () => this.chave, this.cj, d.relogio, d.log, () =>
@@ -339,7 +346,40 @@ export class Agente {
         if (!this.loginProvado(c, this.d.relogio.agora())) return;
         await this.informarLogin(c);
       };
+      this.trilhas = new Trilhas({
+        estado: () => this.estado,
+        trocador: this.trocador,
+        posse: () => this.posse,
+        cred: this.cred,
+        cj: this.cj,
+        nuvem: () => this.d.nuvem ?? null,
+        pastaTrilhas: d.c.trilhas,
+        claudeJson: d.c.claudeJson,
+        relogio: d.relogio,
+        log: d.log,
+        salvar: () => this.salvar(),
+        sombra: d.sombra,
+        pastaDe: (cwd) => this.pastas.de(cwd),
+        agentes: () => this.agentesNaNuvem(),
+        vivo: processoVivo,
+        renovar: async (pasta) => void (await this.d.cli.renovar(pasta, 0)),
+        aoTrocar: (empresa) => this.retomarHeadless(undefined, false, empresa),
+        loginMorto: async (id) => {
+          const c = this.estado.contas[id];
+          if (c) await this.informarLogin(c);
+        },
+      });
     }
+  }
+
+  /** Os agentes do OpenBot com a pasta como a nuvem guarda (a mesma lista enquanto a leitura não muda). */
+  private agentesNaNuvem(): AgentePasta[] {
+    const de = this.agentesOpenBot();
+    if (this.agentesConvertidos?.de !== de) {
+      const lista = de.map((a) => ({ pasta: pastaNaNuvem(relativaAPessoal(a.pasta, this.d.c.home)), nome: a.nome, titulo: a.titulo }));
+      this.agentesConvertidos = { de, lista };
+    }
+    return this.agentesConvertidos.lista;
   }
 
   /** Trabalho que roda solto (registro na nuvem, avisos): guardado para os testes e o desligamento esperarem. */
@@ -728,8 +768,11 @@ export class Agente {
    * no mesmo segundo, uns 1,9 GB juntas). Da mesma rotina (REVEZA_ROTINA) só volta a passada mais nova, e nenhuma se
    * outra passada dela começou depois do corte. Conversa de agente do OpenBot continua pelo próprio OpenBot
    * (continuarNoOpenBot), sem cópia.
+   *
+   * `trilha`: a troca foi na trilha desta empresa (0.18.0), e só as sessões dela voltam; sem ela, só as da principal.
+   * As já liberadas (`liberadas`) e a sessão pedida (`so`) voltam de qualquer trilha: quem liberou já decidiu.
    */
-  retomarHeadless(so?: string, liberadas = false): void {
+  retomarHeadless(so?: string, liberadas = false, trilha?: string): void {
     if (!this.estado.config.retomarHeadless) return;
     const t = this.d.relogio.agora();
     this.descartarSuperadas();
@@ -739,6 +782,7 @@ export class Agente {
     for (const f of [...this.estado.fila].reverse()) {
       if (f.tipo !== "headless" || f.estado !== "aguardando" || (so !== undefined && f.sessao !== so)) continue;
       if (liberadas && f.liberadaEm === undefined && f.vivo === undefined) continue;
+      if (so === undefined && !liberadas && f.trilha !== trilha) continue;
       const lida = lerSessao(this.d.c.projetos, f.sessao, this.d.c.home);
       const openbot = lida?.programa === "openbot" && !!this.d.openbot;
       // entrada velha (de antes de ligar a opção, ou importada) não volta a rodar sozinha; o prazo conta até a liberação
@@ -758,7 +802,7 @@ export class Agente {
           continue;
         }
       }
-      const r = this.retomar(f.sessao, f.vivo !== undefined, lida, f.rotina);
+      const r = this.retomar(f.sessao, f.vivo !== undefined, lida, f.rotina, f.trilha);
       if (r && "cwd" in r) {
         f.retomadaEm = t;
         ocupada = f.sessao;
@@ -804,12 +848,19 @@ export class Agente {
    * fazia a fila andar.
    */
   private retomarNaVolta(t: number): void {
-    const ativa = this.estado.ativa;
+    for (const tr of Object.values(this.estado.trilhas ?? {})) this.retomarNaVoltaDaConta(t, tr.conta, tr.empresa);
+    this.retomarNaVoltaDaConta(t, this.estado.ativa, undefined);
+  }
+
+  /** A conta em uso (na principal, ou na trilha `empresa`) voltou a ter crédito: as sessões dela que pararam nela voltam. */
+  private retomarNaVoltaDaConta(t: number, ativa: string | null, empresa: string | undefined): void {
     const c = ativa ? this.estado.contas[ativa] : undefined;
     if (!ativa || !c || c.precisaLogin || c.pausada) return;
     if ((pctEfetivo(c, t) ?? 100) >= gatilhoDeTroca(this.estado)) return;
     const voltaram = this.estado.fila.filter(
-      (f) => f.tipo === "headless" && f.estado === "aguardando" && f.liberadaEm === undefined && f.vivo === undefined && f.conta === ativa && f.voltaEm !== undefined && t >= f.voltaEm,
+      (f) =>
+        f.tipo === "headless" && f.estado === "aguardando" && f.liberadaEm === undefined && f.vivo === undefined && f.conta === ativa && f.trilha === empresa &&
+        f.voltaEm !== undefined && t >= f.voltaEm,
     );
     if (!voltaram.length || !this.estado.config.retomarHeadless) return;
     this.trocador.evento("info", `${c.email} voltou a ter crédito: as sessões sem tela que pararam nela voltam, uma por vez.`, { conta: ativa });
@@ -894,7 +945,9 @@ export class Agente {
     const ob = this.d.openbot!;
     const curta = f.sessao.slice(0, 8);
     // a vez antes das leituras: as que esperam não releem a transcrição nem o banco a cada ciclo
-    if (this.openbotEmVoo || t - this.openbotUltima < OPENBOT_INTERVALO_S || t - this.estado.trocadaEm < OPENBOT_APOS_TROCA_S) return;
+    // depois da troca de quem ela usa: a principal, ou a trilha da empresa dela
+    const trocadaEm = f.trilha ? (this.estado.trilhas?.[f.trilha]?.trocadaEm ?? 0) : this.estado.trocadaEm;
+    if (this.openbotEmVoo || t - this.openbotUltima < OPENBOT_INTERVALO_S || t - trocadaEm < OPENBOT_APOS_TROCA_S) return;
     const parou = parouNoErro(this.d.c.projetos, f.sessao);
     if (parou === false) {
       f.estado = "retomada";
@@ -970,6 +1023,7 @@ export class Agente {
     adiada = false,
     jaLida?: SessaoLida | null,
     rotina?: string,
+    empresa?: string,
   ): { cwd: string } | { programa: string } | { vivo: number } | { sozinha: true } | null {
     const lida = jaLida === undefined ? lerSessao(this.d.c.projetos, sessao, this.d.c.home) : jaLida;
     if (!lida || !fs.existsSync(lida.cwd)) {
@@ -988,6 +1042,10 @@ export class Agente {
       return { sozinha: true };
     }
     const cwd = lida.cwd;
+    // sessão de empresa separada: volta na trilha dela; trilha que sumiu daqui (empresa desligada) volta na principal
+    const t = empresa ? this.estado.trilhas?.[empresa] : undefined;
+    const trilha = t?.conta ? { pasta: t.pasta, empresa: t.empresa } : undefined;
+    if (empresa && !trilha) this.d.log.info(`sessão ${sessao.slice(0, 8)}: a trilha dela está sem conta; volta na principal`);
     if (this.d.sombra) {
       this.d.log.faria(`retomar a sessão ${sessao.slice(0, 8)}`);
       return { cwd };
@@ -995,7 +1053,7 @@ export class Agente {
     fs.mkdirSync(this.d.c.logs, { recursive: true, mode: 0o700 });
     const fd = fs.openSync(path.join(this.d.c.logs, `retomada-${sessao.slice(0, 40)}.log`), "a", 0o600);
     try {
-      this.d.cli.retomar(sessao, cwd, "A conta anterior bateu o limite de uso e o Reveza trocou de conta. Continue a tarefa de onde parou.", fd, rotina);
+      this.d.cli.retomar(sessao, cwd, "A conta anterior bateu o limite de uso e o Reveza trocou de conta. Continue a tarefa de onde parou.", fd, rotina, trilha);
     } finally {
       fs.closeSync(fd);
     }
@@ -1096,6 +1154,11 @@ export class Agente {
       }
       if (!this.d.sombra) this.anotarDaNuvem(r.atribuicao, r.enxugar === true);
       if (r.atribuicao) await this.aplicarAtribuicao(r.atribuicao);
+      if (this.trilhas) {
+        // a principal já está certa: a falha de uma trilha não segura o resto da busca
+        this.trilhas.ligadas = r.trilhas === true;
+        await this.trilhas.busca().catch((e: Error) => this.d.log.erro(`trilhas: ${e.message}`));
+      }
       for (const cmd of r.comandos) await this.comando(cmd.id);
       await this.vigiarLigacoes(r.ligacoes ?? []);
       if (!this.d.sombra) await this.esquecerRemovidas();
@@ -1282,7 +1345,8 @@ export class Agente {
   private async limparPossesAntigas(): Promise<void> {
     this.possesLimpas = true;
     for (const c of Object.values(this.estado.contas)) {
-      if (!c.contaId || c.id === this.estado.ativa || this.posse!.temPosse(c.id)) continue;
+      // a conta numa trilha (0.18.0) está em uso pelas sessões da empresa: a busca das trilhas retoma a posse dela
+      if (!c.contaId || c.id === this.estado.ativa || this.trocador.trilhaDe(c.id) || this.posse!.temPosse(c.id)) continue;
       this.posse!.posses.set(c.id, "renovacao");
       await this.posse!.devolver(c.id, { silencioso: true }).catch(() => false);
       await this.posse!.soltar(c.id).catch(() => undefined);
@@ -1384,7 +1448,8 @@ export class Agente {
       if (!this.posse || this.d.sombra || this.online === false) return;
       for (const [id] of [...this.posse.posses]) {
         await this.posse.devolver(id).catch(() => false);
-        if (id !== this.estado.ativa) await this.posse.soltar(id).catch(() => undefined);
+        // a conta de uma trilha (0.18.0) segue com as sessões da empresa: a posse fica e vence sozinha, como a da principal
+        if (id !== this.estado.ativa && !this.trocador.trilhaDe(id)) await this.posse.soltar(id).catch(() => undefined);
       }
     })();
     await Promise.race([trabalho, new Promise((r) => this.d.relogio.agendar(() => r(undefined), prazoMs))]);
@@ -2620,6 +2685,7 @@ export class Agente {
       credencial: { esperandoConta: this.esperandoConta() },
       modelo: this.estado.modeloEscrito ?? null,
       enxugar: this.estado.enxugar === true,
+      trilhas: this.trilhas?.publico() ?? [],
       criticas: {
         ...(situacaoCriticas(this.estado, this.d.relogio.agora()) ?? { segurar: false, gatilho: this.estado.config.criticasGatilho }),
         ligada: this.estado.config.criticas === true,
@@ -2681,8 +2747,27 @@ export class Agente {
         return { status: 200, corpo: { ok: true, critica: sessaoCritica(this.estado, sessao) } };
       },
       estado: () => this.publico(),
+      trilha: async (corpo: Record<string, unknown>): Promise<Resposta> => {
+        if (!this.trilhas) return { status: 200, corpo: { ok: true, trilha: null } };
+        const cwd = typeof corpo.cwd === "string" && corpo.cwd.length <= 4096 && path.isAbsolute(corpo.cwd) ? corpo.cwd : null;
+        if (!cwd) return { status: 400, corpo: { ok: false, erro: "cwd precisa ser um caminho absoluto" } };
+        const pid = typeof corpo.pid === "number" && Number.isInteger(corpo.pid) && corpo.pid > 1 ? corpo.pid : null;
+        return { status: 200, corpo: await this.trilhas.pedir(cwd, pid) };
+      },
+      trilhaAtiva: (corpo: Record<string, unknown>): Resposta => {
+        const tr = this.trilhas?.daSessao(corpo) ?? null;
+        // trilha desconhecida (a empresa saiu daqui): o mod lê a principal, como antes
+        if (!tr) return { status: 404, corpo: { ok: false, erro: "trilha desconhecida neste computador" } };
+        return { status: 200, corpo: this.trilhas!.ativa(tr) };
+      },
       medida: (corpo: Record<string, unknown>): Resposta => {
         this.verRotina(corpo);
+        // sessão de empresa separada (0.18.0): o uso dela entra na conta da trilha, nunca na da principal
+        const tr = this.trilhas?.daSessao(corpo) ?? null;
+        if (tr) {
+          if (this.trilhas!.medida(tr, corpo)) this.fundo(this.comNuvem ? this.relatarUso() : this.agir());
+          return { status: 200, corpo: { ok: true, outraConta: false } };
+        }
         const entrou = this.trocador.medidaDaSessao(corpo);
         if (entrou) this.fundo(this.comNuvem ? this.relatarUso() : this.agir());
         // a sessão mede outra conta (o app de desktop com login próprio, um token no ambiente): o mod diz isso a ela
@@ -2694,6 +2779,15 @@ export class Agente {
       limite: (corpo: Record<string, unknown>): Resposta => {
         const sessao = String(corpo.sessao ?? "").slice(0, 80);
         this.verRotina(corpo);
+        const tr = this.trilhas?.daSessao(corpo) ?? null;
+        if (tr) {
+          const r = this.trilhas!.limite(tr, corpo);
+          if (sessao) this.contador.marcarParada(sessao);
+          this.salvar();
+          if (r.avisar) this.fundo(this.limiteTrilhaDepois(tr.empresa, r.avisar, sessao));
+          if ((r.resposta.aguardarS || r.resposta.trocou) && corpo.tipo === "headless" && sessao) this.retomarHeadless(sessao);
+          return { status: 200, corpo: r.resposta };
+        }
         // a conta não roda o modelo da sessão (sem créditos de uso): marca a conta fora deste computador e troca
         const modelo = corpo.erro === "modelo" ? this.trocador.modeloDaSessao(corpo) : null;
         const r = modelo ?? this.trocador.limiteDaSessao(corpo);
@@ -2839,6 +2933,20 @@ export class Agente {
   }
 
   /** O limite de uma sessão decide na hora: na nuvem (agente_limite) ou aqui, sem nuvem. */
+  /** Uma sessão de trilha bateu o limite: a nuvem marca a conta cheia e troca a da trilha; a busca aplica. */
+  private async limiteTrilhaDepois(empresa: string, contaId: string, sessao: string): Promise<void> {
+    if (this.d.sombra) {
+      this.d.log.faria(`avisar o limite da sessão ${sessao.slice(0, 8)} e trocar a conta da trilha`);
+      return;
+    }
+    try {
+      await this.d.nuvem!.limite(contaId, sessao || null);
+      await this.trilhas!.busca();
+    } catch (e) {
+      this.d.log.erro(`avisar o limite da trilha ${empresa.slice(0, 8)} à nuvem: ${(e as Error).message}`);
+    }
+  }
+
   private async limiteDepois(sessao: string): Promise<void> {
     if (this.d.sombra) {
       this.d.log.faria(`avisar o limite da sessão ${sessao.slice(0, 8)} e trocar de conta`);

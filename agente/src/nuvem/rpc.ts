@@ -23,6 +23,9 @@ import {
   type SessaoNuvem,
   type TokenNuvem,
   type AgenteNuvem,
+  type RegraEmpresa,
+  type RespostaEmpresas,
+  type TrilhaNuvem,
 } from "./tipos.js";
 
 export interface Rpc {
@@ -40,6 +43,7 @@ const texto = (v: unknown): string | null => (typeof v === "string" && v ? v : n
 export function modeloValido(v: unknown): string | null {
   return typeof v === "string" && /^[a-z0-9][a-z0-9.-]{0,62}(\[1m\])?$/.test(v) ? v : null;
 }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const numero = (v: unknown): number | null => (v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
 
 function cofreDe(v: unknown): CofreNuvem | null {
@@ -128,6 +132,7 @@ export class NuvemRpc implements Nuvem {
       ligacao_pendente: r.ligacao_pendente === true,
       ligacoes: pedidosDe(r.ligacoes),
       enxugar: r.enxugar === true,
+      ...("trilhas" in r ? { trilhas: r.trilhas === true } : {}),
     };
   }
 
@@ -195,6 +200,37 @@ export class NuvemRpc implements Nuvem {
   async limite(contaId: string, sessao: string | null) {
     const r = await this.chamar("agente_limite", { p_conta: contaId, p_sessao: sessao });
     return { ok: r.ok === true, trocou: r.trocou === true, versao: numero(r.versao) };
+  }
+
+  async empresas(): Promise<RespostaEmpresas> {
+    const r = await this.chamar("agente_empresas", {});
+    const uuid = (v: unknown) => (typeof v === "string" && UUID.test(v) ? v : null);
+    const empresas = (Array.isArray(r.empresas) ? r.empresas : []).flatMap((v) => {
+      const e = v as Record<string, unknown> | null;
+      const id = uuid(e?.id);
+      return id ? [{ id, nome: String(e?.nome ?? "").slice(0, 80) }] : [];
+    });
+    const regras = (Array.isArray(r.regras) ? r.regras : []).flatMap((v): RegraEmpresa[] => {
+      const x = v as Record<string, unknown> | null;
+      const empresa = uuid(x?.empresa);
+      const tipo = x?.tipo === "pasta" || x?.tipo === "titulo" ? x.tipo : null;
+      return empresa && tipo && typeof x?.padrao === "string" ? [{ tipo, padrao: x.padrao.slice(0, 300), empresa }] : [];
+    });
+    return { empresas, regras };
+  }
+
+  async trilhas(empresas: string[]): Promise<{ ok: boolean; trilhas: TrilhaNuvem[] }> {
+    const r = await this.chamar("agente_trilhas", { p_empresas: empresas });
+    const trilhas = (Array.isArray(r.trilhas) ? r.trilhas : []).flatMap((v): TrilhaNuvem[] => {
+      const x = v as Record<string, unknown> | null;
+      const empresa = texto(x?.empresa);
+      const conta = texto(x?.conta_id);
+      if (!empresa || !conta || !UUID.test(empresa) || !UUID.test(conta)) return [];
+      const t: TrilhaNuvem = { empresa, conta_id: conta, email: texto(x?.email), versao: Number(x?.versao ?? 0), motivo: String(x?.motivo ?? "") };
+      if (x && "modelo" in x) t.modelo = modeloValido(x.modelo);
+      return [t];
+    });
+    return { ok: r.ok === true, trilhas };
   }
 
   async semModelo(contaId: string, modelo: string, sessao: string | null) {
