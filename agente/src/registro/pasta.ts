@@ -127,9 +127,12 @@ export class Pastas {
         const rf = path.resolve(f);
         if (dentroDe(atual, rf) && (!fixa || rf.length > fixa.length)) fixa = rf;
       }
-      // a pasta do agente ganha da raiz do git que a contém; um repositório dentro dela ganha dela
-      const base = fixa && (!raiz || dentroDe(fixa, raiz)) ? fixa : (raiz ?? cwd);
-      r = pastaNaNuvem(relativaAPessoal(base, this.casa));
+      // a pasta do agente ganha da raiz do git que a contém; um repositório dentro dela ganha dela. Tudo resolvido do
+      // mesmo jeito (também a pessoal): no Windows, "/Users/x" resolvido vira "D:\Users\x", e misturar os dois jeitos
+      // deixaria a pasta fora da pessoal
+      const base = fixa && (!raiz || dentroDe(fixa, raiz)) ? fixa : (raiz ?? atual);
+      // sem pessoal conhecida, nada vira "~" (resolver "" daria a pasta em que o agente roda)
+      r = pastaNaNuvem(relativaAPessoal(base, this.casa ? path.resolve(this.casa) : ""));
     } catch {
       r = "";
     }

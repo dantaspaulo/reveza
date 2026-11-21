@@ -13,14 +13,18 @@ import { agentesDaSaida, OpenBotLocal } from "../src/openbot.js";
 const SQLITE = "/usr/bin/sqlite3";
 const CASA = "/Users/x";
 
-/** Um disco de mentira: pasta -> conteúdo do .git ("" quando é pasta). */
+/** O caminho como o código o vê depois do path.resolve (no Windows, "/Users/x" vira "D:\Users\x"). */
+const R = (p: string) => path.resolve(p);
+
+/** Um disco de mentira: pasta -> conteúdo do .git ("" quando é pasta). As chaves vão resolvidas, como o código lê. */
 function leitor(mapa: Record<string, string>): LeitorPastas & { lidas: string[] } {
   const lidas: string[] = [];
+  const m = new Map(Object.entries(mapa).map(([k, v]) => [R(k), v] as const));
   return {
     lidas,
     git(p) {
       lidas.push(p);
-      return Object.hasOwn(mapa, p) ? mapa[p]! : null;
+      return m.has(p) ? m.get(p)! : null;
     },
   };
 }
@@ -41,17 +45,17 @@ describe("pasta do uso", () => {
       "/Users/x/wt/rel": "gitdir: ../../Code/repo/.git/worktrees/rel\n",
       "/Users/x/Code/repo/vendor/lib": "gitdir: ../../.git/modules/vendor/lib\n",
     });
-    assert.equal(raizDoGit("/Users/x/Code/repo", CASA, l), "/Users/x/Code/repo");
-    assert.equal(raizDoGit("/Users/x/Code/repo/src/a/b", CASA, l), "/Users/x/Code/repo");
-    assert.equal(raizDoGit("/Users/x/wt/feat/src", CASA, l), "/Users/x/Code/repo", "árvore de trabalho conta como o repositório dela");
-    assert.equal(raizDoGit("/Users/x/wt/rel", CASA, l), "/Users/x/Code/repo", "caminho relativo no gitdir");
-    assert.equal(raizDoGit("/Users/x/Code/repo/vendor/lib/x", CASA, l), "/Users/x/Code/repo/vendor/lib", "submódulo é ele mesmo");
+    assert.equal(raizDoGit("/Users/x/Code/repo", CASA, l), R("/Users/x/Code/repo"));
+    assert.equal(raizDoGit("/Users/x/Code/repo/src/a/b", CASA, l), R("/Users/x/Code/repo"));
+    assert.equal(raizDoGit("/Users/x/wt/feat/src", CASA, l), R("/Users/x/Code/repo"), "árvore de trabalho conta como o repositório dela");
+    assert.equal(raizDoGit("/Users/x/wt/rel", CASA, l), R("/Users/x/Code/repo"), "caminho relativo no gitdir");
+    assert.equal(raizDoGit("/Users/x/Code/repo/vendor/lib/x", CASA, l), R("/Users/x/Code/repo/vendor/lib"), "submódulo é ele mesmo");
   });
 
   test("sem git: null, e não sobe além da pasta pessoal (um .git nela não faz dela o projeto)", () => {
     const l = leitor({ "/Users/x": "", "/": "" });
     assert.equal(raizDoGit("/Users/x/OpenBot/Agents/agent-1", CASA, l), null);
-    assert.ok(!l.lidas.includes("/Users/x"), "a pessoal nem é lida");
+    assert.ok(!l.lidas.includes(R("/Users/x")), "a pessoal nem é lida");
     assert.equal(raizDoGit("/srv/app", CASA, leitor({})), null, "fora da pessoal para na raiz do disco");
   });
 
