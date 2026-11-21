@@ -28,6 +28,10 @@ const EXATOS: Record<string, string> = {
   "Desktop · diagnostico": "Desktop · diagnostics",
   "ordem de preferência": "preference order",
   "este aparelho": "this device",
+  Agência: "Agency",
+  Consultoria: "Consulting",
+  Suporte: "Support",
+  "Atendimento ao cliente": "Customer support",
 }
 
 const EMAILS: [string, string][] = [
@@ -44,6 +48,13 @@ const EMAILS: [string, string][] = [
   ["@exemplo.com", "@example.com"],
   ["n8n.exemplo.com", "n8n.example.com"],
   ["reveza-exemplo", "reveza-example"],
+  // as pastas de exemplo (0.17.0)
+  ["/loja-online", "/online-store"],
+  ["/api-pagamentos", "/payments-api"],
+  ["/estudos", "/studies"],
+  ["/app-mobile", "/mobile-app"],
+  ["/site-institucional", "/company-site"],
+  ["~/agentes/suporte", "~/agents/support"],
 ]
 
 export function textoDemo(s: string, idioma: Idioma): string {

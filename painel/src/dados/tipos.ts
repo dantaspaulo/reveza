@@ -245,6 +245,11 @@ export interface LinhaUso {
   contaId: string | null
   computadorId: string
   projeto: string
+  /**
+   * A pasta do uso (0.17.0): a raiz do git, relativa à pasta pessoal ("~/Code/projeto"). Vazia nas linhas de antes e
+   * de computadores com agente antigo: aí vale o nome curto (projeto).
+   */
+  pasta: string
   modelo: string
   respostas: number
   entrada: number
@@ -260,6 +265,8 @@ export interface SessaoUso {
   id: string
   computadorId: string
   projeto: string
+  /** A pasta da sessão (0.17.0), como em LinhaUso. */
+  pasta: string
   inicio: string
   fim: string | null
   respostas: number
@@ -428,4 +435,67 @@ export interface Instantaneo {
 export interface Intervalo {
   de: Date
   ate: Date
+}
+
+/**
+ * Empresa (0.17.0): um grupo de contas e de pastas, criado no painel. As contas marcadas são as da empresa; conta sem
+ * marca serve a todas. O transbordo diz o que a empresa pode usar quando as contas dela acabarem. Por enquanto só
+ * guarda a escolha e separa o uso: a troca ainda não olha a empresa.
+ */
+export interface Empresa {
+  id: string
+  nome: string
+  cor: number
+  transbordo: Transbordo
+  /** Com transbordo "escolhidas": as contas de fora que a empresa pode usar. */
+  transbordoContas: string[]
+  criadaEm: string
+}
+
+export type Transbordo = "nenhum" | "qualquer" | "escolhidas"
+
+/** Uma conta marcada para uma empresa. */
+export interface MarcaConta {
+  contaId: string
+  empresaId: string
+}
+
+/**
+ * Regra que liga pastas a uma empresa. "pasta": com ~/ ou / no começo, a pasta e tudo dentro dela; sem, qualquer pasta
+ * com esse nome no caminho. "titulo": a pasta de um agente do OpenBot cujo título ou nome tem esse texto.
+ */
+export interface RegraPasta {
+  id: string
+  tipo: "pasta" | "titulo"
+  padrao: string
+  empresaId: string
+}
+
+/** Agente do OpenBot visto num computador (0.17.0): a pasta de trabalho dele, o nome e o título. */
+export interface AgenteOpenBot {
+  computadorId: string
+  pasta: string
+  nome: string
+  titulo: string
+  vistoEm: string
+}
+
+export interface DadosEmpresas {
+  empresas: Empresa[]
+  marcas: MarcaConta[]
+  regras: RegraPasta[]
+  agentes: AgenteOpenBot[]
+}
+
+/**
+ * Uma troca de conta (evento "troca"), para contar as trocas por empresa. Cada troca feita aparece uma vez, no evento do
+ * computador que trocou; a decisão da nuvem que a pediu tem evento próprio (`decisao`), que não conta de novo.
+ */
+export interface TrocaUso {
+  em: string
+  computadorId: string | null
+  /** A conta para onde foi (id da nuvem). Agente de antes da 0.17.0 não manda: null, e o painel procura pelo texto. */
+  para: string | null
+  decisao: boolean
+  texto: string
 }

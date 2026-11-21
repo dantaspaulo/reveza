@@ -8,9 +8,11 @@ import type { PostgrestError, RealtimeChannel } from "@supabase/supabase-js"
 import { supabase } from "./cliente"
 import { rotuloDestino } from "./rotulos"
 import { codigoDeAcesso } from "../lib/ligacao"
+import { trocaDoEvento } from "../lib/empresas"
 import {
   ErroPainel,
   type CamposConta,
+  type CamposEmpresa,
   type EstadoTempoReal,
   type Fonte,
   type Recursos,
@@ -24,6 +26,8 @@ import type {
   ConfigTroca,
   Conta,
   Computador,
+  DadosEmpresas,
+  Empresa,
   Convite,
   EscopoChave,
   Eu,
@@ -45,8 +49,10 @@ import type {
   Papel,
   PontoHistorico,
   RegistroAuditoria,
+  RegraPasta,
   SessaoAberta,
   SessaoUso,
+  TrocaUso,
   EstadoNuvem,
   VezAtualizacao,
   WebhookSaida,
@@ -55,6 +61,13 @@ import type {
 type Linha = Record<string, unknown>
 
 const PAGINA = 1000
+
+/** As colunas do uso, da nuvem mais nova à mais antiga: sem a pasta antes da 0036, sem os agentes antes da 0030. */
+const COLUNAS_USO = [
+  "hora,conta_id,computador_id,projeto,pasta,modelo,respostas,entrada,saida,cache_escrita,cache_leitura,usd,agentes",
+  "hora,conta_id,computador_id,projeto,modelo,respostas,entrada,saida,cache_escrita,cache_leitura,usd,agentes",
+  "hora,conta_id,computador_id,projeto,modelo,respostas,entrada,saida,cache_escrita,cache_leitura,usd",
+]
 
 /** A configuração que o banco grava na instalação (0001_base.sql): troca automática começa DESLIGADA. */
 export const CONFIG_PADRAO: ConfigTroca = {
@@ -211,7 +224,10 @@ const MENSAGENS: [RegExp, string][] = [
   [/já existe um computador com este nome/i, "nome_repetido"],
   [/nome inválido: até 60 caracteres/i, "nome_invalido"],
   [/computador novo desconhecido|computador desconhecido/i, "computador_revogado"],
-  [/conta desconhecida/i, "nao_encontrado"],
+  [/conta desconhecida|empresa desconhecida|regra desconhecida/i, "nao_encontrado"],
+  [/já existe uma empresa com esse nome/i, "empresa_repetida"],
+  [/^nome inválido$/i, "nome_invalido"],
+  [/padrão inválido/i, "padrao_invalido"],
   [/duplicate key|already exists|unique/i, "ja_existe"],
   [/failed to fetch|network/i, "sem_conexao"],
   [
@@ -642,35 +658,31 @@ export class FonteSupabase implements Fonte {
   }
 
   async uso({ de, ate }: Intervalo): Promise<LinhaUso[]> {
-    let linhas: Linha[]
-    try {
-      linhas = await tudo((a, b) =>
-        supabase()
-          .from("uso_tokens")
-          .select("hora,conta_id,computador_id,projeto,modelo,respostas,entrada,saida,cache_escrita,cache_leitura,usd,agentes")
-          .gte("hora", de.toISOString())
-          .lt("hora", ate.toISOString())
-          .order("hora")
-          .range(a, b)
-      )
-    } catch (e) {
-      // nuvem de antes da 0030, sem a coluna dos agentes: o painel pode subir antes da migração
-      if (!/agentes/i.test(e instanceof Error ? e.message : String(e))) throw e
-      linhas = await tudo((a, b) =>
-        supabase()
-          .from("uso_tokens")
-          .select("hora,conta_id,computador_id,projeto,modelo,respostas,entrada,saida,cache_escrita,cache_leitura,usd")
-          .gte("hora", de.toISOString())
-          .lt("hora", ate.toISOString())
-          .order("hora")
-          .range(a, b)
-      )
+    let linhas: Linha[] = []
+    for (const [i, colunas] of COLUNAS_USO.entries()) {
+      try {
+        linhas = await tudo((a, b) =>
+          supabase()
+            .from("uso_tokens")
+            // texto que muda (não literal): o tipo do supabase-js não lê as colunas; as linhas são conferidas abaixo
+            .select(colunas as "*")
+            .gte("hora", de.toISOString())
+            .lt("hora", ate.toISOString())
+            .order("hora")
+            .range(a, b)
+        )
+        break
+      } catch (e) {
+        // nuvem de antes da 0036 (sem a pasta) ou da 0030 (sem os agentes): o painel pode subir antes da migração
+        if (i === COLUNAS_USO.length - 1 || !/pasta|agentes/i.test(e instanceof Error ? e.message : String(e))) throw e
+      }
     }
     return linhas.map((l) => ({
       hora: String(l.hora),
       contaId: texto(l.conta_id),
       computadorId: String(l.computador_id),
       projeto: String(l.projeto ?? ""),
+      pasta: String(l.pasta ?? ""),
       modelo: String(l.modelo),
       respostas: Number(l.respostas),
       entrada: Number(l.entrada),
@@ -697,6 +709,7 @@ export class FonteSupabase implements Fonte {
       id: String(s.id),
       computadorId: String(s.computador_id),
       projeto: String(s.projeto ?? ""),
+      pasta: String(s.pasta ?? ""),
       inicio: String(s.inicio),
       fim: texto(s.fim),
       respostas: Number(s.respostas),
@@ -739,6 +752,61 @@ export class FonteSupabase implements Fonte {
       acao: String(a.acao),
       alvo: texto(a.alvo),
     }))
+  }
+
+  async empresas(): Promise<DadosEmpresas> {
+    const sb = supabase()
+    const [e, m, r, a] = await Promise.all([
+      sb.from("empresas").select("id,nome,cor,transbordo,transbordo_contas,criado_em").order("nome"),
+      sb.from("conta_empresas").select("conta_id,empresa_id"),
+      sb.from("pastas_empresa").select("id,tipo,padrao,empresa_id").order("padrao"),
+      sb.from("agentes_openbot").select("computador_id,pasta,nome,titulo,visto_em").order("pasta").limit(5000),
+    ])
+    for (const x of [e, m, r, a]) {
+      if (!x.error) continue
+      // nuvem de antes da 0036: a tela pede para atualizar a nuvem
+      if (x.error.code === "42P01" || x.error.code === "PGRST205" || /does not exist|could not find the table/i.test(x.error.message))
+        throw new ErroPainel("indisponivel", x.error.message)
+      erro(x.error)
+    }
+    return {
+      empresas: (e.data ?? []).map((l): Empresa => ({
+        id: String(l.id),
+        nome: String(l.nome),
+        cor: Number(l.cor ?? 0),
+        transbordo: (["nenhum", "qualquer", "escolhidas"].includes(String(l.transbordo)) ? l.transbordo : "nenhum") as Empresa["transbordo"],
+        transbordoContas: ((l.transbordo_contas as string[] | null) ?? []).map(String),
+        criadaEm: String(l.criado_em),
+      })),
+      marcas: (m.data ?? []).map((l) => ({ contaId: String(l.conta_id), empresaId: String(l.empresa_id) })),
+      regras: (r.data ?? []).map((l): RegraPasta => ({
+        id: String(l.id),
+        tipo: l.tipo === "titulo" ? "titulo" : "pasta",
+        padrao: String(l.padrao),
+        empresaId: String(l.empresa_id),
+      })),
+      agentes: (a.data ?? []).map((l) => ({
+        computadorId: String(l.computador_id),
+        pasta: String(l.pasta),
+        nome: String(l.nome ?? ""),
+        titulo: String(l.titulo ?? ""),
+        vistoEm: String(l.visto_em),
+      })),
+    }
+  }
+
+  async trocas({ de, ate }: Intervalo): Promise<TrocaUso[]> {
+    const linhas = await tudo((a, b) =>
+      supabase()
+        .from("eventos")
+        .select("em,texto,dados")
+        .eq("tipo", "troca")
+        .gte("em", de.toISOString())
+        .lt("em", ate.toISOString())
+        .order("em")
+        .range(a, b)
+    )
+    return linhas.map((l) => trocaDoEvento(String(l.em), String(l.texto ?? ""), (l.dados as Record<string, unknown> | null) ?? {}))
   }
 
   async minhasSessoes(): Promise<SessaoAberta[]> {
@@ -795,6 +863,32 @@ export class FonteSupabase implements Fonte {
     const p_campos: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(campos)) p_campos[CAMPOS_CONTA[k as keyof CamposConta]] = v
     await rpc("painel_conta", { p_conta: id, p_campos })
+  }
+
+  async salvarEmpresa(id: string | null, campos: CamposEmpresa): Promise<string> {
+    const p_campos: Record<string, unknown> = {}
+    if (campos.nome !== undefined) p_campos.nome = campos.nome
+    if (campos.cor !== undefined) p_campos.cor = campos.cor
+    if (campos.transbordo !== undefined) p_campos.transbordo = campos.transbordo
+    if (campos.transbordoContas !== undefined) p_campos.transbordo_contas = campos.transbordoContas
+    const r = await rpc("painel_empresa", { p_id: id, p_campos })
+    return String(r.id)
+  }
+
+  async apagarEmpresa(id: string) {
+    await rpc("painel_empresa_apagar", { p_id: id })
+  }
+
+  async marcarContaEmpresas(contaId: string, empresaIds: string[]) {
+    await rpc("painel_conta_empresas", { p_conta: contaId, p_lista: empresaIds })
+  }
+
+  async salvarRegraPasta(tipo: RegraPasta["tipo"], padrao: string, empresaId: string) {
+    await rpc("painel_pasta_empresa", { p_tipo: tipo, p_padrao: padrao, p_empresa: empresaId })
+  }
+
+  async apagarRegraPasta(id: string) {
+    await rpc("painel_pasta_empresa_apagar", { p_id: id })
   }
 
   async ordenarContas(ids: string[]) {

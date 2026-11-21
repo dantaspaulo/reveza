@@ -8,6 +8,7 @@ import base from "./textos/base"
 import comoFunciona from "./textos/como-funciona"
 import computadores from "./textos/computadores"
 import contas from "./textos/contas"
+import empresas from "./textos/empresas"
 import integracoes from "./textos/integracoes"
 import minhaConta from "./textos/minha-conta"
 import saude from "./textos/saude"
@@ -23,6 +24,7 @@ export const pt = {
   ...contas.pt,
   ...computadores.pt,
   ...uso.pt,
+  ...empresas.pt,
   ...troca.pt,
   ...alertas.pt,
   ...integracoes.pt,
@@ -41,6 +43,7 @@ export const en: Dicionario = {
   ...contas.en,
   ...computadores.en,
   ...uso.en,
+  ...empresas.en,
   ...troca.en,
   ...alertas.en,
   ...integracoes.en,

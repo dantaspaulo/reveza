@@ -255,6 +255,7 @@ const TELAS: Record<IdSecao, () => Promise<{ default: React.ComponentType }>> = 
   contas: () => import("./contas"),
   computadores: () => import("./computadores"),
   uso: () => import("./uso"),
+  empresas: () => import("./empresas"),
   troca: () => import("./troca"),
   alertas: () => import("./alertas"),
   integracoes: () => import("./integracoes"),

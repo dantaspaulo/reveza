@@ -12,6 +12,7 @@ import { rotuloDestino } from "./rotulos"
 import {
   ErroPainel,
   type CamposConta,
+  type CamposEmpresa,
   type EstadoTempoReal,
   type Fonte,
   type Recursos,
@@ -26,6 +27,7 @@ import type {
   Conta,
   Computador,
   Convite,
+  DadosEmpresas,
   Diagnostico,
   EscopoChave,
   Eu,
@@ -41,8 +43,10 @@ import type {
   Papel,
   PontoHistorico,
   RegistroAuditoria,
+  RegraPasta,
   SessaoAberta,
   SessaoUso,
+  TrocaUso,
   WebhookSaida,
 } from "./tipos"
 
@@ -256,6 +260,8 @@ export interface DadosDemo {
   uso: LinhaUso[]
   sessoes: SessaoUso[]
   historico: PontoHistorico[]
+  /** Empresas de exemplo (0.17.0): duas, com contas marcadas, regras de pasta e um agente do OpenBot. */
+  empresas: DadosEmpresas
 }
 
 export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): DadosDemo {
@@ -293,6 +299,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
           contaId,
           computadorId: pc.id,
           projeto,
+          pasta: `~/code/${projeto}`,
           modelo,
           respostas,
           entrada,
@@ -333,6 +340,7 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
         id: `s-${++nSessao}`,
         computadorId: atual[0].computadorId,
         projeto: atual[0].projeto,
+        pasta: atual[0].pasta,
         inicio: iso(Math.min(ini, t0 - MIN)),
         fim,
         respostas: atual.reduce((s, l) => s + l.respostas, 0),
@@ -723,6 +731,31 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
     uso,
     sessoes,
     historico,
+    empresas: empresasDemo(iso(t0 - 20 * DIA), iso(t0 - 5 * MIN)),
+  }
+}
+
+/** As empresas de exemplo: uma agência e uma consultoria; o resto do uso fica sem dono, para a tela mostrar a lista. */
+function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
+  return {
+    empresas: [
+      { id: "empresa-agencia", nome: "Agência", cor: 0, transbordo: "escolhidas", transbordoContas: ["conta-reserva"], criadaEm },
+      { id: "empresa-consultoria", nome: "Consultoria", cor: 2, transbordo: "nenhum", transbordoContas: [], criadaEm },
+    ],
+    marcas: [
+      { contaId: "conta-trabalho", empresaId: "empresa-agencia" },
+      { contaId: "conta-laboratorio", empresaId: "empresa-agencia" },
+      { contaId: "conta-cliente", empresaId: "empresa-consultoria" },
+    ],
+    regras: [
+      { id: "regra-1", tipo: "pasta", padrao: "~/code/loja-online", empresaId: "empresa-agencia" },
+      { id: "regra-2", tipo: "pasta", padrao: "~/code/api-pagamentos", empresaId: "empresa-agencia" },
+      { id: "regra-3", tipo: "pasta", padrao: "app-mobile", empresaId: "empresa-consultoria" },
+      { id: "regra-4", tipo: "titulo", padrao: "Suporte", empresaId: "empresa-consultoria" },
+    ],
+    agentes: [
+      { computadorId: "pc-notebook", pasta: "~/agentes/suporte", nome: "Suporte", titulo: "Atendimento ao cliente", vistoEm },
+    ],
   }
 }
 
@@ -885,6 +918,29 @@ export class FonteDemo implements Fonte {
 
   async minhasSessoes(): Promise<SessaoAberta[]> {
     return structuredClone(this.d.sessoesAbertas)
+  }
+
+  async empresas(): Promise<DadosEmpresas> {
+    const e = this.d.empresas
+    // as contas que saíram levam as marcas junto (como o "on delete cascade" do banco)
+    const contas = new Set(this.d.contas.map((c) => c.id))
+    return this.l(structuredClone({ ...e, marcas: e.marcas.filter((m) => contas.has(m.contaId)) }))
+  }
+
+  async trocas({ de, ate }: Intervalo): Promise<TrocaUso[]> {
+    // as trocas da demonstração saem do próprio uso: a conta de um computador mudou de uma hora para a outra
+    const a = de.getTime()
+    const b = ate.getTime()
+    const ultima = new Map<string, string | null>()
+    const r: TrocaUso[] = []
+    for (const l of [...this.d.uso].sort((x, y) => x.hora.localeCompare(y.hora))) {
+      const antes = ultima.get(l.computadorId)
+      ultima.set(l.computadorId, l.contaId)
+      if (antes === undefined || antes === l.contaId || !l.contaId) continue
+      const t = new Date(l.hora).getTime()
+      if (t >= a && t < b) r.push({ em: l.hora, computadorId: l.computadorId, para: l.contaId, decisao: false, texto: "" })
+    }
+    return r
   }
 
   assinar(aoMudar: () => void, aoEstado?: (estado: EstadoTempoReal) => void): () => void {
@@ -1391,6 +1447,82 @@ export class FonteDemo implements Fonte {
       if (this.d.config.nuvem) this.d.config.nuvem.completa = false
       this.evento("info", "A atualização completa foi desligada (pelo painel): os tokens cifrados saíram da nuvem.", { atualizacao_completa: "desligada" })
       this.auditar("atualizacao_completa", "desligar")
+    })
+  }
+
+  salvarEmpresa(id: string | null, campos: CamposEmpresa): Promise<string> {
+    return this.escrever(() => {
+      const lista = this.d.empresas.empresas
+      const atual = id ? lista.find((e) => e.id === id) : null
+      if (id && !atual) throw new ErroPainel("nao_encontrado")
+      // como o banco (0037): nome de 1 a 60 caracteres, sem controle, sem repetir (sem ligar para caixa)
+      const nome = campos.nome !== undefined ? campos.nome.trim() : atual?.nome
+      if (!nome || nome.length > 60 || [...nome].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127))
+        throw new ErroPainel("nome_invalido")
+      if (lista.some((e) => e.id !== id && e.nome.trim().toLowerCase() === nome.toLowerCase())) throw new ErroPainel("empresa_repetida")
+      const contas = new Set(this.d.contas.map((c) => c.id))
+      const e = atual ?? {
+        id: `empresa-${Date.now().toString(36)}${lista.length}`,
+        nome,
+        cor: 0,
+        transbordo: "nenhum" as const,
+        transbordoContas: [],
+        criadaEm: this.agora().toISOString(),
+      }
+      e.nome = nome
+      if (campos.cor !== undefined) e.cor = Math.max(0, Math.min(11, Math.round(campos.cor)))
+      if (campos.transbordo !== undefined) e.transbordo = campos.transbordo
+      if (campos.transbordoContas !== undefined) e.transbordoContas = campos.transbordoContas.filter((c) => contas.has(c)).slice(0, 50)
+      if (!atual) lista.push(e)
+      lista.sort((a, b) => a.nome.localeCompare(b.nome))
+      this.auditar("empresa", e.id)
+      return e.id
+    })
+  }
+
+  apagarEmpresa(id: string) {
+    return this.escrever(() => {
+      const e = this.d.empresas
+      if (!e.empresas.some((x) => x.id === id)) throw new ErroPainel("nao_encontrado")
+      e.empresas = e.empresas.filter((x) => x.id !== id)
+      e.marcas = e.marcas.filter((m) => m.empresaId !== id)
+      e.regras = e.regras.filter((r) => r.empresaId !== id)
+      this.auditar("empresa_apagar", id)
+    })
+  }
+
+  marcarContaEmpresas(contaId: string, empresaIds: string[]) {
+    return this.escrever(() => {
+      this.conta(contaId)
+      const e = this.d.empresas
+      const lista = [...new Set(empresaIds)]
+      if (lista.some((id) => !e.empresas.some((x) => x.id === id))) throw new ErroPainel("nao_encontrado")
+      e.marcas = [...e.marcas.filter((m) => m.contaId !== contaId), ...lista.map((empresaId) => ({ contaId, empresaId }))]
+      this.auditar("conta_empresas", contaId)
+    })
+  }
+
+  salvarRegraPasta(tipo: RegraPasta["tipo"], padrao: string, empresaId: string) {
+    return this.escrever(() => {
+      const e = this.d.empresas
+      let limpo = padrao.trim()
+      if (tipo === "pasta") limpo = limpo.replace(/(.)\/+$/, "$1")
+      if (!limpo || limpo.length > 300 || [...limpo].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127))
+        throw new ErroPainel("padrao_invalido")
+      if (!e.empresas.some((x) => x.id === empresaId)) throw new ErroPainel("nao_encontrado")
+      const ja = e.regras.find((r) => r.tipo === tipo && r.padrao === limpo)
+      if (ja) ja.empresaId = empresaId
+      else e.regras.push({ id: `regra-${Date.now().toString(36)}${e.regras.length}`, tipo, padrao: limpo, empresaId })
+      this.auditar("pasta_empresa", limpo)
+    })
+  }
+
+  apagarRegraPasta(id: string) {
+    return this.escrever(() => {
+      const e = this.d.empresas
+      if (!e.regras.some((r) => r.id === id)) throw new ErroPainel("nao_encontrado")
+      e.regras = e.regras.filter((r) => r.id !== id)
+      this.auditar("pasta_empresa_apagar", id)
     })
   }
 

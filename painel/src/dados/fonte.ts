@@ -8,6 +8,8 @@ import type {
   Comando,
   Conta,
   ConfigTroca,
+  DadosEmpresas,
+  Empresa,
   EscopoChave,
   EventoAlerta,
   Idioma,
@@ -20,9 +22,14 @@ import type {
   PontoHistorico,
   RegistroAuditoria,
   SessaoAberta,
+  RegraPasta,
   SessaoUso,
+  TrocaUso,
   WebhookSaida,
 } from "./tipos"
+
+/** O que o painel muda numa empresa (0.17.0). */
+export type CamposEmpresa = Partial<Pick<Empresa, "nome" | "cor" | "transbordo" | "transbordoContas">>
 
 export type CamposConta = Partial<Pick<Conta, "cor" | "prioridade" | "reserva" | "pausada" | "agenda" | "tetoSemana" | "modelo">>
 
@@ -60,6 +67,13 @@ export interface Fonte {
   historico(desde: Date): Promise<PontoHistorico[]>
   auditoria(limite: number): Promise<RegistroAuditoria[]>
   minhasSessoes(): Promise<SessaoAberta[]>
+  /**
+   * As empresas, as marcas das contas, as regras das pastas e os agentes do OpenBot vistos (0.17.0). Nuvem de antes da
+   * 0036: ErroPainel("indisponivel").
+   */
+  empresas(): Promise<DadosEmpresas>
+  /** As trocas de conta do período (eventos "troca"), para contar por empresa. */
+  trocas(intervalo: Intervalo): Promise<TrocaUso[]>
   /**
    * Avisa quando algo mudou na nuvem (ou no relógio da demonstração). Devolve a função que cancela. `aoEstado` conta
    * como está o tempo real: conectando, ligado, ou caiu (o navegador congelou a aba, a rede caiu, a nuvem recusou).
@@ -109,6 +123,16 @@ export interface Fonte {
   atualizarNuvem(): Promise<ResultadoNuvem>
   /** Desliga a atualização completa (administrador): os tokens cifrados saem da nuvem. Ligar é só num computador. */
   desligarAtualizacaoCompleta(): Promise<void>
+
+  /** Cria (id null) ou muda uma empresa; devolve o id. Nome repetido: ErroPainel("empresa_repetida"). */
+  salvarEmpresa(id: string | null, campos: CamposEmpresa): Promise<string>
+  /** Apaga a empresa, as marcas das contas nela e as regras das pastas dela. O uso fica, sem dono. */
+  apagarEmpresa(id: string): Promise<void>
+  /** As empresas desta conta (a lista troca a de antes); vazia: a conta serve a todas. */
+  marcarContaEmpresas(contaId: string, empresaIds: string[]): Promise<void>
+  /** Liga uma pasta (ou um título de agente do OpenBot) a uma empresa; a mesma regra com outra empresa troca a empresa. */
+  salvarRegraPasta(tipo: RegraPasta["tipo"], padrao: string, empresaId: string): Promise<void>
+  apagarRegraPasta(id: string): Promise<void>
 
   criarAlerta(alerta: NovoAlerta): Promise<void>
   mudarAlerta(alerta: Alerta, campos: { ativo?: boolean; eventos?: EventoAlerta[] }): Promise<void>

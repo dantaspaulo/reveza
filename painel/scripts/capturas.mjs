@@ -30,6 +30,7 @@ const PAGINAS = [
   ["contas", "/contas"],
   ["computadores", "/computadores"],
   ["uso", "/uso"],
+  ["empresas", "/empresas"],
   ["troca", "/troca"],
   ["alertas", "/alertas"],
   ["integracoes", "/integracoes"],
@@ -49,6 +50,28 @@ const PAGINAS = [
 const L = (pt, en) => (process.env.IDIOMA === "en" ? en : pt)
 
 const INTERACOES = [
+  [
+    "i-empresas-contas",
+    "/empresas",
+    async (p) => {
+      await p.getByRole("tab", { name: L("Contas", "Accounts") }).click()
+    },
+  ],
+  [
+    "i-empresas-pastas",
+    "/empresas",
+    async (p) => {
+      await p.getByRole("tab", { name: L("Pastas", "Folders") }).click()
+    },
+  ],
+  [
+    "i-empresas-editar",
+    "/empresas",
+    async (p) => {
+      await p.getByRole("tab", { name: L("Empresas", "Companies") }).click()
+      await p.getByRole("button", { name: L("Editar", "Edit") }).first().click()
+    },
+  ],
   [
     "i-contas-editar",
     "/contas",

@@ -1,8 +1,9 @@
-// As 11 seções do painel (docs/ARQUITETURA.md, seção 9), na ordem do menu.
+// As 12 seções do painel (docs/ARQUITETURA.md, seção 9), na ordem do menu.
 
 import {
   ActivityIcon,
   BellIcon,
+  Building2Icon,
   ChartColumnIcon,
   LaptopIcon,
   LayoutDashboardIcon,
@@ -20,6 +21,7 @@ export type IdSecao =
   | "contas"
   | "computadores"
   | "uso"
+  | "empresas"
   | "troca"
   | "alertas"
   | "integracoes"
@@ -43,6 +45,7 @@ export const SECOES: Secao[] = [
   { id: "computadores", caminho: "/computadores", icone: LaptopIcon, grupo: "operacao" },
   { id: "troca", caminho: "/troca", icone: ShuffleIcon, grupo: "operacao" },
   { id: "uso", caminho: "/uso", icone: ChartColumnIcon, grupo: "consumo" },
+  { id: "empresas", caminho: "/empresas", icone: Building2Icon, grupo: "consumo" },
   { id: "alertas", caminho: "/alertas", icone: BellIcon, grupo: "configuracao" },
   { id: "integracoes", caminho: "/integracoes", icone: PlugIcon, grupo: "configuracao" },
   { id: "time", caminho: "/time", icone: UsersIcon, grupo: "configuracao" },
