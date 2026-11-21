@@ -7,6 +7,41 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.17.0 · 21/11/2026
+
+O uso separado por empresa ou projeto. Quem usa as mesmas contas para trabalhos diferentes (clientes, empresas,
+projetos pessoais) agora vê, no painel, quanto cada um gastou, em quais contas e em quais pastas. Nesta versão nada
+muda na troca: as marcas só organizam os números, e a escolha de conta por empresa vem numa próxima versão, já
+aproveitando o que for marcado agora. Precisa da nuvem e dos computadores na 0.17.0 (o instalador atualiza a nuvem; cada
+computador se atualiza sozinho, ou pelo painel em **Computadores → Atualizar**).
+
+### Tela nova: Empresas
+
+- **Números por empresa** no período (7, 30 ou 90 dias), por dia ou por semana: custo, tokens (entrada, saída e
+  cache), trocas de conta, sessões, agentes, as contas que trabalharam e as pastas, com o gráfico empilhado por empresa.
+  O uso que nenhuma regra pegou fica em "Sem dono".
+- **Empresas de cada conta:** marque quais empresas cada conta atende (conta sem marca atende todas) e veja onde cada
+  conta trabalhou no período.
+- **De quem é cada pasta:** uma regra por caminho (a pasta e tudo dentro dela), por nome (qualquer pasta com esse nome)
+  ou pelo título do agente do OpenBot. A lista "Pastas sem dono" mostra o que falta classificar, da mais cara para a
+  mais barata, e cria a regra com um clique. A classificação é feita na leitura: mudar uma regra reorganiza também o
+  passado, e o uso nunca é apagado. A pasta pessoal ou a raiz do disco inteira não viram regra (pegariam o uso de
+  todas as empresas), e o caminho do Windows com a letra do disco (`D:/...`) vale como os outros.
+- **Transbordo:** para cada empresa, o que fazer quando as contas dela acabarem (esperar, usar qualquer outra ou só as
+  escolhidas). Fica gravado para a escolha de conta por empresa.
+- **Sugestão pelo domínio do e-mail:** sem nenhuma empresa criada, o painel propõe uma por domínio das contas, com as
+  contas já marcadas; nada é criado sem o clique.
+
+### O agente conta a pasta de cada uso
+
+- **O que acontecia:** o uso era guardado só pelo nome curto da pasta, então dois projetos com o mesmo nome em lugares
+  diferentes se misturavam.
+- **Agora:** cada linha de uso e cada sessão levam a pasta inteira (a raiz do repositório git, relativa à pasta
+  pessoal; uma árvore de trabalho conta como o repositório dela). O computador também relata os agentes do OpenBot que
+  encontra (pasta, nome e título, lidos do banco dele só para leitura), para a regra por título.
+- **Trocas sem contar duas vezes:** o evento de troca do agente passa a levar o id da conta na nuvem; o painel conta a
+  troca uma vez, e os eventos antigos são reconhecidos pelo texto.
+
 ## 0.16.4 · 16/11/2026
 
 A troca automática voltou a funcionar no computador que não conseguia ler a própria conta. A nuvem decide a troca

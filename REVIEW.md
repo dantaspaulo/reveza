@@ -1,32 +1,35 @@
-<!-- base gerada pelo BigBoss em 18/11/2026 a partir do próprio repositório. O dono troca a frase marcada na seção "Como é a falha aqui" e apaga o que não servir. -->
-
 # REVIEW.md: o que olhar neste repositório
 
-Base gerada pelo BigBoss em 18/11/2026. Dono: Reveza. Método: ~/OpenBot/Shared/REVISAO-DE-CODIGO.md.
-
 ## O que é este código
-`reveza`, Node. 61 commits nos últimos 30 dias, 2 autor(es) (git log, 18/11/2026).
+O Reveza: o agente de cada computador (Node), a nuvem (Postgres no Supabase, com funções e RLS), o painel (React) e o
+instalador. Repositório público.
 
 ## Como é a falha aqui
-@@COMO FALHA@@: o agente dono escreve aqui uma frase com o jeito típico de este código estar errado
-(exemplos: "a resposta sai confiante e errada", "manda para o cliente errado",
-"funciona no teste e quebra com dado real"). Até lá, o revisor usa só as seções abaixo.
+O erro típico passa nos testes e só aparece com várias contas e vários computadores ao mesmo tempo: uma troca que não
+firma, um login renovado num computador que derruba o mesmo login em outro, um número velho tratado como novo. E, por
+ser público, um dado de quem usa (e-mail, nome de empresa ou de cliente, caminho pessoal) que escapa para o código, um
+teste, o CHANGELOG ou a release.
 
-## Sempre olhar (caminhos achados neste repositório)
-- **login e permissao** (12 arquivos): `painel/src/auth (4)`, `agente/src (2)`, `agente/test (2)`, `painel/src/components (2)`
-- **entrada de fora** (2 arquivos): `agente/src (1)`, `agente/test (1)`
-- **CI e instalador** (3 arquivos): `.github/workflows (3)`
+## Sempre olhar
+- **login e cofre**: `agente/src` (troca, cofre, posse) e `painel/src/auth`. A mesma conta nunca fica ativa em dois
+  lugares; o token de renovação gira a cada uso.
+- **nuvem**: `nuvem/migracoes`. Migração só acrescenta (nada de drop, truncate ou update que zere dado); toda tabela
+  nova com RLS e na lista do teste de segurança; toda função de escrita confere o papel, valida a entrada e grava a
+  auditoria; permissões novas no `0099_permissoes.sql`.
+- **entrada de fora**: o que o agente lê do disco, do assistente e da nuvem (tamanho, tipo, caracteres de controle).
+- **CI e instalador**: `.github/workflows` e `instalador/`.
 
 ## Sempre precisa de gente (risco alto)
-- login e permissao, CI e instalador
-  (a tabela de risco está no REGRAS-DO-PAULO.md, seção Revisão de código).
+- login e permissão, migração da nuvem, CI e instalador.
 
 ## Ignorar
-- `node_modules`
-- Arquivo gerado, dependência de terceiro, dado de teste e tradução automática.
+- `node_modules`, arquivo gerado, dependência de terceiro e dado de teste.
 
 ## Regras deste repositório
-- (o dono acrescenta aqui o comentário de revisão que já se repetiu duas vezes)
+- Nenhum e-mail, nome de empresa ou caminho pessoal real em código, teste, CHANGELOG ou aviso: nos testes, domínios
+  `.exemplo`; as escolhas de quem usa moram na nuvem dele e são feitas no painel.
+- Texto de tela nos dois idiomas (português e inglês), com as mesmas variáveis, sem nome de marca do assistente.
+- Toda correção ou melhoria sai com versão nova, release e CHANGELOG (`scripts/versao.mjs`).
 
 ## Como responder
 - No máximo 3 achados DETALHE por revisão. Acima disso, escolha os 3 que mais importam.
@@ -34,4 +37,3 @@ Base gerada pelo BigBoss em 18/11/2026. Dono: Reveza. Método: ~/OpenBot/Shared/
 - Estilo, formatação, limpeza e nome por gosto não viram achado.
 - O resumo começa com a contagem: "3 achados: 1 importante, 2 detalhes".
 - Nada a corrigir também se diz: "Nenhum achado. Rodei <as verificações>".
-

@@ -154,8 +154,12 @@ ninguém espera. O começo e o fim da espera viram evento.
 | `posse(conta_id, computador_id, expira_em)` | membro | só por função (`pegar_posse`, `soltar_posse`) |
 | `atribuicao(computador_id, conta_id, motivo, versao)` | membro | só a função `decidir` |
 | `uso_janelas(conta_id, tipo, pct, reset_em, lido_em, fonte)` | membro | computador |
-| `uso_tokens(dia, hora, conta_id, computador_id, projeto, modelo, entrada, saida, cache_escrita, cache_leitura, usd, respostas, agentes)` | membro | computador |
-| `sessoes(id, computador_id, projeto, inicio, fim, agentes, usd, contas)` | membro | computador |
+| `uso_tokens(dia, hora, conta_id, computador_id, projeto, pasta, modelo, entrada, saida, cache_escrita, cache_leitura, usd, respostas, agentes)` | membro | computador |
+| `sessoes(id, computador_id, projeto, pasta, inicio, fim, agentes, usd, contas)` | membro | computador |
+| `empresas(id, nome, cor, transbordo, transbordo_contas)` (0.17.0) | membro | admin, pela função |
+| `conta_empresas(conta_id, empresa_id)` as empresas que cada conta atende; sem linha, a conta atende todas | membro | admin, pela função |
+| `pastas_empresa(id, tipo, padrao, empresa_id)` tipo `pasta` (caminho ou nome) ou `titulo` (agente do OpenBot) | membro | admin, pela função |
+| `agentes_openbot(computador_id, pasta, nome, titulo, visto_em)` | membro | computador, pela função |
 | `eventos(em, tipo, texto, dados)` | membro | funções e computador |
 | `comandos(id, criado_por, computador_id, acao, corpo, estado, resposta)` | membro | admin cria; computador reserva e responde |
 | `ligacao_pedidos(computador_id, aprovador, idioma, publica, pedido_em, expira_em, envelope, entregue_por, entregue_em, lido_em, recusado)` | membro, sem `publica` e `envelope` | o computador novo registra a chave pública (uma vez); computador ativo entrega ou recusa; admin escolhe o aprovador |
@@ -514,6 +518,18 @@ Menu lateral, nada empilhado numa tela só:
    hora em que cada um começou (coluna `agentes` de `uso_tokens`, 0030): antes, o painel somava os agentes das sessões
    que começaram no período, e a sessão de editor fica aberta por semanas (em 30 dias, 1.089 agentes no lugar de
    1.615 no Mac do Paulo). As sessões são as com uso no período, também as que começaram antes.
+4b. **Empresas** (0.17.0, migrações 0036 e 0037): o uso separado por empresa ou projeto. Cada conta pode ser marcada
+   para uma ou mais empresas (sem marca, atende todas); cada pasta vai para uma empresa por regra (caminho: a pasta e
+   tudo dentro; nome: qualquer pasta com esse nome no caminho; título: o agente do OpenBot cujo título ou nome tem o
+   texto), e a regra mais específica ganha. A classificação é feita no painel, na leitura (`lib/empresas.ts`): o uso
+   não guarda a empresa, então mudar uma regra reorganiza o passado e nada é apagado. A tela mostra custo, tokens,
+   trocas, sessões, agentes, contas e pastas por empresa, por dia ou semana, a lista das pastas sem dono e o cadastro
+   (com o transbordo: esperar, qualquer conta ou só as escolhidas). As trocas são contadas uma vez: o evento do agente
+   leva `para_nuvem` (0.17.0), a decisão da nuvem (com `para` em uuid) fica de fora, e o evento antigo é lido pelo
+   último e-mail de conta no texto. A pasta de cada uso é a raiz do repositório git (árvore de trabalho conta como o
+   principal; submódulo é ele mesmo), relativa à pasta pessoal, até 300 caracteres. Na 0.17.0 nada disso muda a troca.
+   O próximo passo (trilhas): uma entrada de login por empresa (`CLAUDE_SECURESTORAGE_CONFIG_DIR`), escolhida por um
+   lançador do assistente pela pasta do processo, com a conta de cada trilha escolhida entre as contas da empresa.
 5. **Plano da semana** (até a 0.12.0): saiu do menu na 0.13.0. O ritmo da semana virou o selo **Gastando rápido** na tela
    Contas, e o endereço `/plano` abre Contas.
 6. **Troca automática**: liga e desliga, modo (só no limite, limiar, rodízio), limiares, intervalo, ordem, agenda.
