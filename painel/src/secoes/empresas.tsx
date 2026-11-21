@@ -33,6 +33,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -148,8 +149,9 @@ export default function Empresas() {
       <AvisoPermissao />
       <Alert>
         <InfoIcon />
-        <AlertTitle>{t("empresas.aviso.titulo")}</AlertTitle>
-        <AlertDescription>{t("empresas.aviso.texto")}</AlertDescription>
+        {/* com a nuvem da 0.18.0 a separação existe; antes dela, as marcas só separam os números */}
+        <AlertTitle>{t(dados?.trilhasNaNuvem ? "empresas.avisoTrilhas.titulo" : "empresas.aviso.titulo")}</AlertTitle>
+        <AlertDescription>{t(dados?.trilhasNaNuvem ? "empresas.avisoTrilhas.texto" : "empresas.aviso.texto")}</AlertDescription>
       </Alert>
 
       {dados && dados.empresas.length === 0 ? (
@@ -1207,6 +1209,7 @@ function AbaCadastro({
             {dados.empresas.map((e) => {
               const contas = dados.marcas.filter((m) => m.empresaId === e.id).length
               const regras = dados.regras.filter((r) => r.empresaId === e.id).length
+              const emUso = dados.trilhas.filter((x) => x.empresaId === e.id)
               return (
                 <li key={e.id} className="flex flex-col gap-2 rounded-lg border p-3">
                   <div className="flex items-center gap-2">
@@ -1237,6 +1240,23 @@ function AbaCadastro({
                     {tn("empresas.cadastro.contasDela", contas)} · {tn("empresas.cadastro.regrasDela", regras)}
                   </p>
                   <p className="text-xs">{resumoTransbordo(e, estado.contas, tn, t)}</p>
+                  {e.separar ? (
+                    <div className="flex flex-col gap-1">
+                      <Badge variant="secondary" className="w-fit">
+                        {t("empresas.cadastro.separada")}
+                      </Badge>
+                      {emUso.map((x) => {
+                        const conta = estado.contas.find((c) => c.id === x.contaId)
+                        const pc = estado.computadores.find((c) => c.id === x.computadorId)
+                        return (
+                          <div key={x.computadorId} className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                            <span className="shrink-0">{pc?.nome ?? x.computadorId.slice(0, 8)}:</span>
+                            {conta ? <NomeConta conta={conta} /> : <span>{x.contaId.slice(0, 8)}</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : null}
                 </li>
               )
             })}
@@ -1293,6 +1313,8 @@ function DialogoEmpresa({
   const [cor, setCor] = React.useState(String(empresa?.cor ?? dados.empresas.length % N_CORES))
   const [transbordo, setTransbordo] = React.useState<Transbordo>(empresa?.transbordo ?? "nenhum")
   const [escolhidas, setEscolhidas] = React.useState<string[]>(empresa?.transbordoContas ?? [])
+  const [separar, setSeparar] = React.useState(empresa?.separar ?? false)
+  const contasDela = dados.marcas.filter((m) => m.empresaId === empresa?.id).length
   const [enviando, setEnviando] = React.useState(false)
   // para o transbordo, as contas de fora: as que não estão marcadas para esta empresa e não estão saindo
   const deFora = estado.contas.filter(
@@ -1317,6 +1339,8 @@ function DialogoEmpresa({
               cor: Number(cor),
               transbordo,
               transbordoContas: transbordo === "escolhidas" ? escolhidas : [],
+              // a nuvem de antes da 0.18.0 recusa o campo: só vai quando ela já sabe separar
+              ...(dados.trilhasNaNuvem ? { separar } : {}),
             }
             const [ok] = await acao(
               () => fonte.salvarEmpresa(empresa?.id ?? null, campos),
@@ -1351,6 +1375,20 @@ function DialogoEmpresa({
                 ))}
               </ToggleGroup>
             </Field>
+            {dados.trilhasNaNuvem ? (
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldLabel htmlFor="empresa-separar">{t("empresas.cadastro.separar")}</FieldLabel>
+                  <FieldDescription>{t("empresas.cadastro.separarDica")}</FieldDescription>
+                  {separar && contasDela === 0 ? (
+                    <FieldDescription className="text-foreground">
+                      {t("empresas.cadastro.separarSemConta")}
+                    </FieldDescription>
+                  ) : null}
+                </FieldContent>
+                <Switch id="empresa-separar" checked={separar} onCheckedChange={setSeparar} />
+              </Field>
+            ) : null}
             <Field>
               <FieldLabel>{t("empresas.cadastro.transbordo")}</FieldLabel>
               <RadioGroup value={transbordo} onValueChange={(v) => setTransbordo(v as Transbordo)}>

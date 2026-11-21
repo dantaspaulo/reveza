@@ -739,8 +739,8 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
 function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
   return {
     empresas: [
-      { id: "empresa-agencia", nome: "Agência", cor: 0, transbordo: "escolhidas", transbordoContas: ["conta-reserva"], criadaEm },
-      { id: "empresa-consultoria", nome: "Consultoria", cor: 2, transbordo: "nenhum", transbordoContas: [], criadaEm },
+      { id: "empresa-agencia", nome: "Agência", cor: 0, transbordo: "escolhidas", transbordoContas: ["conta-reserva"], separar: false, criadaEm },
+      { id: "empresa-consultoria", nome: "Consultoria", cor: 2, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm },
     ],
     marcas: [
       { contaId: "conta-trabalho", empresaId: "empresa-agencia" },
@@ -756,6 +756,9 @@ function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
     agentes: [
       { computadorId: "pc-notebook", pasta: "~/agentes/suporte", nome: "Suporte", titulo: "Atendimento ao cliente", vistoEm },
     ],
+    // tudo desligado de fábrica: nenhuma empresa separada, nenhuma conta em trilha
+    trilhasNaNuvem: true,
+    trilhas: [],
   }
 }
 
@@ -1467,12 +1470,18 @@ export class FonteDemo implements Fonte {
         cor: 0,
         transbordo: "nenhum" as const,
         transbordoContas: [],
+        separar: false,
         criadaEm: this.agora().toISOString(),
       }
       e.nome = nome
       if (campos.cor !== undefined) e.cor = Math.max(0, Math.min(11, Math.round(campos.cor)))
       if (campos.transbordo !== undefined) e.transbordo = campos.transbordo
       if (campos.transbordoContas !== undefined) e.transbordoContas = campos.transbordoContas.filter((c) => contas.has(c)).slice(0, 50)
+      if (campos.separar !== undefined) {
+        e.separar = campos.separar === true
+        // na nuvem a conta da trilha sai quando as sessões da empresa terminam; aqui sai na hora
+        if (!e.separar) this.d.empresas.trilhas = this.d.empresas.trilhas.filter((t) => t.empresaId !== e.id)
+      }
       if (!atual) lista.push(e)
       lista.sort((a, b) => a.nome.localeCompare(b.nome))
       this.auditar("empresa", e.id)
@@ -1487,6 +1496,7 @@ export class FonteDemo implements Fonte {
       e.empresas = e.empresas.filter((x) => x.id !== id)
       e.marcas = e.marcas.filter((m) => m.empresaId !== id)
       e.regras = e.regras.filter((r) => r.empresaId !== id)
+      e.trilhas = e.trilhas.filter((t) => t.empresaId !== id)
       this.auditar("empresa_apagar", id)
     })
   }

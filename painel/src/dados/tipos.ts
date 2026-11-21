@@ -439,8 +439,8 @@ export interface Intervalo {
 
 /**
  * Empresa (0.17.0): um grupo de contas e de pastas, criado no painel. As contas marcadas são as da empresa; conta sem
- * marca serve a todas. O transbordo diz o que a empresa pode usar quando as contas dela acabarem. Por enquanto só
- * guarda a escolha e separa o uso: a troca ainda não olha a empresa.
+ * marca serve a todas. O transbordo diz o que a empresa pode usar quando as contas dela acabarem. Desde a 0.18.0, com
+ * `separar` ligado, as sessões abertas nas pastas dela usam só essas contas (a "trilha" dela em cada computador).
  */
 export interface Empresa {
   id: string
@@ -449,7 +449,19 @@ export interface Empresa {
   transbordo: Transbordo
   /** Com transbordo "escolhidas": as contas de fora que a empresa pode usar. */
   transbordoContas: string[]
+  /** 0.18.0: as sessões nas pastas desta empresa usam só as contas dela (desligado de fábrica). */
+  separar: boolean
   criadaEm: string
+}
+
+/** A conta que a nuvem deu a uma empresa separada num computador (0.18.0, tabela atribuicao_trilhas). */
+export interface TrilhaEmUso {
+  computadorId: string
+  empresaId: string
+  contaId: string
+  motivo: string
+  decididoEm: string
+  pedidaEm: string
 }
 
 export type Transbordo = "nenhum" | "qualquer" | "escolhidas"
@@ -485,6 +497,10 @@ export interface DadosEmpresas {
   marcas: MarcaConta[]
   regras: RegraPasta[]
   agentes: AgenteOpenBot[]
+  /** 0.18.0: a nuvem já sabe separar as contas por empresa (a 0038 está lá). Sem ela, a chave some da tela. */
+  trilhasNaNuvem: boolean
+  /** 0.18.0: as contas em uso pelas empresas separadas; vazio com a nuvem antes da 0.18.0. */
+  trilhas: TrilhaEmUso[]
 }
 
 /**

@@ -21,12 +21,12 @@ import {
 const U1 = "11111111-1111-4111-8111-111111111111"
 const U2 = "22222222-2222-4222-8222-222222222222"
 
-const empresa = (id: string): Empresa => ({ id, nome: id, cor: 0, transbordo: "nenhum", transbordoContas: [], criadaEm: "2026-11-01T00:00:00Z" })
+const empresa = (id: string): Empresa => ({ id, nome: id, cor: 0, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm: "2026-11-01T00:00:00Z" })
 const regra = (tipo: RegraPasta["tipo"], padrao: string, empresaId: string): RegraPasta => ({ id: `${tipo}:${padrao}`, tipo, padrao, empresaId })
 const agente = (pasta: string, titulo: string, nome = "agente"): AgenteOpenBot => ({ computadorId: "pc", pasta, nome, titulo, vistoEm: "" })
 
 function dados(regras: RegraPasta[], agentes: AgenteOpenBot[] = []): DadosEmpresas {
-  return { empresas: ["a", "b", "c"].map(empresa), marcas: [], regras, agentes }
+  return { empresas: ["a", "b", "c"].map(empresa), marcas: [], regras, agentes, trilhasNaNuvem: true, trilhas: [] }
 }
 
 function linha(o: Partial<LinhaUso>): LinhaUso {

@@ -756,12 +756,16 @@ export class FonteSupabase implements Fonte {
 
   async empresas(): Promise<DadosEmpresas> {
     const sb = supabase()
-    const [e, m, r, a] = await Promise.all([
-      sb.from("empresas").select("id,nome,cor,transbordo,transbordo_contas,criado_em").order("nome"),
+    const [e, m, r, a, t] = await Promise.all([
+      // "*": a coluna separar só existe desde a 0038 (0.18.0); com a nuvem de antes ela falta e vale desligada
+      sb.from("empresas").select("*").order("nome"),
       sb.from("conta_empresas").select("conta_id,empresa_id"),
       sb.from("pastas_empresa").select("id,tipo,padrao,empresa_id").order("padrao"),
       sb.from("agentes_openbot").select("computador_id,pasta,nome,titulo,visto_em").order("pasta").limit(5000),
+      sb.from("atribuicao_trilhas").select("computador_id,empresa_id,conta_id,motivo,decidido_em,pedida_em"),
     ])
+    // nuvem de antes da 0038: sem as trilhas, o resto da tela segue igual
+    const trilhasNaNuvem = !t.error
     for (const x of [e, m, r, a]) {
       if (!x.error) continue
       // nuvem de antes da 0036: a tela pede para atualizar a nuvem
@@ -776,6 +780,7 @@ export class FonteSupabase implements Fonte {
         cor: Number(l.cor ?? 0),
         transbordo: (["nenhum", "qualquer", "escolhidas"].includes(String(l.transbordo)) ? l.transbordo : "nenhum") as Empresa["transbordo"],
         transbordoContas: ((l.transbordo_contas as string[] | null) ?? []).map(String),
+        separar: l.separar === true,
         criadaEm: String(l.criado_em),
       })),
       marcas: (m.data ?? []).map((l) => ({ contaId: String(l.conta_id), empresaId: String(l.empresa_id) })),
@@ -791,6 +796,15 @@ export class FonteSupabase implements Fonte {
         nome: String(l.nome ?? ""),
         titulo: String(l.titulo ?? ""),
         vistoEm: String(l.visto_em),
+      })),
+      trilhasNaNuvem,
+      trilhas: (t.data ?? []).map((l) => ({
+        computadorId: String(l.computador_id),
+        empresaId: String(l.empresa_id),
+        contaId: String(l.conta_id),
+        motivo: String(l.motivo ?? ""),
+        decididoEm: String(l.decidido_em),
+        pedidaEm: String(l.pedida_em),
       })),
     }
   }
@@ -871,6 +885,7 @@ export class FonteSupabase implements Fonte {
     if (campos.cor !== undefined) p_campos.cor = campos.cor
     if (campos.transbordo !== undefined) p_campos.transbordo = campos.transbordo
     if (campos.transbordoContas !== undefined) p_campos.transbordo_contas = campos.transbordoContas
+    if (campos.separar !== undefined) p_campos.separar = campos.separar
     const r = await rpc("painel_empresa", { p_id: id, p_campos })
     return String(r.id)
   }

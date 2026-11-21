@@ -10,6 +10,11 @@ export default secao({
         texto:
           "Nesta versão nada muda na troca: toda sessão continua usando a conta da vez. Usar a conta da própria empresa em cada pasta vem numa próxima versão, e as marcas feitas aqui já valerão para ela.",
       },
+      avisoTrilhas: {
+        titulo: "Cada empresa pode usar só as contas dela",
+        texto:
+          "Ligue \"Separar as contas\" na empresa: as sessões abertas nas pastas dela passam a usar só as contas marcadas para ela, e o transbordo diz o que fazer quando elas acabarem. Funciona no macOS e no Linux, nas sessões abertas pelo lançador do Reveza (na pasta ~/.reveza/lancador). Empresa sem separar e pasta sem dono seguem na conta da vez.",
+      },
       indisponivel: {
         titulo: "A nuvem desta instalação ainda não tem as empresas",
         texto: "Atualize a nuvem do Reveza (o instalador faz isso) e volte aqui.",
@@ -134,6 +139,12 @@ export default secao({
         transbordoEscolhidas: "Usar só as contas escolhidas",
         transbordoEscolhidasDica: "Marque abaixo as contas de fora que ela pode usar.",
         transbordoContas: "Contas para o transbordo",
+        separar: "Separar as contas desta empresa",
+        separarDica:
+          "As sessões nas pastas dela usam só as contas dela (e o transbordo). Vale para as sessões abertas pelo lançador do Reveza; as que já estão abertas seguem como estão.",
+        separarSemConta:
+          "Nenhuma conta marcada para ela: até marcar uma, as sessões dela seguem na conta da vez, com um aviso.",
+        separada: "Contas separadas",
         transbordoResumo: {
           nenhum: "Espera uma conta dela",
           qualquer: "Transborda para qualquer conta",
@@ -162,6 +173,11 @@ export default secao({
         titulo: "For now, the marks only split the numbers",
         texto:
           "Nothing changes in switching in this version: every session keeps using the current account. Using each company's own account per folder comes in a later version, and the marks you make here will already count for it.",
+      },
+      avisoTrilhas: {
+        titulo: "Each company can use only its own accounts",
+        texto:
+          "Turn on \"Separate accounts\" on the company: sessions opened in its folders then use only the accounts marked for it, and the overflow says what to do when they run out. Works on macOS and Linux, in sessions opened through the Reveza launcher (in the ~/.reveza/lancador folder). Companies without it and unowned folders keep the current account.",
       },
       indisponivel: {
         titulo: "This installation's cloud doesn't have companies yet",
@@ -283,6 +299,12 @@ export default secao({
         transbordoEscolhidas: "Use only the chosen accounts",
         transbordoEscolhidasDica: "Mark below the outside accounts it may use.",
         transbordoContas: "Overflow accounts",
+        separar: "Separate this company's accounts",
+        separarDica:
+          "Sessions in its folders use only its accounts (and the overflow). Applies to sessions opened through the Reveza launcher; sessions already open stay as they are.",
+        separarSemConta:
+          "No account is marked for it: until you mark one, its sessions keep the current account, with a warning.",
+        separada: "Separate accounts",
         transbordoResumo: {
           nenhum: "Waits for one of its accounts",
           qualquer: "Overflows to any account",
