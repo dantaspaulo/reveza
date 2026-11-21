@@ -4,7 +4,8 @@ import { banco } from "./apoio.mjs";
 
 const TABELAS = ["membros", "convites", "computadores", "contas", "cofre", "posse", "atribuicao", "uso_janelas",
   "uso_historico", "uso_tokens", "sessoes", "eventos", "comandos", "config", "alertas", "push_inscricoes",
-  "chaves_api", "webhooks_saida", "ligacoes", "ligacao_pedidos", "auditoria"];
+  "chaves_api", "webhooks_saida", "ligacoes", "ligacao_pedidos", "auditoria", "empresas", "conta_empresas",
+  "pastas_empresa", "agentes_openbot"];
 
 test("anon não lê nem escreve tabela nenhuma", async () => {
   const b = await banco();

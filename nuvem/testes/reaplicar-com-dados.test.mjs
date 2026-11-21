@@ -57,6 +57,11 @@ function receitas(b, ctx) {
       "insert into public.uso_janelas (conta_id, tipo, pct, fonte) values ($1, $2, 10, 'api') on conflict do nothing", [ctx.c, v]),
     "uso_janelas.fonte": async (v) => b.sql(
       "insert into public.uso_janelas (conta_id, tipo, pct, fonte) values ($1, 'seven_day', 10, $2)", [await conta(), v]),
+    "empresas.transbordo": (v) => b.sql("insert into public.empresas (nome, transbordo) values ($1, $1)", [v]),
+    "pastas_empresa.tipo": async (v) => {
+      const [{ id }] = await b.sql("insert into public.empresas (nome) values ($1) returning id", [`regra ${v}`]);
+      await b.sql("insert into public.pastas_empresa (tipo, padrao, empresa_id) values ($1, 'x', $2)", [v, id]);
+    },
   };
 }
 
