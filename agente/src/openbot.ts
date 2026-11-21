@@ -30,6 +30,43 @@ export interface OpenBot {
   chatPrincipal(sessao: string): string | null;
   /** Manda o texto ao chat principal do agente (só enfileira). `chave`: a mesma chave não entra duas vezes. */
   continuar(agente: string, texto: string, chave: string): Promise<number>;
+  /**
+   * Os agentes deste OpenBot: a pasta de trabalho (caminho absoluto), o nome e o título (0.17.0: o painel liga a pasta
+   * de um agente a uma empresa pelo título). Vazio quando não dá para ler.
+   */
+  agentes?(): AgenteOpenBot[];
+}
+
+export interface AgenteOpenBot {
+  pasta: string;
+  nome: string;
+  titulo: string;
+}
+
+/** A consulta dos agentes (só leitura): pasta, nome e título de cada um, em JSON. Linha com JSON estragado fica de fora (senão a consulta inteira falha). */
+export const CONSULTA_AGENTES =
+  "SELECT json_extract(agent_json, '$.workspacePath') AS pasta, json_extract(agent_json, '$.name') AS nome, " +
+  "json_extract(agent_json, '$.title') AS titulo FROM projection_agents WHERE json_valid(agent_json) LIMIT 500;";
+
+/** As linhas da consulta, conferidas: pasta absoluta, nome e título como texto curto. */
+export function agentesDaSaida(saida: string): AgenteOpenBot[] {
+  let linhas: unknown;
+  try {
+    linhas = JSON.parse(saida.trim() || "[]");
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(linhas)) return [];
+  const texto = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "");
+  const r: AgenteOpenBot[] = [];
+  for (const l of linhas.slice(0, 500)) {
+    if (!l || typeof l !== "object") continue;
+    const o = l as Record<string, unknown>;
+    const pasta = texto(o.pasta, 4096);
+    if (!pasta.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(pasta)) continue; // só caminho absoluto (macOS, Linux, Windows)
+    r.push({ pasta, nome: texto(o.nome, 120), titulo: texto(o.titulo, 200) });
+  }
+  return r;
 }
 
 export interface LocaisOpenBot {
@@ -97,6 +134,20 @@ export class OpenBotLocal implements OpenBot {
       return AGENTE_VALIDO.test(agente) ? agente : null;
     } catch {
       return null;
+    }
+  }
+
+  agentes(): AgenteOpenBot[] {
+    try {
+      const saida = execFileSync(this.sqlite, ["-readonly", "-bail", "-json", "-cmd", ".timeout 2000", this.locais.banco, CONSULTA_AGENTES], {
+        encoding: "utf8",
+        timeout: 8000,
+        maxBuffer: 4 << 20,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      return agentesDaSaida(saida);
+    } catch {
+      return [];
     }
   }
 

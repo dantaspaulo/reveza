@@ -6,7 +6,8 @@
 //   pelo id da resposta. A linha zerada (que vem depois da cheia) não conta nem marca o id, então não apaga a cheia.
 // - Agente = arquivo `<sessão>/subagents/agent-<id>.jsonl`. Conta na linha da hora da primeira resposta dele (`ag`): o
 //   painel soma agentes pela hora em que começaram, não pela sessão (sessão de editor fica aberta por semanas).
-// - Projeto = só o nome da pasta final (nunca o caminho).
+// - Projeto = só o nome da pasta final. Pasta (0.17.0) = a raiz do git em que a conversa rodou, relativa à pasta
+//   pessoal ("~/Code/projeto"), para saber de quem é o uso (registro/pasta.ts). Uso de antes não tem pasta.
 // - Conteúdo da conversa não é guardado em lugar nenhum, só os números.
 //
 // Estado em arquivos (sem SQLite): `estado.json` (fotografia atômica) e `vistos.txt` (ids já contados, um por
@@ -19,12 +20,15 @@ import { gravarJson, lerJson } from "../util/arquivos.js";
 import { epochParaIso, isoParaEpoch } from "../util/tempo.js";
 import type { LinhaTokens, SessaoNuvem } from "../nuvem/tipos.js";
 import { custo, familia, tokens, type Usage } from "./precos.js";
+import { Pastas } from "./pasta.js";
 
 export interface LinhaHora {
   hora: number;
   conta: string;
   modelo: string;
   projeto: string;
+  /** A raiz do git da conversa, relativa à pasta pessoal (desde a 0.17.0; vazia no uso de antes). */
+  pasta?: string;
   msgs: number;
   ent: number;
   sai: number;
@@ -39,6 +43,8 @@ export interface LinhaHora {
 export interface SessaoReg {
   sessao: string;
   projeto: string;
+  /** Como em LinhaHora: a raiz do git da conversa (desde a 0.17.0). */
+  pasta?: string;
   inicio: number;
   fim: number;
   msgs: number;
@@ -82,8 +88,10 @@ const BLOCO = 1 << 20;
 const USAGE = Buffer.from('"usage"');
 const ASSISTENTE = Buffer.from('"assistant"');
 
-export function chaveHora(l: Pick<LinhaHora, "hora" | "conta" | "modelo" | "projeto">): string {
-  return `${l.hora}|${l.conta}|${l.modelo}|${l.projeto}`;
+/** A chave de uma linha por hora. Sem pasta, a de antes da 0.17.0: o registro guardado continua valendo. */
+export function chaveHora(l: Pick<LinhaHora, "hora" | "conta" | "modelo" | "projeto" | "pasta">): string {
+  const k = `${l.hora}|${l.conta}|${l.modelo}|${l.projeto}`;
+  return l.pasta ? `${k}|${l.pasta}` : k;
 }
 
 export function projetoDe(cwd: unknown): string {
@@ -103,6 +111,7 @@ export class Contador {
     private projetosDir: string,
     private contaEm: (ts: number) => string | null,
     private agora: () => number = () => Math.floor(Date.now() / 1000),
+    private pastas: Pick<Pastas, "de"> | null = null,
   ) {
     this.e = { ...VAZIO(), ...(lerJson<EstadoRegistro>(path.join(dir, "estado.json")) ?? {}) };
     try {
@@ -284,9 +293,23 @@ export class Contador {
     const { usd } = custo(u, modeloBruto);
     const conta = this.contaEm(ts) ?? "";
     const projeto = projetoDe(d.cwd);
+    const pasta = this.pastas ? this.pastas.de(d.cwd) : "";
     const hora = ts - (ts % 3600);
-    const k = chaveHora({ hora, conta, modelo, projeto });
-    const h = (this.e.horas[k] ??= { hora, conta, modelo, projeto, msgs: 0, ent: 0, sai: 0, c5: 0, c1h: 0, cl: 0, usd: 0 });
+    const k = chaveHora({ hora, conta, modelo, projeto, pasta });
+    const h = (this.e.horas[k] ??= {
+      hora,
+      conta,
+      modelo,
+      projeto,
+      ...(pasta ? { pasta } : {}),
+      msgs: 0,
+      ent: 0,
+      sai: 0,
+      c5: 0,
+      c1h: 0,
+      cl: 0,
+      usd: 0,
+    });
     h.msgs += 1;
     h.ent += t.ent;
     h.sai += t.sai;
@@ -300,6 +323,7 @@ export class Contador {
     const s = (this.e.sessoes[sessao] ??= {
       sessao,
       projeto,
+      ...(pasta ? { pasta } : {}),
       inicio: ts,
       fim: ts,
       msgs: 0,
@@ -315,6 +339,7 @@ export class Contador {
       parada: false,
     });
     if (!s.projeto) s.projeto = projeto;
+    if (!s.pasta && pasta) s.pasta = pasta;
     s.inicio = Math.min(s.inicio, ts);
     s.fim = Math.max(s.fim, ts);
     s.msgs += 1;
@@ -369,6 +394,7 @@ export class Contador {
         hora: epochParaIso(h.hora),
         conta_id: contaId,
         projeto: h.projeto,
+        pasta: h.pasta ?? "",
         modelo: h.modelo,
         respostas: h.msgs,
         entrada: h.ent,
@@ -392,6 +418,7 @@ export class Contador {
       sessoes.push({
         id: s.sessao,
         projeto: s.projeto,
+        pasta: s.pasta ?? "",
         inicio: s.inicio ? epochParaIso(s.inicio) : null,
         fim: s.fim ? epochParaIso(s.fim) : null,
         respostas: s.msgs,

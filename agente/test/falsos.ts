@@ -7,7 +7,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ApiContas, Janela, Perfil } from "../src/anthropic.js";
 import type { Cli } from "../src/claudecli.js";
-import type { OpenBot } from "../src/openbot.js";
+import type { AgenteOpenBot, OpenBot } from "../src/openbot.js";
 import { caminhos, type Caminhos } from "../src/config.js";
 import type { Blob } from "../src/credenciais/blob.js";
 import { CredenciaisFalsas } from "../src/credenciais/falsa.js";
@@ -17,6 +17,7 @@ import { LogMemoria } from "../src/util/log.js";
 import type { Relogio } from "../src/util/tempo.js";
 import { ErroNuvem } from "../src/nuvem/tipos.js";
 import type {
+  AgenteNuvem,
   ChavePublica,
   CofreNuvem,
   ComandoNuvem,
@@ -168,6 +169,13 @@ export class OpenBotFalso implements OpenBot {
     this.enviadas.push({ agente, texto, chave });
     return this.codigo;
   }
+  /** Os agentes que o banco do OpenBot teria (0.17.0) e quantas vezes ele foi lido. */
+  lista: AgenteOpenBot[] = [];
+  leituras = 0;
+  agentes() {
+    this.leituras++;
+    return this.lista.map((a) => ({ ...a }));
+  }
 }
 
 export class CliFalsa implements Cli {
@@ -274,6 +282,7 @@ export class BancoFalso {
   janelas: (JanelaNuvem & { pc: string })[] = [];
   tokens = new Map<string, LinhaTokens>();
   sessoes = new Map<string, SessaoNuvem>();
+  agentesOpenBot = new Map<string, AgenteNuvem>();
   ligacoes: { embrulho: Buffer; sal: Buffer; por: string; usada: boolean; expira: number }[] = [];
   /** Pedidos de computador novo (0019), por computador novo. */
   pedidos = new Map<string, PedidoFalso>();
@@ -541,8 +550,14 @@ export class NuvemFalsa implements Nuvem {
 
   async relatarTokens(linhas: LinhaTokens[], sessoes: SessaoNuvem[]) {
     this.registrarChamada("relatarTokens", linhas.length, sessoes.length);
-    for (const l of linhas) this.banco.tokens.set(`${l.hora}|${l.conta_id}|${this.pc}|${l.projeto}|${l.modelo}`, l);
+    for (const l of linhas) this.banco.tokens.set(`${l.hora}|${l.conta_id}|${this.pc}|${l.projeto}|${l.pasta}|${l.modelo}`, l);
     for (const s of sessoes) this.banco.sessoes.set(s.id, s);
+    return { ok: true };
+  }
+
+  async relatarAgentes(lista: AgenteNuvem[]) {
+    this.registrarChamada("relatarAgentes", lista.length);
+    for (const a of lista) this.banco.agentesOpenBot.set(`${this.pc}|${a.pasta}`, a);
     return { ok: true };
   }
 

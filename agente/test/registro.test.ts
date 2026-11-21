@@ -264,7 +264,7 @@ describe("contador", () => {
     assert.equal(lote.linhas.length, 1, "a conta B ainda não está na nuvem: espera");
     assert.equal(lote.linhas[0]!.conta_id, "uuid-a");
     assert.equal(lote.linhas[0]!.respostas, 1);
-    assert.deepEqual(Object.keys(lote.sessoes[0]!).sort(), ["agentes", "contas", "fim", "id", "inicio", "modelos", "projeto", "respostas", "tokens", "usd"]);
+    assert.deepEqual(Object.keys(lote.sessoes[0]!).sort(), ["agentes", "contas", "fim", "id", "inicio", "modelos", "pasta", "projeto", "respostas", "tokens", "usd"]);
     c.confirmarEnvio(lote.chaves, lote.ids);
     escrever("s1.jsonl", [resposta("m3", T + 5)]);
     await c.varrer();

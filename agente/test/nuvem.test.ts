@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { aadConta, aadRegistro, cifrarLogin, decifrarLogin } from "../src/cofre/cifra.js";
 import { lerChave } from "../src/ligar.js";
-import { ativaEm, BancoFalso, blob, contaEstacionada, montar, NuvemFalsa, type Montado } from "./falsos.js";
+import { ativaEm, BancoFalso, blob, contaEstacionada, montar, NuvemFalsa, OpenBotFalso, type Montado } from "./falsos.js";
 
 let m: Montado;
 let banco: BancoFalso;
@@ -15,7 +15,7 @@ afterEach(() => m?.limpar());
 const e = () => m.agente.estado;
 const pasta = (id: string) => e().contas[id]!.pasta;
 
-async function preparar(opcoes: { sombra?: boolean; chave?: Buffer | null; exec?: import("../src/util/executor.js").Executor } = {}) {
+async function preparar(opcoes: { sombra?: boolean; chave?: Buffer | null; exec?: import("../src/util/executor.js").Executor; openbot?: OpenBotFalso } = {}) {
   banco = new BancoFalso();
   nuvem = new NuvemFalsa(banco, "pc-1");
   m = await montar({ nuvem, ...opcoes });
@@ -113,6 +113,13 @@ describe("atribuição", () => {
     const ordem = banco.chamadas.filter((c) => c.args[0] === aId && (c.fn === "devolverCofre" || c.fn === "soltarPosse")).map((c) => c.fn);
     assert.deepEqual(ordem.slice(-2), ["devolverCofre", "soltarPosse"], "devolve antes de soltar");
     assert.equal(m.cred.token(pasta(a)), "A5");
+    // 0.17.0: a troca vai à nuvem com os ids de lá, para o painel contar as trocas de cada empresa
+    const troca = banco.eventos.find((x) => x.tipo === "troca")!;
+    assert.deepEqual(
+      { de: (troca.dados as Record<string, unknown>).de_nuvem, para: (troca.dados as Record<string, unknown>).para_nuvem },
+      { de: aId, para: bId },
+    );
+    assert.equal((troca.dados as Record<string, unknown>).para, b, "o id deste computador continua no evento");
   });
 
   test("posse recusada (outro computador tem a conta): não troca", async () => {
@@ -658,6 +665,66 @@ describe("relatos", () => {
     assert.equal(enviadas[0]!.conta_id, e().contas[a]!.contaId);
     assert.equal(enviadas[0]!.projeto, "proj");
     assert.equal(banco.sessoes.get("s1")!.respostas, 1);
+  });
+
+  test("0.17.0: a pasta vai inteira (a raiz do git, relativa à pessoal) e os agentes do OpenBot vão quando mudam ou a cada hora", async () => {
+    const ob = new OpenBotFalso();
+    await preparar({ openbot: ob });
+    const a = await ativaEm(m, "A", 50);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const home = m.c.home;
+    // o mesmo nome curto em dois repositórios: duas pastas; dentro de uma subpasta, a raiz do git
+    for (const r of ["Code/um/app", "Code/dois/app"]) fs.mkdirSync(path.join(home, r, ".git", "objects"), { recursive: true });
+    fs.mkdirSync(path.join(home, "Code/um/app/sub"), { recursive: true });
+    const dir = `${m.c.projetos}/-x-app`;
+    fs.mkdirSync(dir, { recursive: true });
+    const linha = (id: string, cwd: string, sessao: string) => JSON.stringify({
+      type: "assistant",
+      sessionId: sessao,
+      cwd,
+      timestamp: new Date((m.relogio.agora() + 10) * 1000).toISOString(),
+      message: { id, model: "claude-opus-5-5", usage: { input_tokens: 5, output_tokens: 7 } },
+    });
+    fs.writeFileSync(`${dir}/s1.jsonl`, linha("m1", path.join(home, "Code/um/app/sub"), "s1") + "\n");
+    fs.writeFileSync(`${dir}/s2.jsonl`, linha("m2", path.join(home, "Code/dois/app"), "s2") + "\n");
+    ob.lista = [
+      { pasta: path.join(home, "OpenBot/Agents/agent-1"), nome: "Um", titulo: "Título um" },
+      { pasta: "relativa/nao", nome: "x", titulo: "x" },
+    ];
+    await m.agente.registro();
+    const pastas = [...banco.tokens.values()].map((l) => `${l.projeto}@${l.pasta}`).sort();
+    assert.deepEqual(pastas, ["app@~/Code/dois/app", "sub@~/Code/um/app"]);
+    assert.equal(banco.sessoes.get("s1")!.pasta, "~/Code/um/app");
+    assert.ok(![...banco.tokens.values()].some((l) => l.pasta.includes(home)), "o caminho da pasta pessoal não sai do computador");
+    assert.deepEqual([...banco.agentesOpenBot.values()], [{ pasta: "~/OpenBot/Agents/agent-1", nome: "Um", titulo: "Título um" }]);
+    assert.equal(fns("relatarAgentes").length, 1);
+    void a;
+
+    await m.agente.registro();
+    assert.equal(ob.leituras, 1, "o banco do OpenBot é lido no máximo a cada 5 min");
+    m.relogio.t += 301;
+    await m.agente.registro();
+    assert.equal(ob.leituras, 2);
+    assert.equal(fns("relatarAgentes").length, 1, "lista igual não vai de novo antes de uma hora");
+    ob.lista.push({ pasta: path.join(home, "OpenBot/Agents/agent-2"), nome: "Dois", titulo: "" });
+    m.relogio.t += 301;
+    await m.agente.registro();
+    assert.equal(fns("relatarAgentes").length, 2, "lista mudou: vai");
+    m.relogio.t += 3601;
+    await m.agente.registro();
+    assert.equal(fns("relatarAgentes").length, 3, "a cada hora vai de novo (o painel vê quem ainda existe)");
+  });
+
+  test("0.17.0: sem OpenBot, ou com a lista vazia, nada vai", async () => {
+    const ob = new OpenBotFalso();
+    await preparar({ openbot: ob });
+    await m.agente.registro();
+    assert.equal(fns("relatarAgentes").length, 0);
+    m.limpar();
+    await preparar();
+    await m.agente.registro();
+    assert.equal(fns("relatarAgentes").length, 0);
   });
 
   test("conta em uso que perdeu o login avisa a nuvem uma vez; voltando, avisa de novo", async () => {

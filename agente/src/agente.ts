@@ -31,6 +31,7 @@ import { ErroNuvem, TIPOS_EVENTO_NUVEM, type Atribuicao, type ComandoNuvem, type
 import { PosseCofre } from "./posse.js";
 import { chaveDaPonte, criarPonte, type Resposta } from "./ponte.js";
 import { Contador } from "./registro/contador.js";
+import { Pastas, pastaNaNuvem, relativaAPessoal } from "./registro/pasta.js";
 import { ERRO_LOGIN_MORTO, rotinaValida, Trocador } from "./troca.js";
 import { isoParaEpoch, epochParaIso, type Relogio } from "./util/tempo.js";
 import type { Log } from "./util/log.js";
@@ -66,7 +67,7 @@ import { abrirTokens, completaLigada, PUBLICA_DESDE, pendenteDaPublicacao, semSe
 import { gravarAtomico, gravarJson, lerJson } from "./util/arquivos.js";
 import { aplicarResumo, contaGrande, janelaDaConta, RESUMO_MAXIMO, RESUMO_MINIMO } from "./resumo.js";
 import { parouNoErro, ultimoPedido } from "./sessaoviva.js";
-import { lerIgnorar, OPENBOT_CODIGOS, pedidoDoTexto, type OpenBot } from "./openbot.js";
+import { lerIgnorar, OPENBOT_CODIGOS, pedidoDoTexto, type AgenteOpenBot, type OpenBot } from "./openbot.js";
 import { aplicarModelo } from "./modelo.js";
 import { ESPERA_MAXIMA_S, esperarMemoria, TETO_ESPERA_PCT, trocaPodeEsperar, type Memoria } from "./memoria.js";
 
@@ -204,6 +205,13 @@ export class Agente {
   private rotinas = new Map<string, Map<string, number>>();
   /** A continuação ao OpenBot que está saindo agora, e quando saiu a última (uma por vez, espaçadas). */
   private openbotEmVoo: string | null = null;
+  /** A lista de agentes do OpenBot já enviada à nuvem (0.17.0) e quando: manda de novo quando muda ou a cada hora. */
+  private agentesEnviados = "";
+  private agentesEnviadosEm = 0;
+  private agentesTentadoEm = -Infinity;
+  private agentesLidosEm = -Infinity;
+  private agentesLista: AgenteOpenBot[] = [];
+  private pastasDosAgentes: string[] = [];
   private openbotUltima = 0;
   private pastasEm = 0;
   private comandosVistos = new Set<number>();
@@ -299,7 +307,8 @@ export class Agente {
       aoEvento: (tipo, texto, dados) => {
         // A nuvem gera os próprios alertas; daqui vai o resto (alerta local chega lá como aviso).
         const t = tipo === "alerta" ? "aviso" : tipo;
-        if (d.nuvem && !d.sombra && tipo !== "info" && TIPOS_EVENTO_NUVEM.has(t)) void d.nuvem.evento(t, texto, dados).catch(() => undefined);
+        if (d.nuvem && !d.sombra && tipo !== "info" && TIPOS_EVENTO_NUVEM.has(t))
+          void d.nuvem.evento(t, texto, tipo === "troca" ? this.comIdsDaNuvem(dados) : dados).catch(() => undefined);
         if (tipo === "troca") {
           this.somDaTroca(); // em sombra o trocador não troca, então não chega aqui
           this.aplicarResumo();
@@ -311,7 +320,11 @@ export class Agente {
       },
     }, () => this.salvar());
     this.trocador.sombra = d.sombra;
-    this.contador = new Contador(d.c.registro, d.c.projetos, (ts) => this.trocador.contaEm(ts), () => d.relogio.agora());
+    this.contador = new Contador(d.c.registro, d.c.projetos, (ts) => this.trocador.contaEm(ts), () => d.relogio.agora(),
+      new Pastas(d.c.home, undefined, () => {
+        this.agentesOpenBot();
+        return this.pastasDosAgentes;
+      }));
     this.logins = new Logins(this.trocador, this.cred, d.cli, d.relogio, (login, id) => this.loginTerminou(login, id));
     if (d.nuvem) {
       this.posse = new PosseCofre(() => this.estado, this.trocador, this.cred, d.nuvem, () => this.chave, this.cj, d.relogio, d.log, () =>
@@ -2524,11 +2537,74 @@ export class Agente {
         this.contador.confirmarEnvio(lote.chaves, lote.ids);
       }
       this.contador.salvar();
+      await this.relatarAgentes(nuvem);
     } catch (e) {
       this.d.log.erro(`registro de uso: ${(e as Error).message}`);
     } finally {
       this.emRegistro = false;
     }
+  }
+
+  /**
+   * A troca vai à nuvem também com o id das contas lá (0.17.0): o "de" e o "para" do evento são os ids deste computador,
+   * que o painel não conhece; com o id da nuvem, ele conta as trocas de cada empresa.
+   */
+  private comIdsDaNuvem(dados: Record<string, unknown> | undefined): Record<string, unknown> {
+    const r: Record<string, unknown> = { ...(dados ?? {}) };
+    const nuvem = (id: unknown) => (typeof id === "string" ? (this.estado.contas[id]?.contaId ?? null) : null);
+    const para = nuvem(r.para);
+    const de = nuvem(r.de);
+    if (para) r.para_nuvem = para;
+    if (de) r.de_nuvem = de;
+    return r;
+  }
+
+  /**
+   * Os agentes do OpenBot deste computador vão à nuvem (0.17.0): o painel liga a pasta de um agente a uma empresa pelo
+   * título dele. Só a pasta (relativa à pessoal), o nome e o título; quando a lista muda, ou uma vez por hora.
+   */
+  private async relatarAgentes(nuvem: Nuvem): Promise<void> {
+    if (!this.d.openbot?.agentes) return;
+    const t = this.d.relogio.agora();
+    if (t - this.agentesTentadoEm < 300) return; // no máximo a cada 5 min, também quando a nuvem recusa
+    const lista = this.agentesOpenBot()
+      .map((a) => ({ pasta: pastaNaNuvem(relativaAPessoal(a.pasta, this.d.c.home)), nome: a.nome, titulo: a.titulo }))
+      .filter((a) => a.pasta && a.pasta !== "~")
+      .sort((a, b) => a.pasta.localeCompare(b.pasta));
+    const assinatura = JSON.stringify(lista);
+    if (!lista.length || (assinatura === this.agentesEnviados && t - this.agentesEnviadosEm < 3600)) return;
+    this.agentesTentadoEm = t;
+    try {
+      const r = await nuvem.relatarAgentes(lista);
+      if (r.ok) {
+        this.agentesEnviados = assinatura;
+        this.agentesEnviadosEm = t;
+      }
+    } catch (e) {
+      // nuvem que ainda não tem a função (antes da 0036) ou fora do ar: tenta de novo no próximo ciclo
+      this.d.log.info(`agentes do OpenBot: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * Os agentes do OpenBot deste computador, lidos do banco dele (só leitura) no máximo a cada 5 min. As pastas deles
+   * valem como projeto na contagem do uso (registro/pasta.ts), mesmo dentro de um repositório git.
+   */
+  private agentesOpenBot(): AgenteOpenBot[] {
+    const ob = this.d.openbot;
+    if (!ob?.agentes) return [];
+    const t = this.d.relogio.agora();
+    if (t - this.agentesLidosEm < 300) return this.agentesLista;
+    this.agentesLidosEm = t;
+    try {
+      this.agentesLista = ob.agentes();
+    } catch {
+      this.agentesLista = [];
+    }
+    const pastas = this.agentesLista.map((a) => a.pasta).sort();
+    // a mesma lista (mesma referência) não limpa as respostas que o contador guardou
+    if (pastas.join("\n") !== this.pastasDosAgentes.join("\n")) this.pastasDosAgentes = pastas;
+    return this.agentesLista;
   }
 
   // ------------------------------------------------------------------------------------------------ ponte

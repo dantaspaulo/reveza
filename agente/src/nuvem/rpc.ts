@@ -22,6 +22,7 @@ import {
   type RespostaOla,
   type SessaoNuvem,
   type TokenNuvem,
+  type AgenteNuvem,
 } from "./tipos.js";
 
 export interface Rpc {
@@ -183,6 +184,11 @@ export class NuvemRpc implements Nuvem {
 
   async relatarTokens(linhas: LinhaTokens[], sessoes: SessaoNuvem[]) {
     const r = await this.chamar("agente_relatar_tokens", { p_linhas: linhas, p_sessoes: sessoes });
+    return { ok: r.ok === true };
+  }
+
+  async relatarAgentes(lista: AgenteNuvem[]) {
+    const r = await this.chamar("agente_relatar_agentes", { p_lista: lista });
     return { ok: r.ok === true };
   }
 

@@ -110,6 +110,8 @@ export interface LinhaTokens {
   hora: string;
   conta_id: string | null;
   projeto: string;
+  /** A raiz do git, relativa à pasta pessoal (nuvem 0036; "" no uso de antes). */
+  pasta: string;
   modelo: string;
   respostas: number;
   entrada: number;
@@ -124,6 +126,7 @@ export interface LinhaTokens {
 export interface SessaoNuvem {
   id: string;
   projeto: string;
+  pasta: string;
   inicio: string | null;
   fim: string | null;
   respostas: number;
@@ -132,6 +135,13 @@ export interface SessaoNuvem {
   agentes: number;
   contas: string[];
   modelos: string[];
+}
+
+/** Um agente do OpenBot deste computador (0.17.0): a pasta de trabalho, relativa à pessoal, o nome e o título. */
+export interface AgenteNuvem {
+  pasta: string;
+  nome: string;
+  titulo: string;
 }
 
 /** Tipos de evento que a nuvem aceita do agente. */
@@ -173,6 +183,8 @@ export interface Nuvem {
   ): Promise<{ ok: boolean; conta_id: string | null; versao: number | null; erro: string | null }>;
   relatarUso(janelas: JanelaNuvem[], historico: PontoNuvem[]): Promise<{ ok: boolean }>;
   relatarTokens(linhas: LinhaTokens[], sessoes: SessaoNuvem[]): Promise<{ ok: boolean }>;
+  /** Os agentes do OpenBot deste computador (0.17.0): o painel liga a pasta de cada um a uma empresa pelo título. */
+  relatarAgentes(lista: AgenteNuvem[]): Promise<{ ok: boolean }>;
   limite(contaId: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
   /** A conta em uso não roda o modelo da sessão (0028): fora da escolha deste computador por 6 horas, e decide na hora. */
   semModelo(contaId: string, modelo: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
