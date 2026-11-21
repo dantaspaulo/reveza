@@ -7,6 +7,7 @@ import {
   deveSegurar,
   entradaDaSessao,
   rotinaDaSessao,
+  trilhaDaSessao,
   hmacHex,
   janelasTexto,
   paradaDoTurno,
@@ -49,6 +50,8 @@ function agente(on: On, instalacao?: string) {
     entrada: undefined as string | undefined,
     // o REVEZA_ROTINA da sessão (a rotina que a lançou)
     rotina: undefined as string | undefined,
+    // o REVEZA_TRILHA da sessão (a empresa separada em que o lançador a abriu)
+    trilha: undefined as string | undefined,
     // sessões críticas: o que /api/ativa manda (undefined: função desligada), a marca guardada e o REVEZA_CRITICA
     criticas: undefined as { segurar: boolean; gatilho: number } | undefined,
     marcada: false,
@@ -70,7 +73,7 @@ function agente(on: On, instalacao?: string) {
       cabecalhos: (e.init?.headers ?? {}) as Record<string, string>,
     })
     let resposta: unknown = { ok: true }
-    if (e.url.endsWith('/api/ativa'))
+    if (e.url.endsWith('/api/ativa') || e.url.endsWith('/api/trilha/ativa'))
       resposta = { slug: 'a', email: estado.email, versao: estado.versao, trocadaEm: 0, enxugar: estado.enxugar, ...(estado.criticas ? { criticas: estado.criticas } : {}) }
     if (e.url.endsWith('/api/critica')) {
       if (typeof corpo?.critica === 'boolean') estado.marcada = corpo.critica
@@ -103,7 +106,9 @@ function agente(on: On, instalacao?: string) {
             ? estado.ambienteCritica
             : e.name === 'REVEZA_ROTINA'
               ? estado.rotina
-              : undefined,
+              : e.name === 'REVEZA_TRILHA'
+                ? estado.trilha
+                : undefined,
   }))
   on('fs.read', ($, e) => {
     if (e.path === '/home/teste/.reveza/ponte.chave') return { value: `${'c'.repeat(64)}\n` }
@@ -730,6 +735,38 @@ test('sem REVEZA_ROTINA o limite não leva rotina', async ($, on) => {
   const limite = recebidos.find(r => r.url.endsWith('/api/limite'))
   expect(limite).toBeDefined()
   expect('rotina' in (limite?.corpo ?? {})).toBe(false)
+})
+
+test('a sessão da trilha (REVEZA_TRILHA) lê a conta da trilha e manda a trilha na medida e no limite', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos, estado } = agente(on)
+  comModelo(on)
+  estado.trilha = ' 11111111-2222-4333-8444-555555555555 '
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: false })
+  await andar(relogio, 10_000)
+  await $.session.measure(MEDIDA)
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  const ativa = recebidos.find(r => r.url.endsWith('/api/trilha/ativa'))
+  expect(ativa?.metodo).toBe('POST')
+  expect(ativa?.corpo?.trilha).toBe('11111111-2222-4333-8444-555555555555')
+  expect(recebidos.some(r => r.url.endsWith('/api/ativa'))).toBe(false)
+  expect(recebidos.find(r => r.url.endsWith('/api/medida'))?.corpo?.trilha).toBe('11111111-2222-4333-8444-555555555555')
+  expect(recebidos.find(r => r.url.endsWith('/api/limite'))?.corpo?.trilha).toBe('11111111-2222-4333-8444-555555555555')
+})
+
+test('sem REVEZA_TRILHA nada leva trilha, e a marca só vale com a forma de um id', async ($, on) => {
+  const relogio = mock.clock(on)
+  const { recebidos } = agente(on)
+  comModelo(on)
+  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: false })
+  await andar(relogio, 10_000)
+  await $.classic.StopFailure({ error: 'rate_limit' })
+  expect(recebidos.some(r => r.url.endsWith('/api/trilha/ativa'))).toBe(false)
+  expect('trilha' in (recebidos.find(r => r.url.endsWith('/api/limite'))?.corpo ?? {})).toBe(false)
+  expect(trilhaDaSessao('AAAAAAAA-bbbb-4ccc-8ddd-eeeeeeeeeeee')).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+  expect(trilhaDaSessao('empresa')).toBe(null)
+  expect(trilhaDaSessao('../x')).toBe(null)
+  expect(trilhaDaSessao(undefined)).toBe(null)
 })
 
 test('a rotina vai só com a forma de um nome', () => {

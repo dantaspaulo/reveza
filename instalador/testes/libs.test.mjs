@@ -4,12 +4,13 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { Vercel, listar } from "../lib/vercel.mjs";
 import { criarProjeto, conferirToken, organizacoes, projetos, regiaoSugerida } from "../lib/supabase.mjs";
 import { dnsPronto, dominioPedido, dominioValido, passosCloudflare, passosDns } from "../lib/dominio.mjs";
 import { acharChatTelegram, testar } from "../lib/alertas.mjs";
-import { copiarEstado, criarLancador, gravarConfigLocal, gravarInstalacao, lancadorWindows, lerInstalacao, linhaPath, voltarAtualizacao } from "../lib/programa.mjs";
+import { copiarEstado, criarLancador, criarLancadorClaude, gravarConfigLocal, gravarInstalacao, lancadorWindows, lerInstalacao, linhaPath, voltarAtualizacao } from "../lib/programa.mjs";
 import { emailValido, senhaForte, t } from "../lib/texto.mjs";
 import { completarRecuperada, dadosDaInstalacao, instalacaoNoDisco, lerArgs, semNuvemPrevisto, soEsteComputador } from "../instalar.mjs";
 
@@ -208,6 +209,45 @@ test("arquivos locais: configuração mescla no estado, instalação não guarda
       assert.equal(readFileSync(l, "utf8"), '#!/bin/sh\nexec "/usr/bin/node" "/app/cli.js" "$@"\n');
       assert.ok(statSync(l).mode & 0o100);
     }
+  } finally { limpar(); }
+});
+
+test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com ela pede a trilha; não pergunta duas vezes nem abre a si mesmo", { skip: process.platform === "win32" }, () => {
+  const { d, limpar } = pasta();
+  try {
+    // o assistente de mentira mostra o que recebeu; a linha de comando de mentira responde a trilha e anota a pergunta
+    const bin = path.join(d, "bin-real");
+    mkdirSync(bin);
+    const real = path.join(bin, "claude");
+    writeFileSync(real, '#!/bin/sh\necho "dir=${CLAUDE_SECURESTORAGE_CONFIG_DIR:-} trilha=${REVEZA_TRILHA:-} args=$*"\n', { mode: 0o755 });
+    const perguntas = path.join(d, "perguntas.txt");
+    const cli = path.join(d, "cli.mjs");
+    writeFileSync(cli, `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(perguntas)}, process.argv.slice(2).join(" ") + "\\n");\nconsole.log(${JSON.stringify(path.join(d, "trilhas", "e1"))});\nconsole.log("e1");\n`);
+    const arq = criarLancadorClaude(path.join(d, "lancador"), cli, process.execPath);
+    assert.ok(statSync(arq).mode & 0o100);
+    const env = { PATH: `${path.join(d, "lancador")}:${bin}:/usr/bin:/bin`, HOME: d };
+    const rodar = (extra = {}) => spawnSync("/bin/sh", [arq, "-p", "oi"], { cwd: d, env: { ...env, ...extra }, encoding: "utf8" });
+
+    let r = rodar();
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "dir= trilha= args=-p oi", "sem a marca nada muda");
+    assert.equal(existsSync(perguntas), false);
+
+    mkdirSync(path.join(d, "trilhas"));
+    writeFileSync(path.join(d, "trilhas", "ligadas"), "x");
+    r = rodar();
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), `dir=${path.join(d, "trilhas", "e1")} trilha=e1 args=-p oi`);
+    assert.match(readFileSync(perguntas, "utf8"), /^trilha --cwd .+ --pid \d+\n$/);
+
+    r = rodar({ REVEZA_TRILHA: "outra" });
+    assert.equal(r.stdout.trim(), "dir= trilha=outra args=-p oi", "quem já nasceu numa trilha fica nela");
+    r = rodar({ CLAUDE_SECURESTORAGE_CONFIG_DIR: "/minha" });
+    assert.equal(r.stdout.trim(), "dir=/minha trilha= args=-p oi", "a pasta de login própria da pessoa vale");
+    assert.equal(readFileSync(perguntas, "utf8").split("\n").filter(Boolean).length, 1, "só a segunda rodada perguntou");
+
+    r = rodar({ REVEZA_CLAUDE_REAL: arq });
+    assert.equal(r.status, 127, "o lançador achado no lugar do assistente para, sem abrir a si mesmo sem fim");
   } finally { limpar(); }
 });
 

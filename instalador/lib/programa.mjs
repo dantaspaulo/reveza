@@ -226,6 +226,71 @@ export function criarLancador(bin, cli, node = process.execPath) {
   const arq = path.join(bin, "reveza");
   writeFileSync(arq, `#!/bin/sh\nexec "${node}" "${cli}" "$@"\n`);
   chmodSync(arq, 0o755);
+  criarLancadorClaude(path.join(path.dirname(bin), "lancador"), cli, node);
+  return arq;
+}
+
+/** Aspas simples do sh: o texto vai como está (o caminho de quem tem aspas ou cifrão no nome não vira comando). */
+function aspasSh(s) {
+  return `'${String(s).replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * O lançador do assistente com as trilhas das empresas separadas (0.18.0): ~/.reveza/lancador/claude. Fica FORA do
+ * ~/.reveza/bin de propósito (que está no PATH): nada muda até a pessoa ligar, apontando o programa que abre o
+ * assistente para ele (no OpenBot, OPENBOT_CLAUDE_PATH; no terminal, a pasta antes no PATH ou um alias).
+ *
+ * Sem a marca ~/.reveza/trilhas/ligadas (o agente a põe quando o painel tem empresa separada), ele só abre o assistente
+ * de verdade. Com ela, pergunta ao agente (`reveza trilha`) de qual empresa é a pasta e, sendo de uma separada, abre o
+ * assistente com a pasta de login da trilha (CLAUDE_SECURESTORAGE_CONFIG_DIR) e a marca REVEZA_TRILHA. O exec mantém o
+ * número do processo, que o agente acompanha. Quem já nasceu numa trilha (um `claude -p` de um gancho), ou já tem a
+ * própria pasta de login no ambiente, fica como está. Um `claude` achado que é o próprio lançador (um link para ele no
+ * PATH) para com erro em vez de abrir a si mesmo sem fim (o exec mantém o número do processo).
+ */
+export function lancadorClaude(dir, cli, node = process.execPath) {
+  const marca = path.join(path.dirname(dir), "trilhas", "ligadas");
+  return [
+    "#!/bin/sh",
+    "# Reveza AI: lançador do Claude Code com as trilhas das empresas separadas. Refeito pelo instalador a cada versão.",
+    `eu=${aspasSh(dir)}`,
+    'real="${REVEZA_CLAUDE_REAL:-}"',
+    'if [ -z "$real" ]; then',
+    "  antes=$IFS",
+    "  IFS=:",
+    "  for d in $PATH; do",
+    '    [ -z "$d" ] && continue',
+    '    [ "${d%/}" = "$eu" ] && continue',
+    '    if [ -f "$d/claude" ] && [ -x "$d/claude" ]; then real="$d/claude"; break; fi',
+    "  done",
+    "  IFS=$antes",
+    "fi",
+    'if [ -z "$real" ] && [ -x "$HOME/.local/bin/claude" ]; then real="$HOME/.local/bin/claude"; fi',
+    'if [ -z "$real" ]; then echo "reveza: não achei o claude no PATH (ou defina REVEZA_CLAUDE_REAL)" >&2; exit 127; fi',
+    'if [ "${REVEZA_LANCADOR_PID:-}" = "$$" ]; then echo "reveza: o claude achado é o próprio lançador; defina REVEZA_CLAUDE_REAL" >&2; exit 127; fi',
+    "REVEZA_LANCADOR_PID=$$",
+    "export REVEZA_LANCADOR_PID",
+    `if [ -z "\${REVEZA_TRILHA:-}" ] && [ -z "\${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ] && [ -f ${aspasSh(marca)} ]; then`,
+    '  aqui=$(pwd 2>/dev/null || echo "$PWD")',
+    `  saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" 2>/dev/null)`,
+    '  pasta=$(printf "%s\\n" "$saida" | sed -n 1p)',
+    '  empresa=$(printf "%s\\n" "$saida" | sed -n 2p)',
+    '  if [ -n "$pasta" ] && [ -n "$empresa" ]; then',
+    '    CLAUDE_SECURESTORAGE_CONFIG_DIR=$pasta',
+    '    REVEZA_TRILHA=$empresa',
+    "    export CLAUDE_SECURESTORAGE_CONFIG_DIR REVEZA_TRILHA",
+    "  fi",
+    "fi",
+    'exec "$real" "$@"',
+    "",
+  ].join("\n");
+}
+
+export function criarLancadorClaude(dir, cli, node = process.execPath) {
+  if (WIN) return null;
+  mkdirSync(dir, { recursive: true });
+  const arq = path.join(dir, "claude");
+  writeFileSync(arq, lancadorClaude(dir, cli, node));
+  chmodSync(arq, 0o755);
   return arq;
 }
 

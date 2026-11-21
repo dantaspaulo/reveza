@@ -288,6 +288,16 @@ export function rotinaDaSessao(valor: unknown): string | null {
   return /^[\w.:@-]{1,80}$/.test(v) ? v : null
 }
 
+/**
+ * A empresa separada desta sessão (REVEZA_TRILHA, posto pelo lançador ~/.reveza/lancador/claude junto com a pasta de login
+ * da trilha, 0.18.0): a conta em uso dela é a da trilha, não a da principal. Null sem a marca ou fora do formato (uuid).
+ */
+export function trilhaDaSessao(valor: unknown): string | null {
+  if (typeof valor !== 'string') return null
+  const v = valor.trim().toLowerCase()
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v) ? v : null
+}
+
 /** O tempo que o agente pediu para esperar antes de a sessão continuar, em ms: 0 sem pedido, e no máximo 10 minutos. */
 export function aguardarMs(segundos: unknown): number {
   return typeof segundos === 'number' && Number.isFinite(segundos) && segundos > 0 ? Math.min(segundos * 1000, AGUARDAR_MAXIMO_MS) : 0
@@ -333,6 +343,9 @@ export const register: Register = (on, options) => {
   let entrada: string | null = null
   // a rotina que lançou esta sessão sem tela (rotinaDaSessao), lida no começo dela; vai na medida e no limite
   let rotina: string | null = null
+  // a empresa separada desta sessão (trilhaDaSessao): a conta dela vem de /api/trilha/ativa, e a marca vai na medida e
+  // no limite; null quando a sessão roda na principal
+  let trilha: string | null = null
   // sessões críticas: esta sessão é crítica; o agente manda segurar as comuns; o gatilho; e se uma ação desta sessão
   // foi recusada na espera (ela volta sozinha quando a espera acaba)
   let critica = false
@@ -400,6 +413,7 @@ export const register: Register = (on, options) => {
     sessao = await $.session.id()
     entrada = entradaDaSessao(await $.env.get('CLAUDE_CODE_ENTRYPOINT').catch(() => undefined))
     rotina = rotinaDaSessao(await $.env.get('REVEZA_ROTINA').catch(() => undefined))
+    trilha = trilhaDaSessao(await $.env.get('REVEZA_TRILHA').catch(() => undefined))
     const raiz =
       (await $.env.get('REVEZA_HOME')) ??
       `${(await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''}/.reveza`
@@ -424,9 +438,21 @@ export const register: Register = (on, options) => {
         const segurandoAntes = segurando()
         let ativa: Ativa | null = null
         try {
-          const p = await pedido('GET', '/api/ativa')
-          const r = await $.http.fetch(`${BASE}/api/ativa`, p.init)
-          ativa = (await doAgente(r, p.nonce)) ? lerJson<Ativa>(r) : null
+          // sessão de trilha: a conta em uso é a da trilha; trilha que o agente não conhece mais (404) lê a principal
+          let lida = false
+          if (trilha) {
+            const p = await pedido('POST', '/api/trilha/ativa', { trilha, sessao })
+            const r = await $.http.fetch(`${BASE}/api/trilha/ativa`, p.init)
+            if (await doAgente(r, p.nonce)) {
+              ativa = lerJson<Ativa>(r)
+              lida = true
+            }
+          }
+          if (!lida) {
+            const p = await pedido('GET', '/api/ativa')
+            const r = await $.http.fetch(`${BASE}/api/ativa`, p.init)
+            ativa = (await doAgente(r, p.nonce)) ? lerJson<Ativa>(r) : null
+          }
           foraDoAr = false
         } catch {
           foraDoAr = true
@@ -501,6 +527,7 @@ export const register: Register = (on, options) => {
             ...(conta ? { conta } : {}),
             ...(entrada ? { entrada } : {}),
             ...(rotina ? { rotina } : {}),
+            ...(trilha ? { trilha } : {}),
           })
           const r = await $.http.fetch(`${BASE}/api/medida`, p.init)
           if (await doAgente(r, p.nonce)) {
@@ -584,6 +611,7 @@ export const register: Register = (on, options) => {
             ...(conta ? { conta } : {}),
             ...(entrada ? { entrada } : {}),
             ...(rotina ? { rotina } : {}),
+            ...(trilha ? { trilha } : {}),
           })
           const r = await f.buscar(`${BASE}/api/limite`, p.init)
           dito = (await doAgente(r, p.nonce)) ? lerJson(r) : null
@@ -626,6 +654,7 @@ export const register: Register = (on, options) => {
         ...(conta ? { conta } : {}),
         ...(entrada ? { entrada } : {}),
         ...(rotina ? { rotina } : {}),
+        ...(trilha ? { trilha } : {}),
       })
       const r = await f.buscar(`${BASE}/api/limite`, p.init)
       resposta = (await doAgente(r, p.nonce)) ? lerJson(r) : null
