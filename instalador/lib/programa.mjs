@@ -245,7 +245,8 @@ function aspasSh(s) {
  * assistente com a pasta de login da trilha (CLAUDE_SECURESTORAGE_CONFIG_DIR) e a marca REVEZA_TRILHA. O exec mantém o
  * número do processo, que o agente acompanha. Quem já nasceu numa trilha (um `claude -p` de um gancho), ou já tem a
  * própria pasta de login no ambiente, fica como está. Um `claude` achado que é o próprio lançador (um link para ele no
- * PATH) para com erro em vez de abrir a si mesmo sem fim (o exec mantém o número do processo).
+ * PATH) para com erro em vez de abrir a si mesmo sem fim (o exec mantém o número do processo). Pasta de uma empresa que
+ * roda só nas contas dela, sem conta livre (`reveza trilha` sai 3): mostra o motivo e não abre, com a saída 78.
  */
 export function lancadorClaude(dir, cli, node = process.execPath) {
   const marca = path.join(path.dirname(dir), "trilhas", "ligadas");
@@ -272,6 +273,14 @@ export function lancadorClaude(dir, cli, node = process.execPath) {
     `if [ -z "\${REVEZA_TRILHA:-}" ] && [ -z "\${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ] && [ -f ${aspasSh(marca)} ]; then`,
     '  aqui=$(pwd 2>/dev/null || echo "$PWD")',
     `  saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" 2>/dev/null)`,
+    "  rc=$?",
+    // sem conta da empresa, a conversa não abre; o comando que não conversa (versão, login, ajuda) segue valendo
+    '  if [ "$rc" = 3 ]; then',
+    '    case "${1:-}" in',
+    '      -v|--version|-h|--help|auth|config|doctor|install|mcp|migrate-installer|plugin|setup-token|update) saida="" ;;',
+    '      *) printf "reveza: %s\\n" "$saida" >&2; exit 78 ;;',
+    "    esac",
+    "  fi",
     '  pasta=$(printf "%s\\n" "$saida" | sed -n 1p)',
     '  empresa=$(printf "%s\\n" "$saida" | sed -n 2p)',
     '  if [ -n "$pasta" ] && [ -n "$empresa" ]; then',

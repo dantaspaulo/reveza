@@ -45,6 +45,10 @@ export interface RespostaOla {
 export interface EmpresaSeparada {
   id: string;
   nome: string;
+  /** Roda só nas contas marcadas (0044): sem conta, a sessão não abre em outra. Undefined: nuvem antiga. */
+  estrita?: boolean;
+  /** As contas da unidade estrita (0044): a principal que já está numa delas serve à sessão. */
+  contas?: string[];
 }
 export interface RegraEmpresa {
   tipo: "pasta" | "titulo";
@@ -217,6 +221,8 @@ export interface Nuvem {
   empresas(): Promise<RespostaEmpresas>;
   /** As trilhas com sessão neste computador (até 50 empresas) e a conta de cada uma (0039). */
   trilhas(empresas: string[]): Promise<{ ok: boolean; trilhas: TrilhaNuvem[] }>;
+  /** As unidades com sessão viva no login da principal (0044): a conta em uso não sai enquanto o aviso se renovar. */
+  segurarPrincipal(empresas: string[]): Promise<{ ok: boolean; segura: boolean; unidades: string[]; conta?: string }>;
   /** A conta em uso não roda o modelo da sessão (0028): fora da escolha deste computador por 6 horas, e decide na hora. */
   semModelo(contaId: string, modelo: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
   /** As contas que o painel removeu (0031), para apagar a cópia do login que este computador guarda delas. */

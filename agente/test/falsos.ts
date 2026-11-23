@@ -226,7 +226,10 @@ export class CliFalsa implements Cli {
   }
   retomar(sessao: string, cwd: string, _texto?: string, _saida?: number, rotina?: string, trilha?: { pasta: string; empresa: string }) {
     this.retomadas.push({ sessao, cwd, ...(rotina ? { rotina } : {}), ...(trilha ? { trilha } : {}) });
+    return this.pidRetomada;
   }
+  /** O número do processo que a próxima retomada devolve. */
+  pidRetomada: number | undefined = undefined;
   /** As conversas que ainda têm processo vivo neste computador (o número dele). */
   vivas = new Map<string, number>();
   sessaoViva(sessao: string) {
@@ -413,6 +416,17 @@ export class NuvemFalsa implements Nuvem {
   async empresas() {
     this.registrarChamada("empresas");
     return { empresas: this.banco.empresas.map((e) => ({ ...e })), regras: this.banco.regras.map((r) => ({ ...r })) };
+  }
+
+  /** A nuvem responde que a conta em uso já não é da unidade (ela decidiu outra antes de o agente saber). */
+  recusarTrava = false;
+  /** A conta que a nuvem diz ter olhado para responder à trava. */
+  contaDaTrava: string | undefined = undefined;
+
+  async segurarPrincipal(empresas: string[]) {
+    this.registrarChamada("segurarPrincipal", empresas);
+    const unidades = this.recusarTrava ? [] : empresas;
+    return { ok: true, segura: unidades.length > 0, unidades, ...(this.contaDaTrava ? { conta: this.contaDaTrava } : {}) };
   }
 
   async trilhas(empresas: string[]) {

@@ -205,10 +205,14 @@ export class NuvemRpc implements Nuvem {
   async empresas(): Promise<RespostaEmpresas> {
     const r = await this.chamar("agente_empresas", {});
     const uuid = (v: unknown) => (typeof v === "string" && UUID.test(v) ? v : null);
-    const empresas = (Array.isArray(r.empresas) ? r.empresas : []).flatMap((v) => {
+    const empresas = (Array.isArray(r.empresas) ? r.empresas : []).flatMap((v): RespostaEmpresas["empresas"] => {
       const e = v as Record<string, unknown> | null;
       const id = uuid(e?.id);
-      return id ? [{ id, nome: String(e?.nome ?? "").slice(0, 80) }] : [];
+      if (!id) return [];
+      const nome = String(e?.nome ?? "").slice(0, 80);
+      if (e?.estrita !== true) return [{ id, nome }];
+      const contas = (Array.isArray(e.contas) ? e.contas : []).flatMap((c) => uuid(c) ?? []).slice(0, 50);
+      return [{ id, nome, estrita: true, contas }];
     });
     const regras = (Array.isArray(r.regras) ? r.regras : []).flatMap((v): RegraEmpresa[] => {
       const x = v as Record<string, unknown> | null;
@@ -217,6 +221,13 @@ export class NuvemRpc implements Nuvem {
       return empresa && tipo && typeof x?.padrao === "string" ? [{ tipo, padrao: x.padrao.slice(0, 300), empresa }] : [];
     });
     return { empresas, regras };
+  }
+
+  async segurarPrincipal(empresas: string[]): Promise<{ ok: boolean; segura: boolean; unidades: string[]; conta?: string }> {
+    const r = await this.chamar("agente_segurar_principal", { p_empresas: empresas });
+    const unidades = (Array.isArray(r.unidades) ? r.unidades : []).filter((u): u is string => typeof u === "string" && UUID.test(u));
+    const conta = typeof r.conta === "string" && UUID.test(r.conta) ? r.conta : undefined;
+    return { ok: r.ok === true, segura: r.segura === true, unidades, ...(conta ? { conta } : {}) };
   }
 
   async trilhas(empresas: string[]): Promise<{ ok: boolean; trilhas: TrilhaNuvem[] }> {

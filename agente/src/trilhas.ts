@@ -43,6 +43,12 @@ export const EMPRESAS_LER_S = 60;
 export const EMPRESAS_VENCIDAS_S = 600;
 /** O lançador espera a conta de uma trilha nova por até este tempo. */
 export const TRILHA_ESPERA_MS = 15_000;
+/** Teto de cada leitura e da confirmação da trava no pedido do lançador: somados à espera, ficam abaixo dos 20 s da ponte. */
+const PEDIR_LEITURA_MS = 4_000;
+const PEDIR_TRAVA_MS = 3_000;
+/** A nuvem segura a conta por 3 min a cada aviso: a confirmação vale um pouco menos aqui. */
+const TRAVA_CONFIRMADA_S = 150;
+const TRAVA_PEDIDA_S = 120;
 /** O login que as sessões renovaram na trilha sobe ao cofre no máximo uma vez por este tempo. */
 export const SUBIR_TRILHA_S = 60;
 /** Sessão de trilha esquecida depois deste tempo sem notícia. */
@@ -150,11 +156,20 @@ export interface DepsTrilhas {
   aoTrocar: (empresa: string) => void;
   /** O login da conta morreu: a nuvem fica sabendo e manda outra. */
   loginMorto: (id: string) => Promise<void>;
+  /** A conta que a nuvem atribuiu à principal (o id dela lá), que pode ser mais nova que a conta em uso aqui. */
+  atribuida?: () => string | null | undefined;
+  /** A hora em que um processo começou, ou null. */
+  inicioDoProcesso?: (pid: number) => string | null;
 }
+
+/** Para onde volta uma sessão retomada: a trilha, o login da principal (com a trava) ou a fila. */
+export type DestinoRetomada =
+  | { espera: true; empresa?: string }
+  | { trilha?: { pasta: string; empresa: string }; principalDe?: string };
 
 /** O que a ponte devolve ao lançador. `vencida`: a regra veio da última leitura, a nuvem não responde (fail-static). */
 export type RespostaTrilha =
-  | { ok: true; trilha: null; aviso?: string }
+  | { ok: true; trilha: null; aviso?: string; bloqueio?: string }
   | { ok: true; trilha: { empresa: string; nome: string; pasta: string }; vencida?: true };
 
 export class Trilhas {
@@ -172,6 +187,12 @@ export class Trilhas {
   private oauthAvisado = false;
   private avisadoSemConta = new Map<string, number>();
   private avisadoVencida = new Map<string, number>();
+  private guardadasLidas = false;
+  private pidsConferidos = false;
+  /** Unidades com sessão para retomar no login da principal: a trava vem antes de o processo abrir. */
+  private travaPedida = new Map<string, number>();
+  /** O que a nuvem confirmou por último: até quando, e em qual conta local. */
+  private confirmadas = new Map<string, { ate: number; conta: string | null }>();
 
   constructor(private d: DepsTrilhas) {}
 
@@ -211,6 +232,39 @@ export class Trilhas {
     this.regras = r.regras;
     this.classificar = null;
     for (const e of r.empresas) if (this.trilhas[e.id]) this.trilhas[e.id]!.nome = e.nome;
+    const est = this.d.estado();
+    const guardar = { empresas: r.empresas, regras: r.regras };
+    if (JSON.stringify(est.regrasEmpresas ?? null) !== JSON.stringify(guardar)) {
+      est.regrasEmpresas = guardar;
+      this.d.salvar();
+    }
+  }
+
+  /** Depois de religar: as últimas regras lidas valem até a nuvem responder. */
+  private carregarGuardadas(): void {
+    if (this.guardadasLidas) return;
+    this.guardadasLidas = true;
+    const g = this.d.estado().regrasEmpresas;
+    if (!g || this.lidasEm !== 0) return;
+    this.empresas = Array.isArray(g.empresas) ? g.empresas : [];
+    this.regras = Array.isArray(g.regras) ? g.regras : [];
+    this.classificar = null;
+  }
+
+  /** Espera a promessa até o prazo; passou, segue sem ela (e o erro tardio dela não derruba o agente). */
+  private async noPrazo<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+    p.catch(() => undefined);
+    let fim: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        p,
+        new Promise<undefined>((ok) => {
+          fim = setTimeout(() => ok(undefined), ms);
+        }),
+      ]);
+    } finally {
+      if (fim) clearTimeout(fim);
+    }
   }
 
   /** A última leitura das empresas e das regras passou do prazo (a nuvem não responde): valem assim mesmo. */
@@ -235,15 +289,25 @@ export class Trilhas {
    * nuvem decidir, por até 15 s; sem conta mesmo assim, a sessão abre na principal e o painel recebe um aviso.
    */
   async pedir(cwd: string, pid: number | null): Promise<RespostaTrilha> {
-    if (!this.d.nuvem() || (!this.ligadas && !Object.values(this.trilhas).some((t) => t.conta))) return { ok: true, trilha: null };
+    this.carregarGuardadas();
+    const conhecida = this.empresas.some((e) => e.estrita);
+    if (!this.d.nuvem() || (!this.ligadas && !conhecida && !Object.values(this.trilhas).some((t) => t.conta))) {
+      return { ok: true, trilha: null };
+    }
+    // a ponte espera 20 s: tudo aqui fecha antes, para a sessão ser recusada em vez de abrir em outra conta sem resposta
+    const inicio = Date.now();
     try {
-      await this.lerEmpresas(this.lidasEm === 0);
+      await this.noPrazo(this.lerEmpresas(this.lidasEm === 0), PEDIR_LEITURA_MS);
     } catch (e) {
       this.d.log.erro(`ler as empresas separadas: ${(e as Error).message}`);
     }
     const emp = this.empresaDe(cwd);
     if (!emp) return { ok: true, trilha: null };
+    // no modo sombra o agente só registra: a regra das contas não impede sessão nenhuma de abrir
+    const estrita = emp.estrita === true && !this.d.sombra;
     const t = this.trilha(emp.id, emp.nome);
+    // a conta saiu da lista e a sessão antiga segue nela até fechar: sessão nova não entra, e a trilha não se renova
+    if (estrita && t.conta && !(await this.contaAindaServe(emp, t.conta))) return this.bloquear(emp);
     if (pid !== null && Number.isInteger(pid) && pid > 1 && !t.pids.includes(pid)) {
       t.pids.push(pid);
       t.pids.splice(0, Math.max(0, t.pids.length - 200));
@@ -251,14 +315,40 @@ export class Trilhas {
     t.pedidaEm = this.agora();
     this.d.salvar();
     if (!t.conta) {
+      // a busca em voo pode ter lido as trilhas antes deste pedido: sem conta depois dela, uma segunda já o leva
+      const havia = this.emVoo !== null;
       let fim: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
-        this.busca().catch(() => undefined),
+        (async () => {
+          await this.busca().catch(() => undefined);
+          if (havia && !t.conta) await this.busca().catch(() => undefined);
+        })(),
         new Promise<void>((ok) => {
-          fim = setTimeout(ok, TRILHA_ESPERA_MS);
+          fim = setTimeout(ok, Math.max(0, TRILHA_ESPERA_MS - (Date.now() - inicio)));
         }),
       ]);
       if (fim) clearTimeout(fim);
+      // a nuvem pode devolver a conta antiga, que saiu da lista e ainda não soltou: sessão nova não entra nela
+      if (estrita && t.conta && !(await this.contaAindaServe(emp, t.conta, PEDIR_TRAVA_MS))) {
+        t.pids = t.pids.filter((p) => p !== pid);
+        this.d.salvar();
+        return this.bloquear(emp);
+      }
+    }
+    if (!t.conta && estrita) {
+      // sem outra conta para a principal, a conta dela fica lá: a sessão abre nesse login, que já é o certo
+      t.pids = t.pids.filter((p) => p !== pid);
+      if (this.principalServe(emp.id)) {
+        // a sessão vai seguir este login: a nuvem precisa confirmar antes, para a principal não trocar com ela aberta
+        if (pid !== null) this.anotarPrincipal(emp.id, pid);
+        const seguras = await this.noPrazo(this.segurarPrincipal(), PEDIR_TRAVA_MS);
+        // nuvem fora (null): nenhuma troca chega aqui. Disse que não, ou não respondeu a tempo: não dá para garantir a conta
+        if (seguras === null || seguras?.includes(emp.id)) return { ok: true, trilha: null };
+        t.pidsPrincipal = (t.pidsPrincipal ?? []).filter((p) => p !== pid);
+        this.d.salvar();
+      }
+      // só as contas dela: não abre em outra. A trilha segue pedida, e a nuvem dá a conta assim que ela soltar.
+      return this.bloquear(emp);
     }
     if (!t.conta) {
       // decisão de 21/11 (DECISAO.md): sem conta para a empresa agora, a sessão abre na principal e o painel avisa;
@@ -282,6 +372,218 @@ export class Trilhas {
       return { ok: true, trilha: { empresa: emp.id, nome: emp.nome, pasta: t.pasta }, vencida: true };
     }
     return { ok: true, trilha: { empresa: emp.id, nome: emp.nome, pasta: t.pasta } };
+  }
+
+  private bloquear(emp: EmpresaSeparada): RespostaTrilha {
+    const bloqueio = `${emp.nome}: a conta desta empresa ou projeto não está livre agora. A sessão não abre em outra conta; tente de novo em instantes.`;
+    if ((this.avisadoSemConta.get(emp.id) ?? 0) <= this.agora()) {
+      this.avisadoSemConta.set(emp.id, this.agora() + TRILHA_PEDIDA_S);
+      this.d.trocador.evento("aviso", bloqueio, { empresa: emp.id });
+    }
+    return { ok: true, trilha: null, bloqueio };
+  }
+
+  /** A conta local é uma das contas marcadas para esta empresa ou projeto. */
+  private contaServe(emp: EmpresaSeparada, conta: string | null): boolean {
+    const posse = this.d.posse();
+    return !!conta && !!posse && (emp.contas ?? []).some((c) => posse.porContaId(c) === conta);
+  }
+
+  /** Confere com a lista mais nova: quem acabou de ganhar uma conta no painel não fica de fora por até 1 min. */
+  private async contaAindaServe(emp: EmpresaSeparada, conta: string, prazo = PEDIR_LEITURA_MS): Promise<boolean> {
+    if (this.contaServe(emp, conta)) return true;
+    try {
+      await this.noPrazo(this.lerEmpresas(true), prazo);
+    } catch (e) {
+      this.d.log.erro(`ler as empresas separadas: ${(e as Error).message}`);
+    }
+    const nova = this.empresas.find((e) => e.id === emp.id);
+    // sumiu da lista (desligada ou agora representada por outra): não dá para dizer que a conta ainda é dela
+    return !!nova && (!nova.estrita || this.contaServe(nova, conta));
+  }
+
+  /** As contas da unidade: as da lista, ou as guardadas quando ela deixou de ser a representante da trilha. */
+  private contasDaUnidade(id: string): string[] | undefined {
+    const emp = this.empresas.find((e) => e.id === id);
+    const t = this.trilhas[id];
+    if (emp) {
+      if (t?.pidsPrincipal?.length) t.contasPrincipal = emp.contas ?? [];
+      return emp.contas ?? [];
+    }
+    return t?.contasPrincipal;
+  }
+
+  /** A conta em uso aqui é uma das desta unidade. */
+  private ativaServe(id: string): boolean {
+    const contas = this.contasDaUnidade(id);
+    const posse = this.d.posse();
+    const ativa = this.d.estado().ativa;
+    return !!contas && !!ativa && !!posse && contas.some((c) => posse.porContaId(c) === ativa);
+  }
+
+  /**
+   * A conta em uso na principal é uma das desta empresa ou projeto, e a nuvem não mandou outra para cá: a conta local
+   * atrasa um pouco em relação à decisão dela.
+   */
+  private principalServe(id: string): boolean {
+    if (!this.ativaServe(id)) return false;
+    const atribuida = this.d.atribuida?.();
+    return !atribuida || (this.contasDaUnidade(id) ?? []).includes(atribuida);
+  }
+
+  /** A conta serve a todas as unidades com sessão presa no login da principal. */
+  serveAsPresas(contaId: string): boolean {
+    return this.naPrincipal().every((id) => (this.contasDaUnidade(id) ?? []).includes(contaId));
+  }
+
+  private travaValida(id: string): boolean {
+    const c = this.confirmadas.get(id);
+    return !!c && c.ate > this.agora() && c.conta === this.d.estado().ativa;
+  }
+
+  /** Pede à nuvem a trava que a retomada registrou; true: a sessão já pode abrir neste login. */
+  async confirmarTrava(id: string): Promise<boolean> {
+    if (!this.travaPedida.has(id)) return false;
+    await this.segurarPrincipal();
+    return this.principalServe(id) && this.travaValida(id);
+  }
+
+  /** Uma sessão da fila passou a esperar esta unidade: a trilha precisa existir aqui para a nuvem dar a conta dela. */
+  manterPedida(id: string): void {
+    this.trilha(id, this.empresas.find((e) => e.id === id)?.nome);
+    this.d.salvar();
+  }
+
+  /** A sessão foi retomada dentro da trilha: conta como sessão dela, e a nuvem não solta a conta com o processo rodando. */
+  anotarRetomada(id: string, pid: number): void {
+    if (!Number.isInteger(pid) || pid <= 1) return;
+    const t = this.trilha(id);
+    if (!t.pids.includes(pid)) t.pids.push(pid);
+    t.pids.splice(0, Math.max(0, t.pids.length - 200));
+    t.pedidaEm = this.agora();
+    this.d.salvar();
+  }
+
+  /** Um processo desta unidade roda no login da principal: enquanto ele viver, a conta em uso não sai. */
+  anotarPrincipal(id: string, pid: number): void {
+    if (!Number.isInteger(pid) || pid <= 1) return;
+    const t = this.trilha(id);
+    const lista = (t.pidsPrincipal ??= []);
+    if (!lista.includes(pid)) lista.push(pid);
+    lista.splice(0, Math.max(0, lista.length - 200));
+    const contas = this.empresas.find((e) => e.id === id)?.contas;
+    if (contas) t.contasPrincipal = contas;
+    const inicio = this.d.inicioDoProcesso?.(pid);
+    if (inicio) (t.iniciosPrincipal ??= {})[String(pid)] = inicio;
+    this.d.salvar();
+  }
+
+  /** Só depois de religar: o número guardado pode ser de outro programa agora, e ele prenderia a conta para sempre. */
+  private conferirPidsGuardados(): void {
+    if (this.pidsConferidos) return;
+    this.pidsConferidos = true;
+    const inicio = this.d.inicioDoProcesso;
+    if (!inicio) return;
+    for (const t of Object.values(this.trilhas)) {
+      if (!t.pidsPrincipal?.length) continue;
+      t.pidsPrincipal = t.pidsPrincipal.filter((p) => {
+        const salvo = t.iniciosPrincipal?.[String(p)];
+        const atual = salvo ? inicio(p) : null;
+        return !salvo || !atual || atual === salvo;
+      });
+    }
+  }
+
+  /** As unidades com processo vivo no login da principal, enquanto a conta em uso ainda é uma das delas. */
+  private naPrincipal(): string[] {
+    this.conferirPidsGuardados();
+    const r: string[] = [];
+    for (const t of Object.values(this.trilhas)) {
+      if (!t.pidsPrincipal?.length) continue;
+      const vivos = t.pidsPrincipal.filter((p) => this.d.vivo(p));
+      t.pidsPrincipal = vivos;
+      if (t.iniciosPrincipal) {
+        for (const p of Object.keys(t.iniciosPrincipal)) if (!vivos.includes(Number(p))) delete t.iniciosPrincipal[p];
+      }
+      if (vivos.length && this.ativaServe(t.empresa)) r.push(t.empresa);
+    }
+    return r.slice(0, 50);
+  }
+
+  /** Há sessão que só pode rodar na conta em uso: trocar a principal à mão a levaria para outra conta. */
+  segurandoPrincipal(): boolean {
+    return this.naPrincipal().length > 0;
+  }
+
+  /**
+   * Renova na nuvem a trava da conta em uso e devolve as unidades que ela confirmou. Null: nada a pedir ou sem resposta
+   * (a trava antiga vale até vencer, e a busca seguinte tenta de novo).
+   */
+  async segurarPrincipal(): Promise<string[] | null> {
+    const agora = this.agora();
+    for (const [id, ate] of this.travaPedida) if (ate <= agora) this.travaPedida.delete(id);
+    const presas = this.naPrincipal();
+    const ids = [...new Set([...presas, ...this.travaPedida.keys()])].slice(0, 50);
+    const nuvem = this.d.nuvem();
+    if (!ids.length || !nuvem || this.d.sombra) return null;
+    const ativa = this.d.estado().ativa;
+    try {
+      const r = await nuvem.segurarPrincipal(ids);
+      if (!r.ok) return null;
+      for (const id of ids) {
+        if (r.unidades.includes(id)) this.confirmadas.set(id, { ate: agora + TRAVA_CONFIRMADA_S, conta: ativa });
+        else this.confirmadas.delete(id);
+      }
+      // a nuvem olhou a conta que está mesmo em uso aqui e disse que não é da unidade (desligada, ou a conta saiu da
+      // lista): o processo não prende mais nada. Se ela olhou outra conta, a trava só venceu, e ele segue preso.
+      const posse = this.d.posse();
+      if (r.conta && posse?.porContaId(r.conta) === ativa) {
+        for (const id of presas) {
+          if (r.unidades.includes(id)) continue;
+          const t = this.trilhas[id];
+          if (t) {
+            t.pidsPrincipal = [];
+            delete t.iniciosPrincipal;
+            delete t.contasPrincipal;
+          }
+        }
+      }
+      return r.unidades;
+    } catch (e) {
+      this.d.log.erro(`segurar a conta em uso para a sessão da empresa: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  /** Depois de religar, com trilhas guardadas: as regras ainda não chegaram, e retomar agora poderia errar a conta. */
+  private aguardandoRegras(): boolean {
+    return !!this.d.nuvem() && this.lidasEm === 0 && !this.empresas.length && (this.ligadas || Object.keys(this.trilhas).length > 0);
+  }
+
+  /**
+   * Para onde volta uma sessão retomada. A regra "só nas contas dela" vale pela pasta, mesmo para a sessão que parou no
+   * login da principal: volta na trilha, na principal se a conta em uso é dela, ou espera na fila.
+   */
+  retomada(cwd: string, empresa?: string): DestinoRetomada {
+    const t0 = empresa ? this.trilhas[empresa] : undefined;
+    const comum: DestinoRetomada = t0?.conta ? { trilha: { pasta: t0.pasta, empresa: t0.empresa } } : {};
+    if (this.d.sombra) return comum;
+    this.carregarGuardadas();
+    if (this.aguardandoRegras()) return { espera: true };
+    const marcada = empresa ? this.empresas.find((e) => e.id === empresa) : undefined;
+    const emp = marcada && !marcada.estrita ? null : (marcada ?? this.empresaDe(cwd));
+    if (!emp?.estrita) return comum;
+    const t = this.trilhas[emp.id];
+    if (t?.conta && this.contaServe(emp, t.conta)) return { trilha: { pasta: t.pasta, empresa: t.empresa } };
+    if (this.principalServe(emp.id)) {
+      // a nuvem confirma a trava antes de o processo abrir: a próxima volta da fila já o abre
+      if (this.travaValida(emp.id)) {
+        this.travaPedida.delete(emp.id);
+        return { principalDe: emp.id };
+      }
+      this.travaPedida.set(emp.id, this.agora() + TRAVA_PEDIDA_S);
+    }
+    return { espera: true, empresa: emp.id };
   }
 
   /** A trilha de uma sessão, pelo REVEZA_TRILHA que o mod manda; null quando não é de trilha conhecida. */
@@ -344,10 +646,15 @@ export class Trilhas {
     const nuvem = this.d.nuvem();
     const posse = this.d.posse();
     if (!nuvem || !posse) return;
+    this.carregarGuardadas();
     const locais = Object.values(this.trilhas);
     this.marcar(this.ligadas || locais.some((t) => t.conta));
-    if (!this.ligadas && !locais.length) return;
+    const conhecida = this.empresas.some((e) => e.estrita);
+    if (!this.ligadas && !locais.length && !conhecida) return;
     if (this.ligadas) await this.lerEmpresas();
+    // desligaram a última: a lista velha ainda diz "só as contas dela" e seguraria a fila até o agente reiniciar
+    else if ((this.lidasEm === 0 && locais.length) || conhecida) await this.lerEmpresas().catch(() => undefined);
+    await this.segurarPrincipal();
     const pedidas = this.pedidas();
     if (!pedidas.length && !locais.some((t) => t.conta)) {
       this.limparSessoes();

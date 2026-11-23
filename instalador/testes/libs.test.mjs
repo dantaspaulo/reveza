@@ -248,6 +248,19 @@ test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com e
 
     r = rodar({ REVEZA_CLAUDE_REAL: arq });
     assert.equal(r.status, 127, "o lançador achado no lugar do assistente para, sem abrir a si mesmo sem fim");
+
+    // empresa que roda só nas contas dela, sem conta livre: não abre, e diz por quê
+    writeFileSync(cli, `console.log("Alfa: a conta está em uso");\nprocess.exit(3);\n`);
+    r = rodar();
+    assert.equal(r.status, 78);
+    assert.equal(r.stdout, "", "o assistente não abriu");
+    assert.match(r.stderr, /^reveza: Alfa: a conta está em uso\n$/);
+    // o comando que não abre conversa não fica preso à conta da empresa
+    for (const args of [["--version"], ["auth", "status"], ["doctor"]]) {
+      r = spawnSync("/bin/sh", [arq, ...args], { cwd: d, env, encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stdout.trim(), `dir= trilha= args=${args.join(" ")}`);
+    }
   } finally { limpar(); }
 });
 

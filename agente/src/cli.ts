@@ -395,15 +395,26 @@ async function cmdStatus(amb: Ambiente, a: Args, soContas: boolean): Promise<num
 /**
  * reveza trilha --cwd <pasta> --pid <n> (0.18.0): o lançador ~/.reveza/lancador/claude pergunta em qual pasta de login a
  * sessão abre. Escreve duas linhas (a pasta da trilha e a empresa) quando a pasta é de uma empresa separada; nada
- * quando é a principal, quando o agente não responde ou quando a resposta não confere. Sempre sai 0: o lançador abre o
- * assistente de qualquer jeito.
+ * quando é a principal, quando o agente não responde ou quando a resposta não confere. Sai 0 e o lançador abre o
+ * assistente, menos num caso (0.20.0): a pasta é de uma empresa que roda só nas contas dela e nenhuma está livre. Aí
+ * escreve o motivo em uma linha e sai 3, e o lançador não abre. O lançador antigo ignora a saída e lê uma linha só como
+ * "sem trilha".
  */
 async function cmdTrilha(amb: Ambiente, a: Args): Promise<number> {
   const cwd = typeof a.flags.cwd === "string" ? a.flags.cwd : process.cwd();
   const pid = typeof a.flags.pid === "string" && /^\d{1,10}$/.test(a.flags.pid) ? Number(a.flags.pid) : null;
   if (!path.isAbsolute(cwd)) return 0;
   const r = await pedirPonte(portaDe(amb, a), "POST", "/api/trilha", { cwd, pid }, chaveDaPonte(amb.c.ponteChave, false), 20_000);
-  const c = (r?.status === 200 ? r.corpo : null) as { ok?: boolean; trilha?: { pasta?: unknown; empresa?: unknown } | null; aviso?: unknown } | null;
+  const c = (r?.status === 200 ? r.corpo : null) as {
+    ok?: boolean;
+    trilha?: { pasta?: unknown; empresa?: unknown } | null;
+    aviso?: unknown;
+    bloqueio?: unknown;
+  } | null;
+  if (c?.ok && typeof c.bloqueio === "string" && c.bloqueio.trim()) {
+    amb.saida(c.bloqueio.replace(/\s+/g, " ").trim().slice(0, 300));
+    return 3;
+  }
   if (typeof c?.aviso === "string") amb.erro(`reveza: ${c.aviso.slice(0, 300)}`);
   const tr = c?.trilha;
   if (!c?.ok || !tr || typeof tr.pasta !== "string" || typeof tr.empresa !== "string") return 0;

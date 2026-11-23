@@ -27,6 +27,8 @@ export interface OpcoesRodar {
 }
 
 export interface Processo {
+  /** O número do processo, quando ele chegou a abrir. */
+  readonly pid?: number;
   readonly vivo: boolean;
   escrever(texto: string): boolean;
   aoLinha(fn: (linha: string) => void): void;
@@ -151,7 +153,7 @@ export const executorReal: Executor = {
       });
       filho.on("error", () => undefined);
       filho.unref();
-      return { vivo: false, escrever: () => false, aoLinha: () => undefined, aoFim: () => undefined, terminar: () => undefined };
+      return { pid: filho.pid, vivo: false, escrever: () => false, aoLinha: () => undefined, aoFim: () => undefined, terminar: () => undefined };
     }
     const filho = spawn(bin ?? "", args, { env: op.env ?? process.env, cwd: op.cwd, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let vivo = true;

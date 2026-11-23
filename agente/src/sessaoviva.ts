@@ -85,6 +85,16 @@ export function processoVivo(pid: number): boolean {
   }
 }
 
+/** A hora em que o processo começou, como o sistema a escreve; null se ele não existe ou o `ps` falhou. */
+export function inicioDoProcesso(pid: number): string | null {
+  try {
+    const s = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] });
+    return s.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /** `pid args` de todos os processos (macOS e Linux); null no Windows ou sem o `ps`. */
 export function tabelaDoPs(windows: boolean): string | null {
   if (windows) return null;

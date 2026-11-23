@@ -5,9 +5,11 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { aadConta, cifrarLogin } from "../src/cofre/cifra.js";
+import { FILA_VALIDA_OPENBOT_S } from "../src/config.js";
 import { lerChave } from "../src/ligar.js";
-import { criarClassificador, ehCaminho, EMPRESAS_VENCIDAS_S, normalizarPasta } from "../src/trilhas.js";
-import { ativaEm, BancoFalso, blob, montar, NuvemFalsa, type Montado } from "./falsos.js";
+import { NuvemRpc } from "../src/nuvem/rpc.js";
+import { criarClassificador, ehCaminho, EMPRESAS_LER_S, EMPRESAS_VENCIDAS_S, normalizarPasta } from "../src/trilhas.js";
+import { ativaEm, BancoFalso, blob, contaEstacionada, montar, NuvemFalsa, OpenBotFalso, type Montado } from "./falsos.js";
 
 const E1 = "11111111-2222-4333-8444-555555555555";
 const E2 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -69,12 +71,14 @@ describe("classificador das empresas separadas (o mesmo do painel)", () => {
 
 let m: Montado;
 let banco: BancoFalso;
+let nuvemFalsa: NuvemFalsa;
 afterEach(() => m?.limpar());
 const fns = (fn: string) => banco.chamadas.filter((c) => c.fn === fn);
 
 async function preparar() {
   banco = new BancoFalso();
-  m = await montar({ nuvem: new NuvemFalsa(banco, "pc-1") });
+  nuvemFalsa = new NuvemFalsa(banco, "pc-1");
+  m = await montar({ nuvem: nuvemFalsa });
   banco.agora = () => m.relogio.agora();
 }
 
@@ -110,7 +114,7 @@ async function comEmpresa(): Promise<{ b: string; cwd: string }> {
 
 async function pedir(cwd: string, pid: number | null = process.pid) {
   const r = await m.agente.alvoPonte().trilha!({ cwd, pid });
-  return r.corpo as { ok: boolean; trilha: { empresa: string; nome: string; pasta: string } | null; aviso?: string };
+  return r.corpo as { ok: boolean; trilha: { empresa: string; nome: string; pasta: string } | null; aviso?: string; bloqueio?: string };
 }
 
 describe("trilhas no agente", () => {
@@ -275,6 +279,344 @@ describe("trilhas no agente", () => {
     await m.agente.esperar();
     assert.ok(banco.eventos.some((x) => x.tipo === "aviso" && (x.dados as Record<string, unknown>)?.empresa === E1));
     assert.deepEqual(m.agente.estado.trilhas![E1]!.pids, [], "o processo que abriu na principal não segura a trilha");
+  });
+
+  test("empresa só nas contas dela, sem conta agora: a sessão não abre na principal e diz por quê", async () => {
+    await preparar();
+    await comPrincipal();
+    const { cwd } = await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    const r = await pedir(cwd);
+    assert.equal(r.trilha, null);
+    assert.match(r.bloqueio ?? "", /Empresa Um/);
+    assert.equal(r.aviso, undefined, "não diz que abriu na conta em uso");
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pids, [], "a sessão que não abriu não segura a trilha");
+    assert.ok(m.agente.estado.trilhas![E1]!.pedidaEm > 0, "segue pedida: a nuvem dá a conta quando ela soltar");
+  });
+
+  test("empresa só nas contas dela, com a conta livre: abre normal na trilha", async () => {
+    await preparar();
+    await comPrincipal();
+    const { b, cwd } = await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [b] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    const r = await pedir(cwd);
+    assert.equal(r.trilha?.empresa, E1);
+    assert.equal(r.bloqueio, undefined);
+  });
+
+  test("a conta saiu da lista da empresa: sessão nova não entra, mesmo com a trilha ainda nela", async () => {
+    await preparar();
+    await comPrincipal();
+    const { cwd } = await comEmpresa();
+    assert.equal((await pedir(cwd)).trilha?.empresa, E1, "a trilha já está na conta antes de ela sair da lista");
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    const antes = m.agente.estado.trilhas![E1]!.pedidaEm;
+    const r = await pedir(cwd);
+    assert.equal(r.trilha, null);
+    assert.match(r.bloqueio ?? "", /não abre em outra conta/);
+    assert.equal(m.agente.estado.trilhas![E1]!.pedidaEm, antes, "o pedido negado não renova a trilha");
+  });
+
+  test("as regras da empresa passam pela chamada real à nuvem: só as contas dela e a lista delas", async () => {
+    const conta = "99999999-2222-4333-8444-555555555555";
+    const n = new NuvemRpc({
+      chamar: async () => ({ ok: true, empresas: [{ id: E1, nome: "Um", estrita: true, contas: [conta, "lixo"] }, { id: E2, nome: "Dois" }], regras: [] }),
+      horaDoServidor: async () => null,
+    });
+    const r = await n.empresas();
+    assert.deepEqual(r.empresas, [{ id: E1, nome: "Um", estrita: true, contas: [conta] }, { id: E2, nome: "Dois" }]);
+  });
+
+  /** A conta A em uso na principal é a única da empresa, sem trilha própria. */
+  async function naPrincipalDaEmpresa(): Promise<{ cwd: string; idNuvem: string }> {
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    return { cwd, idNuvem };
+  }
+
+  test("a nuvem recusa segurar a conta: a sessão não abre no login da principal", async () => {
+    await preparar();
+    const { cwd } = await naPrincipalDaEmpresa();
+    nuvemFalsa.recusarTrava = true;
+    const r = await pedir(cwd);
+    assert.equal(r.trilha, null);
+    assert.match(r.bloqueio ?? "", /Empresa Um/);
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, [], "quem não abriu não segura a conta");
+  });
+
+  test("a nuvem já mandou outra conta para a principal: a conta local atrasada não serve", async () => {
+    await preparar();
+    const { cwd } = await naPrincipalDaEmpresa();
+    m.agente.ultimaAtribuicao = { ...m.agente.ultimaAtribuicao!, conta_id: "77777777-2222-4333-8444-555555555555" };
+    const r = await pedir(cwd);
+    assert.match(r.bloqueio ?? "", /Empresa Um/);
+  });
+
+  test("no modo de teste a regra só registra: nenhuma sessão é barrada", async () => {
+    banco = new BancoFalso();
+    nuvemFalsa = new NuvemFalsa(banco, "pc-1");
+    m = await montar({ nuvem: nuvemFalsa, sombra: true });
+    banco.agora = () => m.relogio.agora();
+    const { cwd } = await naPrincipalDaEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    const r = await pedir(cwd);
+    assert.equal(r.bloqueio, undefined);
+  });
+
+  test("sessão retomada segue a regra da pasta, mesmo tendo parado no login da principal", async () => {
+    await preparar();
+    const { cwd } = await naPrincipalDaEmpresa();
+    const tr = m.agente.trilhas!;
+    assert.deepEqual(tr.retomada(cwd), { espera: true, empresa: E1 }, "a trava vem antes de o processo abrir");
+    assert.deepEqual(await tr.segurarPrincipal(), [E1], "o pedido da retomada vai à nuvem");
+    assert.deepEqual(tr.retomada(cwd), { principalDe: E1 }, "a conta em uso é dela: volta nesse login, com a trava");
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.deepEqual(tr.retomada(cwd), { espera: true, empresa: E1 }, "sem conta dela: espera na fila");
+  });
+
+  test("processo retomado na principal entra na trava da conta em uso", async () => {
+    await preparar();
+    await naPrincipalDaEmpresa();
+    m.agente.trilhas!.anotarPrincipal(E1, process.pid);
+    assert.deepEqual(await m.agente.trilhas!.segurarPrincipal(), [E1]);
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, [process.pid]);
+  });
+
+  test("depois de religar, um número de processo reaproveitado não prende a conta", async () => {
+    await preparar();
+    await naPrincipalDaEmpresa();
+    const tr = m.agente.trilhas!;
+    tr.anotarPrincipal(E1, process.pid);
+    assert.equal(tr.segurandoPrincipal(), true);
+    m.agente.estado.trilhas![E1]!.iniciosPrincipal = { [String(process.pid)]: "outra hora" };
+    (tr as unknown as { pidsConferidos: boolean }).pidsConferidos = false;
+    assert.equal(tr.segurandoPrincipal(), false);
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, []);
+  });
+
+  test("a trava venceu com o computador fora e a nuvem mandou outra conta: a conta em uso fica", async () => {
+    await preparar();
+    await naPrincipalDaEmpresa();
+    m.agente.trilhas!.anotarPrincipal(E1, process.pid);
+    const ativa = m.agente.estado.ativa;
+    const c = await semear("C");
+    const r = await m.agente.aplicarAtribuicao({ ...m.agente.ultimaAtribuicao!, conta_id: c, versao: 99 });
+    assert.equal(r.ok, false);
+    assert.match(r.erro ?? "", /sessão de empresa ou projeto/);
+    assert.equal(m.agente.estado.ativa, ativa);
+  });
+
+  test("a unidade deixou de ser a representante da trilha: a sessão aberta segue prendendo a conta", async () => {
+    await preparar();
+    await naPrincipalDaEmpresa();
+    const tr = m.agente.trilhas!;
+    tr.anotarPrincipal(E1, process.pid);
+    banco.empresas = [{ id: E2, nome: "Empresa Dois", estrita: true, contas: [m.agente.estado.contas[m.agente.estado.ativa!]!.contaId!] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.equal(tr.segurandoPrincipal(), true);
+  });
+
+  test("a nuvem olhou a conta em uso e disse que não é da unidade: o processo solta a trava", async () => {
+    await preparar();
+    const { idNuvem } = await naPrincipalDaEmpresa();
+    const tr = m.agente.trilhas!;
+    tr.anotarPrincipal(E1, process.pid);
+    nuvemFalsa.recusarTrava = true;
+    nuvemFalsa.contaDaTrava = "77777777-2222-4333-8444-555555555555";
+    await tr.segurarPrincipal();
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, [process.pid], "a nuvem olhou outra conta: segue preso");
+    nuvemFalsa.contaDaTrava = idNuvem;
+    await tr.segurarPrincipal();
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, []);
+  });
+
+  test("depois de religar com a nuvem fora, as últimas regras seguem valendo", async () => {
+    await preparar();
+    const { cwd } = await naPrincipalDaEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: ["77777777-2222-4333-8444-555555555555"] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.ok(m.agente.estado.regrasEmpresas?.empresas.length, "as regras ficam guardadas");
+    const tr = m.agente.trilhas! as unknown as { lidasEm: number; empresas: unknown[]; regras: unknown[]; guardadasLidas: boolean };
+    tr.lidasEm = 0;
+    tr.empresas = [];
+    tr.regras = [];
+    tr.guardadasLidas = false;
+    nuvemFalsa.empresas = async () => {
+      throw new Error("nuvem fora");
+    };
+    const r = await pedir(cwd);
+    assert.match(r.bloqueio ?? "", /Empresa Um/, "sem as regras guardadas, abriria em qualquer conta");
+  });
+
+  test("a nuvem não confirma a trava a tempo: a sessão não abre", async () => {
+    await preparar();
+    const { cwd } = await naPrincipalDaEmpresa();
+    nuvemFalsa.segurarPrincipal = () => new Promise(() => undefined);
+    const r = await pedir(cwd);
+    assert.match(r.bloqueio ?? "", /Empresa Um/);
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, []);
+  });
+
+  test("conversa do OpenBot sem a conta da empresa agora: espera na fila e não continua em outra", async () => {
+    banco = new BancoFalso();
+    nuvemFalsa = new NuvemFalsa(banco, "pc-1");
+    const ob = new OpenBotFalso();
+    m = await montar({ nuvem: nuvemFalsa, openbot: ob });
+    banco.agora = () => m.relogio.agora();
+    await comPrincipal();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: ["77777777-2222-4333-8444-555555555555"] }];
+    banco.regras = [{ tipo: "pasta", padrao: "~/OpenBot/Agents/agent-0000", empresa: E1 }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    const sessao = "99999999-0000-4000-8000-000000000009";
+    const cwd = path.join(m.c.home, "OpenBot", "Agents", "agent-0000");
+    const dir = path.join(m.c.projetos, "-openbot");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(cwd, { recursive: true });
+    const linhas = [
+      { type: "user", sessionId: sessao, cwd, entrypoint: "openbot", message: { content: [{ type: "text", text: "Faça o relatório" }] } },
+      { type: "assistant", sessionId: sessao, cwd, isApiErrorMessage: true, error: "rate_limit", message: { content: [{ type: "text", text: "limite" }] } },
+    ];
+    fs.writeFileSync(path.join(dir, `${sessao}.jsonl`), linhas.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    ob.principais.set(sessao, "agent-0000");
+    m.agente.estado.config.retomarHeadless = true;
+    m.agente.estado.fila.push({ sessao, tipo: "headless", estado: "aguardando", em: m.relogio.agora() } as never);
+    m.agente.retomarHeadless(sessao);
+    await m.agente.esperar();
+    assert.equal(ob.enviadas.length, 0);
+    const f = m.agente.estado.fila.at(-1)!;
+    assert.equal(f.estado, "aguardando");
+    assert.equal(f.trilha, E1);
+    // a conta não voltou dentro do prazo: a conversa não reabre sozinha dias depois
+    await m.relogio.dormir((FILA_VALIDA_OPENBOT_S + 1) * 1000);
+    m.agente.retomarHeadless(sessao);
+    await m.agente.esperar();
+    assert.equal(f.estado, "descartada");
+    assert.equal(ob.enviadas.length, 0);
+  });
+
+  test("sessão retomada na trilha fica registrada nela: a nuvem não solta a conta com o processo rodando", async () => {
+    await preparar();
+    await comPrincipal();
+    const { cwd } = await comEmpresa();
+    await pedir(cwd, null);
+    const sessao = "99999999-0000-4000-8000-00000000000a";
+    const dir = path.join(m.c.projetos, "-proj-e1");
+    fs.mkdirSync(dir, { recursive: true });
+    const linhas = [
+      { type: "user", sessionId: sessao, cwd, entrypoint: "sdk-cli", message: { content: [{ type: "text", text: "Faça o relatório" }] } },
+      { type: "assistant", sessionId: sessao, cwd, isApiErrorMessage: true, error: "rate_limit", message: { content: [{ type: "text", text: "limite" }] } },
+    ];
+    fs.writeFileSync(path.join(dir, `${sessao}.jsonl`), linhas.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    m.agente.estado.config.retomarHeadless = true;
+    m.cli.pidRetomada = process.pid;
+    m.agente.estado.fila.push({ sessao, tipo: "headless", estado: "aguardando", em: m.relogio.agora(), trilha: E1 } as never);
+    const antes = m.agente.estado.trilhas![E1]!.pedidaEm;
+    await m.relogio.dormir(5000);
+    m.agente.retomarHeadless(sessao);
+    await m.agente.esperar();
+    assert.equal(m.cli.retomadas.at(-1)?.trilha?.empresa, E1);
+    const t = m.agente.estado.trilhas![E1]!;
+    assert.ok(t.pids.includes(process.pid));
+    assert.ok(t.pedidaEm > antes);
+  });
+
+  test("a trilha já tem a conta e a unidade sumiu da lista: a sessão nova não abre nesse login", async () => {
+    await preparar();
+    await comPrincipal();
+    const { cwd } = await comEmpresa();
+    await pedir(cwd, null);
+    assert.ok(m.agente.estado.trilhas![E1]!.conta);
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: ["77777777-2222-4333-8444-555555555555"] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.trilhas!.busca();
+    banco.empresas = [];
+    const r = await pedir(cwd);
+    assert.match(r.bloqueio ?? "", /Empresa Um/);
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pids, []);
+  });
+
+  test("a nuvem devolve uma conta que saiu da lista: a sessão nova não abre nesse login", async () => {
+    await preparar();
+    await comPrincipal();
+    const { cwd } = await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: ["77777777-2222-4333-8444-555555555555"] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    const tr = m.agente.trilhas!;
+    await tr.busca();
+    assert.equal(tr.empresaDe(cwd)?.estrita, true, "a regra estrita chegou ao agente");
+    banco.empresas = [];
+    const r = await pedir(cwd);
+    assert.match(r.bloqueio ?? "", /Empresa Um/);
+  });
+
+  test("desligaram a última unidade: a fila não fica presa na lista velha", async () => {
+    await preparar();
+    const { cwd } = await naPrincipalDaEmpresa();
+    const tr = m.agente.trilhas!;
+    tr.ligadas = false;
+    banco.empresas = [];
+    banco.regras = [];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await tr.busca();
+    assert.deepEqual(tr.retomada(cwd), {});
+  });
+
+  test("empresa só nas contas dela, com a conta dela na principal: abre nesse login, sem bloqueio", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    assert.ok(idNuvem, "a principal foi adotada pela nuvem");
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    const r = await pedir(cwd);
+    assert.deepEqual(r, { ok: true, trilha: null });
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pids, [], "a sessão na principal não segura a trilha");
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, [process.pid]);
+    assert.deepEqual(fns("segurarPrincipal").at(-1)?.args, [[E1]], "a nuvem sabe antes de a sessão abrir");
+    const antes = fns("segurarPrincipal").length;
+    await m.agente.busca();
+    assert.ok(fns("segurarPrincipal").length > antes, "a trava se renova enquanto a sessão vive");
+    contaEstacionada(m, "C");
+    const troca = await m.agente.alvoPonte().trocar!({ email: "c@exemplo.com", local: true });
+    assert.equal(troca.status, 409);
+    assert.match(String((troca.corpo as { erro?: string }).erro), /sessão de empresa ou projeto/);
+  });
+
+  test("sessão que já fechou não segura a conta em uso", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    const r = await pedir(cwd, 999_999);
+    assert.deepEqual(r, { ok: true, trilha: null });
+    assert.equal(fns("segurarPrincipal").length, 0);
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, []);
   });
 
   test("o painel desliga a última empresa: a marca do lançador some", async () => {

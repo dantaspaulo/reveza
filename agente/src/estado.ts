@@ -4,6 +4,7 @@
 import * as fs from "node:fs";
 import { gravarJson, lerJson, clonar } from "./util/arquivos.js";
 import type { Janela, Perfil } from "./anthropic.js";
+import type { EmpresaSeparada, RegraEmpresa } from "./nuvem/tipos.js";
 
 export type Fonte = "sessao" | "api" | null;
 
@@ -150,6 +151,8 @@ export interface EstadoLocal {
   trilhas?: Record<string, TrilhaLocal>;
   /** De que trilha é cada sessão, como o mod disse (pelo id da sessão): o contador põe as respostas dela na conta da trilha. */
   sessoesTrilha?: Record<string, { empresa: string; em: number }>;
+  /** As últimas regras lidas da nuvem: depois de religar valem até ela responder, para a sessão não abrir em outra conta. */
+  regrasEmpresas?: { empresas: EmpresaSeparada[]; regras: RegraEmpresa[] };
 }
 
 export interface TrilhaLocal {
@@ -169,6 +172,12 @@ export interface TrilhaLocal {
   linha: [number, string][];
   /** Processos abertos pelo lançador nesta trilha (o pid continua o mesmo depois do exec). */
   pids: number[];
+  /** Processos desta unidade abertos no login da principal, porque a conta dela estava lá: a principal não sai dela. */
+  pidsPrincipal?: number[];
+  /** A hora de início de cada um desses processos: depois de religar, número reaproveitado não prende a conta. */
+  iniciosPrincipal?: Record<string, string>;
+  /** As contas da unidade quando o processo abriu: ela pode deixar de ser a representante da trilha com ele vivo. */
+  contasPrincipal?: string[];
   /** O último pedido do lançador (epoch em segundos). */
   pedidaEm: number;
 }

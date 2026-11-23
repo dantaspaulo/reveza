@@ -66,8 +66,8 @@ import { compararVersao, loginNoGerenciadorDoWindows } from "./doctor.js";
 import { abrirTokens, completaLigada, PUBLICA_DESDE, pendenteDaPublicacao, semSegredos } from "./completa.js";
 import { gravarAtomico, gravarJson, lerJson } from "./util/arquivos.js";
 import { aplicarResumo, contaGrande, janelaDaConta, RESUMO_MAXIMO, RESUMO_MINIMO } from "./resumo.js";
-import { parouNoErro, processoVivo, ultimoPedido } from "./sessaoviva.js";
-import { Trilhas, type AgentePasta } from "./trilhas.js";
+import { inicioDoProcesso, parouNoErro, processoVivo, ultimoPedido } from "./sessaoviva.js";
+import { Trilhas, type AgentePasta, type DestinoRetomada } from "./trilhas.js";
 import { lerIgnorar, OPENBOT_CODIGOS, pedidoDoTexto, type AgenteOpenBot, type OpenBot } from "./openbot.js";
 import { aplicarModelo } from "./modelo.js";
 import { ESPERA_MAXIMA_S, esperarMemoria, TETO_ESPERA_PCT, trocaPodeEsperar, type Memoria } from "./memoria.js";
@@ -232,6 +232,8 @@ export class Agente {
   /** Pedidos que já abriram janela aqui (o painel escolher de novo abre de novo: muda o aprovador_em). */
   private janelasAbertas = new Set<string>();
   private semTelaAvisado = new Set<string>();
+  /** Sessões que esperam na fila a conta da empresa delas: o registro diz uma vez só. */
+  private semContaAvisada = new Set<string>();
   private falhaAtribuicao = new Map<string, number>();
   /** Conta da nuvem que a busca repôs no assistente sem login: quando pode repor de novo (epoch em segundos). */
   private reposta = new Map<string, number>();
@@ -362,8 +364,10 @@ export class Agente {
         pastaDe: (cwd) => this.pastas.de(cwd),
         agentes: () => this.agentesNaNuvem(),
         vivo: processoVivo,
+        inicioDoProcesso,
         renovar: async (pasta) => void (await this.d.cli.renovar(pasta, 0)),
         aoTrocar: (empresa) => this.retomarHeadless(undefined, false, empresa),
+        atribuida: () => this.ultimaAtribuicao?.conta_id ?? null,
         loginMorto: async (id) => {
           const c = this.estado.contas[id];
           if (c) await this.informarLogin(c);
@@ -772,6 +776,28 @@ export class Agente {
    * `trilha`: a troca foi na trilha desta empresa (0.18.0), e só as sessões dela voltam; sem ela, só as da principal.
    * As já liberadas (`liberadas`) e a sessão pedida (`so`) voltam de qualquer trilha: quem liberou já decidiu.
    */
+  /** A sessão espera a nuvem confirmar a trava da conta em uso: confirmou, a fila a abre na hora. */
+  private confirmarTravaERetomar(sessao: string, empresa?: string): void {
+    const tr = this.trilhas;
+    if (!tr || !empresa) return;
+    this.fundo(tr.confirmarTrava(empresa).then((ok) => {
+      if (ok) this.retomarHeadless(sessao);
+    }));
+  }
+
+  /** A espera pela conta da empresa também tem prazo: passado ele, a sessão não volta sozinha dias depois. */
+  private venceuEsperandoConta(f: ItemFila, t: number, prazo: number): boolean {
+    if (t - f.em <= prazo) return false;
+    f.estado = "descartada";
+    this.semContaAvisada.delete(f.sessao);
+    this.trocador.evento(
+      "aviso",
+      `A sessão ${f.sessao.slice(0, 8)} esperou a conta da empresa além do prazo e não será reaberta sozinha. Retome à mão se ainda precisar.`,
+      { sessao: f.sessao },
+    );
+    return true;
+  }
+
   retomarHeadless(so?: string, liberadas = false, trilha?: string): void {
     if (!this.estado.config.retomarHeadless) return;
     const t = this.d.relogio.agora();
@@ -787,11 +813,23 @@ export class Agente {
       const openbot = lida?.programa === "openbot" && !!this.d.openbot;
       // entrada velha (de antes de ligar a opção, ou importada) não volta a rodar sozinha; o prazo conta até a liberação
       f.liberadaEm ??= t;
-      if (f.liberadaEm - f.em > (openbot ? FILA_VALIDA_OPENBOT_S : FILA_VALIDA_S)) {
+      const prazo = openbot ? FILA_VALIDA_OPENBOT_S : FILA_VALIDA_S;
+      if (f.liberadaEm - f.em > prazo) {
         f.estado = "descartada";
         continue;
       }
       if (openbot) {
+        // só as contas dela: sem a conta da unidade agora, a conversa espera na fila em vez de continuar em outra
+        const destino = this.trilhas?.retomada(lida!.cwd, f.trilha);
+        if (destino && "espera" in destino) {
+          if (this.venceuEsperandoConta(f, t, prazo)) continue;
+          if (destino.empresa && f.trilha !== destino.empresa) {
+            f.trilha = destino.empresa;
+            this.trilhas?.manterPedida(destino.empresa);
+          }
+          this.confirmarTravaERetomar(f.sessao, destino.empresa);
+          continue;
+        }
         this.continuarNoOpenBot(f, t);
         continue;
       }
@@ -819,6 +857,16 @@ export class Agente {
             `A sessão ${f.sessao.slice(0, 8)} ainda roda neste computador (processo ${r.vivo}); o Reveza não abre outra cópia e a retoma quando esse processo sair, se ela tiver parado no limite.`,
             { sessao: f.sessao },
           );
+        }
+        continue;
+      }
+      // liberada e sem a conta da empresa: o ciclo confere de novo (retomarAdiadas) até a conta soltar
+      if (r && "semConta" in r) {
+        if (this.venceuEsperandoConta(f, t, prazo)) continue;
+        // parou no login da principal: passa a contar como pedido da trilha, para a nuvem dar a conta da unidade
+        if (r.empresa && f.trilha !== r.empresa) {
+          f.trilha = r.empresa;
+          this.trilhas?.manterPedida(r.empresa);
         }
         continue;
       }
@@ -1024,7 +1072,7 @@ export class Agente {
     jaLida?: SessaoLida | null,
     rotina?: string,
     empresa?: string,
-  ): { cwd: string } | { programa: string } | { vivo: number } | { sozinha: true } | null {
+  ): { cwd: string } | { programa: string } | { vivo: number } | { sozinha: true } | { semConta: true; empresa?: string } | null {
     const lida = jaLida === undefined ? lerSessao(this.d.c.projetos, sessao, this.d.c.home) : jaLida;
     if (!lida || !fs.existsSync(lida.cwd)) {
       this.d.log.erro(`sessão ${sessao.slice(0, 8)}: não achei a transcrição dela; não retomo`);
@@ -1044,7 +1092,18 @@ export class Agente {
     const cwd = lida.cwd;
     // sessão de empresa separada: volta na trilha dela; trilha que sumiu daqui (empresa desligada) volta na principal
     const t = empresa ? this.estado.trilhas?.[empresa] : undefined;
-    const trilha = t?.conta ? { pasta: t.pasta, empresa: t.empresa } : undefined;
+    const destino: DestinoRetomada = this.trilhas ? this.trilhas.retomada(cwd, empresa) : t?.conta ? { trilha: { pasta: t.pasta, empresa: t.empresa } } : {};
+    // só as contas dela (vale pela pasta, mesmo se parou no login da principal): espera na fila, nunca volta em outra
+    if ("espera" in destino) {
+      if (!this.semContaAvisada.has(sessao)) {
+        this.semContaAvisada.add(sessao);
+        this.d.log.info(`sessão ${sessao.slice(0, 8)}: a conta da empresa dela não está livre; fica na fila`);
+      }
+      this.confirmarTravaERetomar(sessao, destino.empresa);
+      return destino.empresa ? { semConta: true, empresa: destino.empresa } : { semConta: true };
+    }
+    this.semContaAvisada.delete(sessao);
+    const trilha = destino.trilha;
     if (empresa && !trilha) this.d.log.info(`sessão ${sessao.slice(0, 8)}: a trilha dela está sem conta; volta na principal`);
     if (this.d.sombra) {
       this.d.log.faria(`retomar a sessão ${sessao.slice(0, 8)}`);
@@ -1053,7 +1112,14 @@ export class Agente {
     fs.mkdirSync(this.d.c.logs, { recursive: true, mode: 0o700 });
     const fd = fs.openSync(path.join(this.d.c.logs, `retomada-${sessao.slice(0, 40)}.log`), "a", 0o600);
     try {
-      this.d.cli.retomar(sessao, cwd, "A conta anterior bateu o limite de uso e o Reveza trocou de conta. Continue a tarefa de onde parou.", fd, rotina, trilha);
+      const pid = this.d.cli.retomar(sessao, cwd, "A conta anterior bateu o limite de uso e o Reveza trocou de conta. Continue a tarefa de onde parou.", fd, rotina, trilha);
+      // voltou no login da principal por ser a conta dela: a conta em uso fica presa enquanto este processo viver
+      if (destino.principalDe && typeof pid === "number") {
+        this.trilhas?.anotarPrincipal(destino.principalDe, pid);
+        if (this.trilhas) this.fundo(this.trilhas.segurarPrincipal());
+      } else if (trilha && typeof pid === "number") {
+        this.trilhas?.anotarRetomada(trilha.empresa, pid);
+      }
     } finally {
       fs.closeSync(fd);
     }
@@ -1553,6 +1619,12 @@ export class Agente {
         this.d.log.faria(`pegar a posse e trocar para ${email} (${a.motivo || "atribuição da nuvem"})`);
       }
       return { ok: false, erro: "modo sombra: o agente não troca" };
+    }
+    // Uma sessão de empresa ou projeto roda neste login e só pode ficar nas contas dela: o computador ficou fora, a trava
+    // venceu e a nuvem mandou outra. A conta fica até a sessão fechar; depois a atribuição nova entra sozinha.
+    if (!semLogin && this.trilhas?.segurandoPrincipal() && !this.trilhas.serveAsPresas(a.conta_id)) {
+      if (await this.manterAtivaDuranteEspera()) return { ok: false, erro: "uma sessão de empresa ou projeto está rodando na conta em uso" };
+      this.d.log.info("[troca] a conta em uso foi para outro computador: a sessão da empresa segue para a conta atribuída");
     }
     if (!semLogin && (await this.esperarMemoriaParaTrocar(a.motivo || ""))) {
       if (await this.manterAtivaDuranteEspera()) return { ok: false, erro: "a troca espera sobrar memória neste computador" };
@@ -2487,8 +2559,16 @@ export class Agente {
         if (f.estado !== "aguardando") return recusa(409, `a sessão já foi ${f.estado}`);
         // sessão com tela continua sozinha pelo mod; retomar no terminal por cima dela daria duas conversas ao mesmo tempo
         if (f.tipo !== "headless") return recusa(409, "sessão com tela: ela continua sozinha quando a conta troca");
-        const r = this.retomar(f.sessao);
+        const r = this.retomar(f.sessao, false, undefined, f.rotina, f.trilha);
         if (!r) return recusa(404, "a transcrição da sessão não está neste computador");
+        if ("semConta" in r) {
+          if (r.empresa && f.trilha !== r.empresa) {
+            f.trilha = r.empresa;
+            this.trilhas?.manterPedida(r.empresa);
+            this.salvar();
+          }
+          return recusa(409, "a conta desta empresa ou projeto não está livre agora; a sessão volta sozinha quando ela soltar");
+        }
         if ("vivo" in r) {
           return recusa(
             409,
@@ -2821,6 +2901,9 @@ export class Agente {
           return { status: 409, corpo: { ok: false, erro: "com a nuvem ligada, quem decide a conta é o painel (Trocar agora); use --local para forçar" } };
         }
         if (this.d.sombra) return { status: 409, corpo: { ok: false, erro: "modo sombra: o agente não troca" } };
+        if (id !== this.estado.ativa && this.trilhas?.segurandoPrincipal()) {
+          return { status: 409, corpo: { ok: false, erro: "uma sessão de empresa ou projeto está rodando na conta em uso: feche essa sessão antes de trocar" } };
+        }
         // Nem o --local pega a conta que está com outro computador (atribuída a ele ou na posse dele): os dois renovariam
         // o mesmo login, e a renovação de um apaga o do outro (09/11/2026: a VPS pegou assim a conta do AIR, que ficou
         // pedindo login). Livre, a cópia mais nova do cofre vem antes da troca. Sem rede para conferir, segue o pedido.
