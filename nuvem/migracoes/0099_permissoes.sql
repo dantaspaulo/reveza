@@ -54,5 +54,5 @@ grant execute on function public.api_conferir_chave(text), public.decidir(uuid, 
   public.convite_aceitar(uuid, text, text), public.servico_papel(uuid), public.servico_registrar_computador(uuid, uuid),
   public.vigiar(), public.resumo_dia(), public.alertas_pendentes(integer), public.servico_segredo_alerta(uuid),
   public.servico_segredo_webhook(uuid), public.servico_webhook(uuid), public.servico_aal_ok(uuid, text), public.api_estado(uuid), public.api_trocar(uuid, uuid, uuid),
-  public.api_config(uuid, text, jsonb)
+  public.api_config(uuid, text, jsonb), public.rvz_rodar_sombra()
 to service_role;
