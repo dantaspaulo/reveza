@@ -31,6 +31,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { UsoPorEmpresa } from "@/secoes/uso-empresas"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAgora, useConsulta, useDados, useEstado } from "@/dados/contexto"
@@ -221,6 +222,8 @@ export default function Uso() {
       </div>
 
       <SessoesCaras estado={estado} sessoes={sessoes.dados} agora={agora} />
+
+      <UsoPorEmpresa />
     </Pagina>
   )
 }

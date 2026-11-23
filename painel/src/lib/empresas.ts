@@ -60,22 +60,26 @@ export function trocaDoEvento(em: string, texto: string, dados: Record<string, u
   return { em, computadorId, para: null, decisao: false, texto }
 }
 
-export type Classificar = (pasta: string, projeto: string) => string | null
+/** `computador` (0.20.0): a regra de um computador só vale nele; sem ele, só as regras que valem para todos. */
+export type Classificar = (pasta: string, projeto: string, computador?: string) => string | null
 
 /** O classificador das regras de agora: devolve o id da empresa da pasta, ou null (sem dono). */
 export function criarClassificador(dados: Pick<DadosEmpresas, "empresas" | "regras" | "agentes">): Classificar {
   const existe = new Set(dados.empresas.map((e) => e.id))
-  const regras = dados.regras.filter((r) => existe.has(r.empresaId))
+  // a regra de um computador vem antes da que vale para todos: no empate, ela ganha (como rvz_classificar)
+  const regras = dados.regras
+    .filter((r) => existe.has(r.empresaId))
+    .sort((a, b) => Number(!a.computadorId) - Number(!b.computadorId))
   const prefixos = regras
     .filter((r) => r.tipo === "pasta" && ehCaminho(r.padrao))
-    .map((r) => ({ base: normalizarPasta(r.padrao), empresa: r.empresaId }))
+    .map((r) => ({ base: normalizarPasta(r.padrao), empresa: r.empresaId, pc: r.computadorId ?? null }))
   const nomes = regras
     .filter((r) => r.tipo === "pasta" && !ehCaminho(r.padrao))
-    .map((r) => ({ nome: normalizarPasta(r.padrao).replace(/^\/+|\/+$/g, ""), empresa: r.empresaId }))
+    .map((r) => ({ nome: normalizarPasta(r.padrao).replace(/^\/+|\/+$/g, ""), empresa: r.empresaId, pc: r.computadorId ?? null }))
     .filter((r) => r.nome)
   const titulos = regras
     .filter((r) => r.tipo === "titulo")
-    .map((r) => ({ texto: r.padrao.trim().toLowerCase(), empresa: r.empresaId }))
+    .map((r) => ({ texto: r.padrao.trim().toLowerCase(), empresa: r.empresaId, pc: r.computadorId ?? null }))
     .filter((r) => r.texto)
     // o texto mais comprido é o mais específico
     .sort((a, b) => b.texto.length - a.texto.length)
@@ -87,8 +91,9 @@ export function criarClassificador(dados: Pick<DadosEmpresas, "empresas" | "regr
   const dentro = (p: string, base: string) => p === base || (base === "/" ? p.startsWith("/") : p.startsWith(base + "/"))
 
   const cache = new Map<string, string | null>()
-  return (pasta, projeto) => {
-    const chave = `${pasta}\u0000${projeto}`
+  return (pasta, projeto, computador) => {
+    const chave = `${pasta}\u0000${projeto}\u0000${computador ?? ""}`
+    const vale = (r: { pc: string | null }) => r.pc === null || r.pc === computador
     const ja = cache.get(chave)
     if (ja !== undefined) return ja
     let melhor: { nota: number; empresa: string } | null = null
@@ -97,9 +102,10 @@ export function criarClassificador(dados: Pick<DadosEmpresas, "empresas" | "regr
     }
     const p = normalizarPasta(pasta)
     if (p) {
-      for (const r of prefixos) if (dentro(p, r.base)) propor(r.base.length, r.empresa)
+      for (const r of prefixos) if (vale(r) && dentro(p, r.base)) propor(r.base.length, r.empresa)
       const partes = p.split("/")
       for (const r of nomes) {
+        if (!vale(r)) continue
         for (let i = partes.length - 1; i >= 0; i--) {
           if (partes[i] !== r.nome) continue
           propor(partes.slice(0, i + 1).join("/").length - 0.25, r.empresa)
@@ -111,13 +117,13 @@ export function criarClassificador(dados: Pick<DadosEmpresas, "empresas" | "regr
         for (const a of agentes.keys()) if (dentro(p, a) && (!pastaAgente || a.length > pastaAgente.length)) pastaAgente = a
         if (pastaAgente) {
           const ag = agentes.get(pastaAgente)!
-          const r = titulos.find((x) => ag.titulo.includes(x.texto) || ag.nome.includes(x.texto))
+          const r = titulos.find((x) => vale(x) && (ag.titulo.includes(x.texto) || ag.nome.includes(x.texto)))
           if (r) propor(pastaAgente.length - 0.5, r.empresa)
         }
       }
     } else {
       const nome = projeto.trim().toLowerCase()
-      const r = nome ? nomes.find((x) => x.nome === nome) : undefined
+      const r = nome ? nomes.find((x) => vale(x) && x.nome === nome) : undefined
       if (r) propor(0, r.empresa)
     }
     const r = (melhor as { empresa: string } | null)?.empresa ?? null
@@ -175,8 +181,8 @@ export function resumoRevezamento(empresas: Empresa[]): { ligadas: number; emTes
 /** 0.19.0: o classificador com os projetos somados na empresa deles (os números "por empresa"). */
 export function subirAEmpresa(classificar: Classificar, empresas: Pick<Empresa, "id" | "pai">[]): Classificar {
   const pai = new Map(empresas.filter((e) => e.pai).map((e) => [e.id, e.pai as string]))
-  return (pasta, projeto) => {
-    const id = classificar(pasta, projeto)
+  return (pasta, projeto, computador) => {
+    const id = classificar(pasta, projeto, computador)
     return id ? (pai.get(id) ?? id) : null
   }
 }
@@ -289,7 +295,7 @@ export function numerosPorEmpresa(uso: LinhaUso[], sessoes: SessaoUso[], classif
     return n
   }
   for (const l of uso) {
-    const n = de(classificar(l.pasta, l.projeto) ?? SEM_DONO)
+    const n = de(classificar(l.pasta, l.projeto, l.computadorId) ?? SEM_DONO)
     const tk = tokensDa(l)
     n.usd += l.usd
     n.tokens += tk
@@ -309,7 +315,7 @@ export function numerosPorEmpresa(uso: LinhaUso[], sessoes: SessaoUso[], classif
     p.tokens += tk
     n.pastas.set(k, p)
   }
-  for (const s of sessoes) de(classificar(s.pasta, s.projeto) ?? SEM_DONO).sessoes += 1
+  for (const s of sessoes) de(classificar(s.pasta, s.projeto, s.computadorId) ?? SEM_DONO).sessoes += 1
   return r
 }
 
@@ -337,7 +343,7 @@ export function porPeriodoEmpresa(
     const dia = chaveDia(l.hora)
     const linha = porChave.get(agrupar === "dia" ? dia : semanaDe(dia))
     if (!linha) continue
-    const g = classificar(l.pasta, l.projeto) ?? SEM_DONO
+    const g = classificar(l.pasta, l.projeto, l.computadorId) ?? SEM_DONO
     grupos.add(g)
     const v = metrica === "usd" ? l.usd : metrica === "respostas" ? l.respostas : tokensDa(l)
     linha[g] = ((linha[g] as number) ?? 0) + v
@@ -414,7 +420,7 @@ export interface PastaSemDono {
 export function pastasSemDono(uso: LinhaUso[], classificar: Classificar, agentes: AgenteOpenBot[]): PastaSemDono[] {
   const r = new Map<string, PastaSemDono & { pcs: Set<string> }>()
   for (const l of uso) {
-    if (classificar(l.pasta, l.projeto)) continue
+    if (classificar(l.pasta, l.projeto, l.computadorId)) continue
     const k = chavePasta(l.pasta, l.projeto)
     let p = r.get(k)
     if (!p) {
@@ -435,7 +441,7 @@ export function contasPorEmpresa(uso: LinhaUso[], classificar: Classificar): Map
   const r = new Map<string, Map<string, number>>()
   for (const l of uso) {
     if (!l.contaId) continue
-    const e = classificar(l.pasta, l.projeto) ?? SEM_DONO
+    const e = classificar(l.pasta, l.projeto, l.computadorId) ?? SEM_DONO
     const m = r.get(l.contaId) ?? new Map<string, number>()
     m.set(e, (m.get(e) ?? 0) + l.usd)
     r.set(l.contaId, m)

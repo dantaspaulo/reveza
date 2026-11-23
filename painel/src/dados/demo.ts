@@ -13,6 +13,8 @@ import {
   ErroPainel,
   type CamposConta,
   type CamposEmpresa,
+  type CamposUnidade,
+  type PassoUnidade,
   type EstadoTempoReal,
   type Fonte,
   type Recursos,
@@ -1506,6 +1508,57 @@ export class FonteDemo implements Fonte {
       this.auditar("empresa", e.id)
       return e.id
     })
+  }
+
+  async salvarUnidade(id: string | null, campos: CamposUnidade): Promise<string> {
+    // como o banco (0044): confere tudo antes de gravar
+    const e = this.d.empresas
+    const atual = id ? e.empresas.find((x) => x.id === id) : null
+    const pai = atual ? atual.pai : (campos.pai ?? null)
+    const contas = campos.contas ?? (id ? e.marcas.filter((m) => m.empresaId === id).map((m) => m.contaId) : [])
+    const modo = campos.modo !== undefined ? campos.modo : (atual?.modo ?? null)
+    if (modo === "ligado" && !contas.length && !(pai && e.marcas.some((m) => m.empresaId === pai)))
+      throw new ErroPainel("cadastro", "escolha uma conta para ligar")
+    const pastas = (campos.pastas ?? []).map((p) => ({ ...p, padrao: p.tipo === "pasta" ? p.padrao.trim().replace(/(.)\/+$/, "$1") : p.padrao.trim() }))
+    for (const p of pastas) {
+      if (!p.padrao || p.padrao.length > 300 || /^(~|\/+|[A-Za-z]:)$/.test(p.padrao)) throw new ErroPainel("padrao_invalido")
+      const dono = e.regras.find(
+        (r) => r.tipo === p.tipo && r.padrao === p.padrao && r.empresaId !== id && (!r.computadorId || !p.computador || r.computadorId === p.computador)
+      )
+      if (dono) throw new ErroPainel("cadastro", `a pasta ${p.padrao} já é de ${e.empresas.find((x) => x.id === dono.empresaId)?.nome ?? ""}`)
+    }
+    const novo = await this.salvarEmpresa(id, { nome: campos.nome, cor: campos.cor, pai: campos.pai, modo: campos.modo })
+    await this.escrever(() => {
+      const u = e.empresas.find((x) => x.id === novo)!
+      u.soContasDela = true
+      if (campos.contas) e.marcas = [...e.marcas.filter((m) => m.empresaId !== novo), ...[...new Set(contas)].map((contaId) => ({ contaId, empresaId: novo }))]
+      if (campos.pastas) {
+        e.regras = [
+          ...e.regras.filter((r) => r.empresaId !== novo),
+          ...pastas.map((p, i) => ({ id: `regra-${Date.now().toString(36)}${i}`, tipo: p.tipo, padrao: p.padrao, empresaId: novo, computadorId: p.computador })),
+        ]
+      }
+      this.auditar("unidade", novo)
+    })
+    return novo
+  }
+
+  async salvarUnidades(passos: PassoUnidade[]): Promise<Record<string, string>> {
+    // como o banco (0044): um passo recusado desfaz os anteriores
+    const antes = structuredClone(this.d.empresas)
+    const novos: Record<string, string> = {}
+    try {
+      for (const p of passos) {
+        const pai = p.campos.pai
+        const id = await this.salvarUnidade(p.id, pai && novos[pai] ? { ...p.campos, pai: novos[pai] } : p.campos)
+        if (!p.id) novos[p.ref] = id
+      }
+    } catch (e) {
+      this.d.empresas = antes
+      this.emitir()
+      throw e
+    }
+    return novos
   }
 
   apagarEmpresa(id: string) {

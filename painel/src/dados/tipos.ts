@@ -458,6 +458,8 @@ export interface Empresa {
   modo: ModoUnidade | null
   /** 0.19.0, só projeto: cheias as contas dele, usa as da empresa e depois o transbordo dela. */
   herdarTransbordo: boolean
+  /** 0.20.0: roda só nas contas marcadas, sem transbordo. Undefined: nuvem antiga. */
+  soContasDela?: boolean
 }
 
 /**
@@ -508,6 +510,8 @@ export interface RegraPasta {
   tipo: "pasta" | "titulo"
   padrao: string
   empresaId: string
+  /** 0.20.0: a regra vale só neste computador; null ou ausente, em todos. */
+  computadorId?: string | null
 }
 
 /** Agente do OpenBot visto num computador (0.17.0): a pasta de trabalho dele, o nome e o título. */

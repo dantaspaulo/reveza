@@ -33,6 +33,23 @@ export type CamposEmpresa = Partial<
   Pick<Empresa, "nome" | "cor" | "transbordo" | "transbordoContas" | "separar" | "pai" | "modo" | "herdarTransbordo">
 >
 
+/** 0.20.0: o cadastro de uma empresa ou projeto, salvo de uma vez. `computador` null: a pasta vale em todos. */
+export interface CamposUnidade {
+  nome?: string
+  cor?: number
+  pai?: string | null
+  modo?: Empresa["modo"]
+  contas?: string[]
+  pastas?: { tipo: RegraPasta["tipo"]; padrao: string; computador: string | null }[]
+}
+
+/** Um passo de salvar várias unidades. `ref`: o nome provisório da unidade nova, que um projeto novo cita em `pai`. */
+export interface PassoUnidade {
+  ref: string
+  id: string | null
+  campos: CamposUnidade
+}
+
 export type CamposConta = Partial<Pick<Conta, "cor" | "prioridade" | "reserva" | "pausada" | "agenda" | "tetoSemana" | "modelo">>
 
 /** O que cada fonte sabe fazer. A tela esconde ou desliga o que a nuvem ainda não oferece. */
@@ -128,6 +145,10 @@ export interface Fonte {
 
   /** Cria (id null) ou muda uma empresa; devolve o id. Nome repetido: ErroPainel("empresa_repetida"). */
   salvarEmpresa(id: string | null, campos: CamposEmpresa): Promise<string>
+  /** 0.20.0: grava nome, modo, contas e pastas de uma vez; a unidade passa a rodar só nas contas dela. Devolve o id. */
+  salvarUnidade(id: string | null, campos: CamposUnidade): Promise<string>
+  /** Várias unidades numa transação só: ou grava tudo, ou nada. Devolve o id real de cada unidade nova, pela `ref`. */
+  salvarUnidades(passos: PassoUnidade[]): Promise<Record<string, string>>
   /** Apaga a empresa, as marcas das contas nela e as regras das pastas dela. O uso fica, sem dono. */
   apagarEmpresa(id: string): Promise<void>
   /** As empresas desta conta (a lista troca a de antes); vazia: a conta serve a todas. */

@@ -13,6 +13,8 @@ import {
   ErroPainel,
   type CamposConta,
   type CamposEmpresa,
+  type CamposUnidade,
+  type PassoUnidade,
   type EstadoTempoReal,
   type Fonte,
   type Recursos,
@@ -240,6 +242,8 @@ const MENSAGENS: [RegExp, string][] = [
 ]
 
 export function codigoDoErro(mensagem: string, codigoPg?: string): string {
+  // 0.20.0: o motivo da recusa do cadastro traz nomes e vai para a tela como o banco escreveu
+  if (/^a pasta .+ já é de |^escolha uma conta para ligar$|^um projeto ligado usa a conta|^atualize o computador .+ antes de ligar/.test(mensagem)) return "cadastro"
   for (const [re, codigo] of MENSAGENS) if (re.test(mensagem)) return codigo
   if (codigoPg === "42501") return "sem_permissao"
   return "falha"
@@ -761,7 +765,8 @@ export class FonteSupabase implements Fonte {
       // com a nuvem de antes elas faltam e valem como antes
       sb.from("empresas").select("*").order("nome"),
       sb.from("conta_empresas").select("conta_id,empresa_id"),
-      sb.from("pastas_empresa").select("id,tipo,padrao,empresa_id").order("padrao"),
+      // "*": computador_id só existe desde a 0043 (0.20.0)
+      sb.from("pastas_empresa").select("*").order("padrao"),
       sb.from("agentes_openbot").select("computador_id,pasta,nome,titulo,visto_em").order("pasta").limit(5000),
       sb.from("atribuicao_trilhas").select("computador_id,empresa_id,conta_id,motivo,decidido_em,pedida_em"),
       sb.from("trilhas_sombra").select("computador_id,empresa_id,conta_id,em_uso,motivo,sessoes,trocas,decidido_em,visto_em"),
@@ -789,6 +794,7 @@ export class FonteSupabase implements Fonte {
         pai: l.pai ? String(l.pai) : null,
         modo: (["desligado", "sombra", "ligado"].includes(String(l.modo)) ? l.modo : null) as Empresa["modo"],
         herdarTransbordo: l.herdar_transbordo !== false,
+        soContasDela: l.so_contas_dela === true,
       })),
       marcas: (m.data ?? []).map((l) => ({ contaId: String(l.conta_id), empresaId: String(l.empresa_id) })),
       regras: (r.data ?? []).map((l): RegraPasta => ({
@@ -796,6 +802,7 @@ export class FonteSupabase implements Fonte {
         tipo: l.tipo === "titulo" ? "titulo" : "pasta",
         padrao: String(l.padrao),
         empresaId: String(l.empresa_id),
+        computadorId: l.computador_id ? String(l.computador_id) : null,
       })),
       agentes: (a.data ?? []).map((l) => ({
         computadorId: String(l.computador_id),
@@ -911,6 +918,16 @@ export class FonteSupabase implements Fonte {
     if (campos.herdarTransbordo !== undefined) p_campos.herdar_transbordo = campos.herdarTransbordo
     const r = await rpc("painel_empresa", { p_id: id, p_campos })
     return String(r.id)
+  }
+
+  async salvarUnidade(id: string | null, campos: CamposUnidade): Promise<string> {
+    const r = await rpc("painel_unidade", { p_id: id, p_campos: campos })
+    return String(r.id)
+  }
+
+  async salvarUnidades(passos: PassoUnidade[]): Promise<Record<string, string>> {
+    const r = await rpc("painel_unidades", { p_passos: passos })
+    return (r.ids ?? {}) as Record<string, string>
   }
 
   async apagarEmpresa(id: string) {

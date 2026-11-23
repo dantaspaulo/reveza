@@ -95,6 +95,21 @@ describe("regra de pasta", () => {
 })
 
 describe("classificador", () => {
+  it("0.20.0: a regra de um computador só vale nele e ganha da que vale para todos", () => {
+    const c = criarClassificador(
+      dados([
+        regra("pasta", "~/Code/site", "c"),
+        { ...regra("pasta", "~/Code/site", "a"), id: "r-a", computadorId: "pc1" },
+        { ...regra("pasta", "~/Code/outra", "b"), id: "r-b", computadorId: "pc2" },
+      ])
+    )
+    expect(c("~/Code/site", "site", "pc1")).toBe("a")
+    expect(c("~/Code/site", "site", "pc2")).toBe("c")
+    expect(c("~/Code/outra", "outra", "pc2")).toBe("b")
+    expect(c("~/Code/outra", "outra", "pc1")).toBeNull()
+    expect(c("~/Code/outra", "outra")).toBeNull()
+  })
+
   it("prefixo: a pasta e tudo dentro dela; o mais comprido ganha; não confunde nome parecido", () => {
     const c = criarClassificador(dados([regra("pasta", "~/Code/um", "a"), regra("pasta", "~/Code/um/especial/", "b")]))
     expect(c("~/Code/um", "um")).toBe("a")
