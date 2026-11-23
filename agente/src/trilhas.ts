@@ -33,6 +33,14 @@ import type { Relogio } from "./util/tempo.js";
 export const TRILHA_PEDIDA_S = 600;
 /** As empresas e as regras são relidas da nuvem no máximo a cada minuto. */
 export const EMPRESAS_LER_S = 60;
+/**
+ * Sem conseguir falar com a nuvem por este tempo, as empresas e as regras contam como vencidas: a última conhecida
+ * CONTINUA valendo (decisão de 23/11/2026) e a resposta ao lançador diz que está vencida. Soltar a trilha e abrir na
+ * principal seria pior: jogaria a sessão de uma empresa separada na conta compartilhada justamente durante uma falha
+ * de rede, que é o contrário do que a separação existe para fazer. Quem desliga uma unidade no painel só passa a valer
+ * naquele computador quando ele voltar a ler a nuvem.
+ */
+export const EMPRESAS_VENCIDAS_S = 600;
 /** O lançador espera a conta de uma trilha nova por até este tempo. */
 export const TRILHA_ESPERA_MS = 15_000;
 /** O login que as sessões renovaram na trilha sobe ao cofre no máximo uma vez por este tempo. */
@@ -61,10 +69,14 @@ export function ehCaminho(padrao: string): boolean {
   return /^([~/]|[A-Za-z]:(\/|\\|$))/.test(padrao.trim());
 }
 
-/** A empresa da pasta (já no formato da nuvem), pelas regras das empresas separadas; null quando nenhuma pega. */
+/**
+ * A unidade da pasta (empresa ou projeto, já no formato da nuvem); null quando nenhuma regra pega ou quando a que vence
+ * é de uma unidade fora da lista das ligadas (0.19.0: a pasta de um projeto desligado dentro de uma empresa ligada vai
+ * pela conta do computador). A regra que vence é escolhida entre todas, e só depois se olha a lista.
+ */
 export function criarClassificador(empresas: EmpresaSeparada[], regras: RegraEmpresa[], agentes: AgentePasta[]): (pasta: string) => string | null {
   const existe = new Set(empresas.map((e) => e.id));
-  const validas = regras.filter((r) => existe.has(r.empresa));
+  const validas = regras;
   const prefixos = validas.filter((r) => r.tipo === "pasta" && ehCaminho(r.padrao)).map((r) => ({ base: normalizarPasta(r.padrao), empresa: r.empresa }));
   const nomes = validas
     .filter((r) => r.tipo === "pasta" && !ehCaminho(r.padrao))
@@ -106,7 +118,8 @@ export function criarClassificador(empresas: EmpresaSeparada[], regras: RegraEmp
         if (r) propor(pastaAgente.length - 0.5, r.empresa);
       }
     }
-    return (melhor as { empresa: string } | null)?.empresa ?? null;
+    const vence = (melhor as { empresa: string } | null)?.empresa ?? null;
+    return vence && existe.has(vence) ? vence : null;
   };
 }
 
@@ -139,10 +152,10 @@ export interface DepsTrilhas {
   loginMorto: (id: string) => Promise<void>;
 }
 
-/** O que a ponte devolve ao lançador. */
+/** O que a ponte devolve ao lançador. `vencida`: a regra veio da última leitura, a nuvem não responde (fail-static). */
 export type RespostaTrilha =
   | { ok: true; trilha: null; aviso?: string }
-  | { ok: true; trilha: { empresa: string; nome: string; pasta: string } };
+  | { ok: true; trilha: { empresa: string; nome: string; pasta: string }; vencida?: true };
 
 export class Trilhas {
   private empresas: EmpresaSeparada[] = [];
@@ -158,6 +171,7 @@ export class Trilhas {
   private faria = new Set<string>();
   private oauthAvisado = false;
   private avisadoSemConta = new Map<string, number>();
+  private avisadoVencida = new Map<string, number>();
 
   constructor(private d: DepsTrilhas) {}
 
@@ -197,6 +211,11 @@ export class Trilhas {
     this.regras = r.regras;
     this.classificar = null;
     for (const e of r.empresas) if (this.trilhas[e.id]) this.trilhas[e.id]!.nome = e.nome;
+  }
+
+  /** A última leitura das empresas e das regras passou do prazo (a nuvem não responde): valem assim mesmo. */
+  private vencidas(): boolean {
+    return this.lidasEm > 0 && this.agora() - this.lidasEm > EMPRESAS_VENCIDAS_S;
   }
 
   /** A empresa separada da pasta em que a sessão abre, ou null. */
@@ -252,6 +271,15 @@ export class Trilhas {
         this.d.trocador.evento("aviso", aviso, { empresa: emp.id });
       }
       return { ok: true, trilha: null, aviso };
+    }
+    if (this.vencidas()) {
+      if ((this.avisadoVencida.get(emp.id) ?? 0) <= this.agora()) {
+        this.avisadoVencida.set(emp.id, this.agora() + EMPRESAS_VENCIDAS_S);
+        this.d.log.info(
+          `${emp.nome}: a nuvem não responde há mais de ${Math.round(EMPRESAS_VENCIDAS_S / 60)} min; a sessão abriu pela última regra conhecida.`,
+        );
+      }
+      return { ok: true, trilha: { empresa: emp.id, nome: emp.nome, pasta: t.pasta }, vencida: true };
     }
     return { ok: true, trilha: { empresa: emp.id, nome: emp.nome, pasta: t.pasta } };
   }

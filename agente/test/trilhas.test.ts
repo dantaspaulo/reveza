@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { aadConta, cifrarLogin } from "../src/cofre/cifra.js";
 import { lerChave } from "../src/ligar.js";
-import { criarClassificador, ehCaminho, normalizarPasta } from "../src/trilhas.js";
+import { criarClassificador, ehCaminho, EMPRESAS_VENCIDAS_S, normalizarPasta } from "../src/trilhas.js";
 import { ativaEm, BancoFalso, blob, montar, NuvemFalsa, type Montado } from "./falsos.js";
 
 const E1 = "11111111-2222-4333-8444-555555555555";
@@ -42,6 +42,19 @@ describe("classificador das empresas separadas (o mesmo do painel)", () => {
     assert.equal(c("~/OpenBot/Agents/agent-1/trabalho"), E1);
     assert.equal(c("~/OpenBot/Agents/agent-2"), null);
     assert.equal(c("~/x/y"), null, "regra de empresa sem separar (fora da lista) não conta");
+  });
+
+  test("a regra de um projeto fora da lista vence a da empresa ligada e manda a pasta para a conta do computador", () => {
+    const c = criarClassificador(
+      [{ id: E1, nome: "Um" }],
+      [
+        { tipo: "pasta", padrao: "~/Code/um", empresa: E1 },
+        { tipo: "pasta", padrao: "~/Code/um/site", empresa: E2 },
+      ],
+      [],
+    );
+    assert.equal(c("~/Code/um/api"), E1);
+    assert.equal(c("~/Code/um/site/web"), null);
   });
 
   test("normalizar e reconhecer caminho", () => {
@@ -138,6 +151,26 @@ describe("trilhas no agente", () => {
     assert.equal(outra.ok, false);
     // pasta fora da empresa: principal
     assert.deepEqual(await pedir(path.join(m.c.home, "outra")), { ok: true, trilha: null });
+  });
+
+  test("com a nuvem fora do ar, a última regra conhecida continua valendo e a resposta diz que está vencida", async () => {
+    // Decisão de 23/11/2026 (fail-static, ver EMPRESAS_VENCIDAS_S em src/trilhas.ts): sem notícia da nuvem, a sessão
+    // de uma empresa separada abre na trilha que o computador já conhece. Soltar a trilha e cair na principal durante
+    // uma falha de rede poria o trabalho da empresa na conta compartilhada, o contrário do que a separação faz.
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const anterior = await pedir(cwd);
+    assert.equal(anterior.trilha?.empresa, E1);
+    assert.equal((anterior as { vencida?: true }).vencida, undefined, "com a nuvem no ar a regra não está vencida");
+    const contaTrilha = m.agente.estado.trilhas![E1]!.conta;
+    banco.foraDoAr = true;
+    await m.relogio.dormir((EMPRESAS_VENCIDAS_S + 1) * 1000);
+    const nova = await pedir(cwd, null);
+    assert.equal(nova.trilha?.empresa, E1, "a regra conhecida segue valendo");
+    assert.equal((nova as { vencida?: true }).vencida, true, "e a resposta ao lançador marca que está vencida");
+    assert.equal(m.agente.estado.trilhas![E1]!.conta, contaTrilha, "a sessão em curso conserva a conta");
+    assert.equal(m.agente.estado.ativa, a, "a conta principal não muda");
   });
 
   test("medida e limite de uma sessão da trilha vão para a conta da trilha, nunca para a da principal", async () => {
