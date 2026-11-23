@@ -38,13 +38,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useAcao, useAgora, useConsulta, useDados, useEstado, usePermissao } from "@/dados/contexto"
-import { ErroPainel } from "@/dados/fonte"
+import { ErroPainel, type CamposEmpresa } from "@/dados/fonte"
 import type {
   Conta,
   DadosEmpresas,
   Empresa,
   Instantaneo,
   LinhaUso,
+  ModoUnidade,
   RegraPasta,
   SessaoUso,
   Transbordo,
@@ -63,6 +64,13 @@ import {
   porPeriodoEmpresa,
   sugestaoPorDominio,
   trocasPorEmpresa,
+  empresasForaNoAntigo,
+  modoDe,
+  nomeUnidade,
+  ordenarUnidades,
+  resumoRevezamento,
+  subirAEmpresa,
+  versaoNum,
   type Classificar,
   type NumerosEmpresa,
 } from "@/lib/empresas"
@@ -74,13 +82,17 @@ const NENHUM: Classificar = () => null
 
 type T = ReturnType<typeof useT>
 
-/** O nome e a cor de cada grupo do uso (uma empresa ou o "sem dono"). */
+/** O nome e a cor de cada grupo do uso (uma empresa, um projeto como "Empresa / Projeto", ou o "sem dono"). */
 function useRotulos(empresas: Empresa[]) {
   const { t } = useT()
   return React.useMemo(() => {
     const porId = new Map(empresas.map((e) => [e.id, e]))
     return {
-      nome: (id: string) => (id === SEM_DONO ? t("empresas.semDono") : (porId.get(id)?.nome ?? id)),
+      nome: (id: string) => {
+        if (id === SEM_DONO) return t("empresas.semDono")
+        const e = porId.get(id)
+        return e ? nomeUnidade(e, empresas) : id
+      },
       cor: (id: string) => {
         const e = porId.get(id)
         return e ? corConta(e.cor) : COR_OUTRAS
@@ -122,6 +134,8 @@ export default function Empresas() {
   const dados = cadastro.dados
   const classificar = React.useMemo(() => (dados ? criarClassificador(dados) : NENHUM), [dados])
   const indisponivel = cadastro.erro instanceof ErroPainel && cadastro.erro.codigo === "indisponivel"
+  const [somarProjetos, setSomarProjetos] = React.useState(false)
+  const temProjetos = !!dados?.empresas.some((e) => e.pai)
 
   const formatar = React.useCallback(
     (v: number) =>
@@ -153,6 +167,8 @@ export default function Empresas() {
         <AlertTitle>{t(dados?.trilhasNaNuvem ? "empresas.avisoTrilhas.titulo" : "empresas.aviso.titulo")}</AlertTitle>
         <AlertDescription>{t(dados?.trilhasNaNuvem ? "empresas.avisoTrilhas.texto" : "empresas.aviso.texto")}</AlertDescription>
       </Alert>
+
+      {dados?.projetosNaNuvem && dados.empresas.length > 0 ? <Revezamento estado={estado} dados={dados} /> : null}
 
       {dados && dados.empresas.length === 0 ? (
         <Sugestao estado={estado} aoMudar={cadastro.recarregar} />
@@ -188,6 +204,21 @@ export default function Empresas() {
             <ToggleGroupItem value="semana">{t("empresas.semana")}</ToggleGroupItem>
           </ToggleGroup>
         </div>
+        {temProjetos ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">{t("empresas.projetos.numerosPor")}</span>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={somarProjetos ? "empresa" : "projeto"}
+              onValueChange={(v) => v && setSomarProjetos(v === "empresa")}
+            >
+              <ToggleGroupItem value="projeto">{t("empresas.projetos.porProjeto")}</ToggleGroupItem>
+              <ToggleGroupItem value="empresa">{t("empresas.projetos.porEmpresa")}</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+        ) : null}
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{t("uso.metrica")}</span>
           <ToggleGroup
@@ -226,6 +257,7 @@ export default function Empresas() {
             agrupar={agrupar}
             metrica={metrica}
             formatar={formatar}
+            somarProjetos={somarProjetos && temProjetos}
           />
         </TabsContent>
         <TabsContent value="contas">
@@ -239,6 +271,80 @@ export default function Empresas() {
         </TabsContent>
       </Tabs>
     </Pagina>
+  )
+}
+
+/**
+ * 0.19.0: o resumo do revezamento (global ou por empresa e projeto), o que cada unidade em teste faria e o aviso dos
+ * computadores que ainda não entendem projeto desligado dentro de empresa ligada (a nuvem não manda a eles a empresa
+ * que errariam: lá as contas giram juntas, como antes, até atualizarem).
+ */
+function Revezamento({ estado, dados }: { estado: Instantaneo; dados: DadosEmpresas }) {
+  const { t, tn } = useT()
+  const resumo = React.useMemo(() => resumoRevezamento(dados.empresas), [dados.empresas])
+  const rotulos = useRotulos(dados.empresas)
+  const fora = React.useMemo(() => empresasForaNoAntigo(dados), [dados])
+  // só os computadores ativos: o revogado não pede mais nada à nuvem
+  const atras = estado.computadores.filter((c) => !c.revogado && versaoNum(c.versao) < versaoNum("0.19.0"))
+  const nomeConta = (id: string | null) => {
+    if (!id) return t("empresas.projetos.nenhuma")
+    const c = estado.contas.find((x) => x.id === id)
+    return c ? <NomeConta conta={c} /> : id.slice(0, 8)
+  }
+  const nomePc = (id: string) => estado.computadores.find((c) => c.id === id)?.nome ?? id.slice(0, 8)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          {resumo.global ? t("empresas.projetos.revezamentoGlobal") : t("empresas.projetos.revezamentoUnidades")}
+        </CardTitle>
+        <CardDescription>
+          {resumo.global
+            ? t("empresas.projetos.revezamentoGlobalTexto")
+            : [
+                resumo.ligadas ? tn("empresas.projetos.ligadas", resumo.ligadas) : null,
+                resumo.emTeste ? tn("empresas.projetos.emTeste", resumo.emTeste) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+        </CardDescription>
+      </CardHeader>
+      {dados.sombras.length > 0 || (fora.length > 0 && atras.length > 0) ? (
+        <CardContent className="flex flex-col gap-3">
+          {fora.length > 0 && atras.length > 0 ? (
+            <Alert>
+              <InfoIcon />
+              <AlertTitle>{t("empresas.projetos.atrasTitulo")}</AlertTitle>
+              <AlertDescription>
+                {t("empresas.projetos.atrasTexto", {
+                  computadores: atras.map((c) => `${c.nome} (${c.versao || "?"})`).join(", "),
+                  empresas: fora.map((e) => rotulos.nome(e.id)).join(", "),
+                })}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {dados.sombras.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-sm font-medium">{t("empresas.projetos.sombraTitulo")}</p>
+              <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+                {dados.sombras.map((s) => (
+                  <li key={`${s.computadorId}:${s.empresaId}`} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                    <span className="font-medium text-foreground">{rotulos.nome(s.empresaId)}</span>
+                    <span>{t("empresas.projetos.sombraEm", { computador: nomePc(s.computadorId) })}</span>
+                    <span>{t("empresas.projetos.sombraUsaria")}</span>
+                    {nomeConta(s.contaId)}
+                    <span>{t("empresas.projetos.sombraAgora")}</span>
+                    {nomeConta(s.emUso)}
+                    {s.trocas > 0 ? <span>· {tn("empresas.projetos.sombraTrocas", s.trocas)}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </CardContent>
+      ) : null}
+    </Card>
   )
 }
 
@@ -319,6 +425,7 @@ function AbaNumeros({
   agrupar,
   metrica,
   formatar,
+  somarProjetos,
 }: {
   estado: Instantaneo
   dados: DadosEmpresas | null
@@ -330,24 +437,45 @@ function AbaNumeros({
   agrupar: "dia" | "semana"
   metrica: Metrica
   formatar: (v: number) => string
+  /** 0.19.0: os projetos somados na empresa deles (sem isso, cada projeto tem o próprio cartão, logo abaixo dela). */
+  somarProjetos: boolean
 }) {
   const { t, tn } = useT()
-  const empresas = React.useMemo(() => dados?.empresas ?? [], [dados])
+  const empresas = React.useMemo(() => ordenarUnidades(dados?.empresas ?? []), [dados])
   const rotulos = useRotulos(empresas)
+  const ver = React.useMemo(
+    () => (somarProjetos ? subirAEmpresa(classificar, empresas) : classificar),
+    [somarProjetos, classificar, empresas]
+  )
   const numeros = React.useMemo(
-    () => (uso && sessoes ? numerosPorEmpresa(uso, sessoes, classificar) : null),
-    [uso, sessoes, classificar]
+    () => (uso && sessoes ? numerosPorEmpresa(uso, sessoes, ver) : null),
+    [uso, sessoes, ver]
   )
+  // somando os projetos, a marca de uma conta num projeto conta para a empresa dele (uma vez só)
+  const marcas = React.useMemo(() => {
+    if (!dados) return []
+    if (!somarProjetos) return dados.marcas
+    const pai = new Map(empresas.filter((e) => e.pai).map((e) => [e.id, e.pai as string]))
+    const vistas = new Set<string>()
+    return dados.marcas
+      .map((m) => ({ contaId: m.contaId, empresaId: pai.get(m.empresaId) ?? m.empresaId }))
+      .filter((m) => {
+        const k = `${m.contaId}:${m.empresaId}`
+        if (vistas.has(k)) return false
+        vistas.add(k)
+        return true
+      })
+  }, [dados, somarProjetos, empresas])
   const contagem = React.useMemo(
-    () => (trocas && dados ? trocasPorEmpresa(trocas, estado.contas, dados.marcas) : null),
-    [trocas, dados, estado.contas]
+    () => (trocas && dados ? trocasPorEmpresa(trocas, estado.contas, marcas) : null),
+    [trocas, dados, estado.contas, marcas]
   )
-  // as empresas na ordem do cadastro, e o sem dono por último quando tem uso
+  // as empresas na ordem do cadastro, cada uma seguida dos projetos dela, e o sem dono por último quando tem uso
   const ordem = React.useMemo(() => {
-    const ids = empresas.map((e) => e.id)
+    const ids = (somarProjetos ? empresas.filter((e) => !e.pai) : empresas).map((e) => e.id)
     if (numeros?.has(SEM_DONO)) ids.push(SEM_DONO)
     return ids
-  }, [empresas, numeros])
+  }, [empresas, numeros, somarProjetos])
 
   if (!numeros || !dados)
     return (
@@ -396,7 +524,7 @@ function AbaNumeros({
       ) : null}
       <GraficoEmpresas
         uso={uso}
-        classificar={classificar}
+        classificar={ver}
         rotulos={rotulos}
         ordem={ordem}
         dias={dias}
@@ -672,7 +800,7 @@ function AbaContas({
   aoMudar: () => void
 }) {
   const { t } = useT()
-  const empresas = React.useMemo(() => dados?.empresas ?? [], [dados])
+  const empresas = React.useMemo(() => ordenarUnidades(dados?.empresas ?? []), [dados])
   const rotulos = useRotulos(empresas)
   const porConta = React.useMemo(() => (uso ? contasPorEmpresa(uso, classificar) : null), [uso, classificar])
   const marcasDe = React.useMemo(() => {
@@ -750,6 +878,7 @@ function LinhaConta({
   const [valor, setValor] = React.useState(marcas)
   const [ocupado, setOcupado] = React.useState(false)
   const usos = uso ? [...uso.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]) : []
+  const selecionadas = empresas.filter((e) => valor.includes(e.id))
 
   const mudar = async (nova: string[]) => {
     const antes = valor
@@ -786,13 +915,19 @@ function LinhaConta({
               {empresas.map((e) => (
                 <ToggleGroupItem key={e.id} value={e.id} className="gap-1.5">
                   <Ponto cor={corConta(e.cor)} />
-                  {e.nome}
+                  {rotulos.nome(e.id)}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
           ) : null}
           {valor.length === 0 ? (
             <span className="text-xs text-muted-foreground">{t("empresas.contas.todas")}</span>
+          ) : null}
+          {selecionadas.length > 1 ? (
+            // 0.19.0: a conta pode servir a mais de uma empresa ou projeto; o painel avisa e deixa salvar
+            <span role="status" className="text-xs text-amber-700 dark:text-amber-400">
+              {t("empresas.contas.compartilhada", { empresas: selecionadas.map((e) => rotulos.nome(e.id)).join(", ") })}
+            </span>
           ) : null}
         </div>
       </TableCell>
@@ -830,7 +965,7 @@ function AbaPastas({
   const acao = useAcao()
   const nova = useDialogo<string>()
   const [apagar, setApagar] = React.useState<RegraPasta | null>(null)
-  const empresas = React.useMemo(() => dados?.empresas ?? [], [dados])
+  const empresas = React.useMemo(() => ordenarUnidades(dados?.empresas ?? []), [dados])
   const rotulos = useRotulos(empresas)
   const agentes = React.useMemo(() => dados?.agentes ?? [], [dados])
   const semDono = React.useMemo(
@@ -909,7 +1044,7 @@ function AbaPastas({
                           {empresas.map((e) => (
                             <SelectItem key={e.id} value={e.id}>
                               <Ponto cor={corConta(e.cor)} />
-                              {e.nome}
+                              {rotulos.nome(e.id)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1138,7 +1273,7 @@ function DialogoRegra({
                   {empresas.map((e) => (
                     <SelectItem key={e.id} value={e.id}>
                       <Ponto cor={corConta(e.cor)} />
-                      {e.nome}
+                      {nomeUnidade(e, empresas)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1184,16 +1319,84 @@ function AbaCadastro({
   const { fonte } = useDados()
   const { pode } = usePermissao()
   const acao = useAcao()
-  const dialogo = useDialogo<Empresa | null>()
+  // a empresa ou o projeto que abre no diálogo; um projeto novo leva a empresa dele em "pai"
+  const dialogo = useDialogo<{ empresa: Empresa | null; pai: string | null }>()
   const [apagar, setApagar] = React.useState<Empresa | null>(null)
+  const empresas = dados?.empresas ?? []
+  const raizes = ordenarUnidades(empresas).filter((e) => !e.pai)
+
+  // o modo, as contas, as regras e as contas em uso de uma empresa ou projeto
+  const resumoUnidade = (e: Empresa) => {
+    if (!dados) return null
+    const contas = dados.marcas.filter((m) => m.empresaId === e.id).length
+    const regras = dados.regras.filter((r) => r.empresaId === e.id).length
+    const emUso = dados.trilhas.filter((x) => x.empresaId === e.id)
+    const modo = modoDe(e, empresas)
+    const herda = !!e.pai && !e.modo
+    return (
+      <>
+        <p className="text-xs text-muted-foreground">
+          {e.pai && contas === 0
+            ? t("empresas.projetos.usaContasDaEmpresa")
+            : tn("empresas.cadastro.contasDela", contas)}{" "}
+          · {tn("empresas.cadastro.regrasDela", regras)}
+        </p>
+        {!e.pai ? <p className="text-xs">{resumoTransbordo(e, estado.contas, tn, t)}</p> : null}
+        <div className="flex flex-col gap-1">
+          <Badge variant={modo === "desligado" ? "outline" : "secondary"} className="w-fit">
+            {herda
+              ? t("empresas.projetos.modoHerdado", { modo: t(`empresas.projetos.modo.${modo}`) })
+              : t(`empresas.projetos.modo.${modo}`)}
+          </Badge>
+          {emUso.map((x) => {
+            const conta = estado.contas.find((c) => c.id === x.contaId)
+            const pc = estado.computadores.find((c) => c.id === x.computadorId)
+            return (
+              <div key={x.computadorId} className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                <span className="shrink-0">{pc?.nome ?? x.computadorId.slice(0, 8)}:</span>
+                {conta ? <NomeConta conta={conta} /> : <span>{x.contaId.slice(0, 8)}</span>}
+              </div>
+            )
+          })}
+        </div>
+      </>
+    )
+  }
+
+  const botoes = (e: Empresa) => (
+    <>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-8"
+        disabled={!pode}
+        aria-label={t("empresas.cadastro.editar")}
+        onClick={() => dialogo.abrir({ empresa: e, pai: e.pai })}
+      >
+        <PencilIcon />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-8"
+        disabled={!pode}
+        aria-label={t("empresas.cadastro.apagar")}
+        onClick={() => setApagar(e)}
+      >
+        <Trash2Icon />
+      </Button>
+    </>
+  )
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t("empresas.cadastro.titulo")}</CardTitle>
-        <CardDescription>{t("empresas.cadastro.descricao")}</CardDescription>
+        <CardDescription>
+          {dados?.projetosNaNuvem ? t("empresas.projetos.descricao") : t("empresas.cadastro.descricao")}
+        </CardDescription>
         <CardAction>
-          <Button size="sm" disabled={!pode || !dados} onClick={() => dialogo.abrir(null)}>
+          <Button size="sm" disabled={!pode || !dados} onClick={() => dialogo.abrir({ empresa: null, pai: null })}>
             <PlusIcon />
             {t("empresas.cadastro.nova")}
           </Button>
@@ -1202,59 +1405,50 @@ function AbaCadastro({
       <CardContent>
         {!dados ? (
           <Skeleton className="h-32 w-full" />
-        ) : dados.empresas.length === 0 ? (
+        ) : empresas.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("empresas.vazio.texto")}</p>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {dados.empresas.map((e) => {
-              const contas = dados.marcas.filter((m) => m.empresaId === e.id).length
-              const regras = dados.regras.filter((r) => r.empresaId === e.id).length
-              const emUso = dados.trilhas.filter((x) => x.empresaId === e.id)
+            {raizes.map((e) => {
+              const projetos = ordenarUnidades(empresas).filter((p) => p.pai === e.id)
               return (
                 <li key={e.id} className="flex flex-col gap-2 rounded-lg border p-3">
                   <div className="flex items-center gap-2">
                     <Ponto cor={corConta(e.cor)} />
                     <span className="min-w-0 flex-1 truncate font-medium">{e.nome}</span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-8"
-                      disabled={!pode}
-                      aria-label={t("empresas.cadastro.editar")}
-                      onClick={() => dialogo.abrir(e)}
-                    >
-                      <PencilIcon />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-8"
-                      disabled={!pode}
-                      aria-label={t("empresas.cadastro.apagar")}
-                      onClick={() => setApagar(e)}
-                    >
-                      <Trash2Icon />
-                    </Button>
+                    {botoes(e)}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {tn("empresas.cadastro.contasDela", contas)} · {tn("empresas.cadastro.regrasDela", regras)}
-                  </p>
-                  <p className="text-xs">{resumoTransbordo(e, estado.contas, tn, t)}</p>
-                  {e.separar ? (
-                    <div className="flex flex-col gap-1">
-                      <Badge variant="secondary" className="w-fit">
-                        {t("empresas.cadastro.separada")}
-                      </Badge>
-                      {emUso.map((x) => {
-                        const conta = estado.contas.find((c) => c.id === x.contaId)
-                        const pc = estado.computadores.find((c) => c.id === x.computadorId)
-                        return (
-                          <div key={x.computadorId} className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                            <span className="shrink-0">{pc?.nome ?? x.computadorId.slice(0, 8)}:</span>
-                            {conta ? <NomeConta conta={conta} /> : <span>{x.contaId.slice(0, 8)}</span>}
-                          </div>
-                        )
-                      })}
+                  {resumoUnidade(e)}
+                  {dados.projetosNaNuvem ? (
+                    <div className="mt-1 flex flex-col gap-2 border-t pt-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {tn("empresas.projetos.quantos", projetos.length)}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          disabled={!pode}
+                          onClick={() => dialogo.abrir({ empresa: null, pai: e.id })}
+                        >
+                          <PlusIcon />
+                          {t("empresas.projetos.novo")}
+                        </Button>
+                      </div>
+                      {projetos.length > 0 ? (
+                        <ul className="flex flex-col gap-2">
+                          {projetos.map((p) => (
+                            <li key={p.id} className="flex flex-col gap-1.5 rounded-md bg-muted/40 p-2">
+                              <div className="flex items-center gap-2">
+                                <span className="min-w-0 flex-1 truncate text-sm">{p.nome}</span>
+                                {botoes(p)}
+                              </div>
+                              {resumoUnidade(p)}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                     </div>
                   ) : null}
                 </li>
@@ -1268,7 +1462,8 @@ function AbaCadastro({
           key={dialogo.chave}
           aberto={dialogo.aberto}
           aoFechar={dialogo.fechar}
-          empresa={dialogo.valor ?? null}
+          empresa={dialogo.valor?.empresa ?? null}
+          pai={dialogo.valor?.pai ?? null}
           estado={estado}
           dados={dados}
           aoMudar={aoMudar}
@@ -1278,7 +1473,7 @@ function AbaCadastro({
         aberto={apagar !== null}
         aoFechar={() => setApagar(null)}
         titulo={t("empresas.cadastro.apagarTitulo", { nome: apagar?.nome ?? "" })}
-        texto={t("empresas.cadastro.apagarTexto")}
+        texto={t(apagar?.pai ? "empresas.projetos.apagarTexto" : "empresas.cadastro.apagarTexto")}
         botao={t("empresas.cadastro.apagarBotao")}
         botaoSegurar={t("empresas.cadastro.apagarSegurar")}
         aoConfirmar={async () => {
@@ -1291,10 +1486,14 @@ function AbaCadastro({
   )
 }
 
+const MODOS_EMPRESA = ["desligado", "sombra", "ligado"] as const
+const MODOS_PROJETO = ["herdar", ...MODOS_EMPRESA] as const
+
 function DialogoEmpresa({
   aberto,
   aoFechar,
   empresa,
+  pai,
   estado,
   dados,
   aoMudar,
@@ -1302,6 +1501,8 @@ function DialogoEmpresa({
   aberto: boolean
   aoFechar: () => void
   empresa: Empresa | null
+  /** A empresa do projeto (projeto novo ou editado); null: é uma empresa. */
+  pai: string | null
   estado: Instantaneo
   dados: DadosEmpresas
   aoMudar: () => void
@@ -1309,24 +1510,42 @@ function DialogoEmpresa({
   const { t } = useT()
   const { fonte } = useDados()
   const acao = useAcao()
+  const projeto = !!(empresa?.pai ?? pai)
+  const daEmpresa = dados.empresas.find((x) => x.id === (empresa?.pai ?? pai)) ?? null
   const [nome, setNome] = React.useState(empresa?.nome ?? "")
-  const [cor, setCor] = React.useState(String(empresa?.cor ?? dados.empresas.length % N_CORES))
+  const [cor, setCor] = React.useState(String(empresa?.cor ?? daEmpresa?.cor ?? dados.empresas.length % N_CORES))
   const [transbordo, setTransbordo] = React.useState<Transbordo>(empresa?.transbordo ?? "nenhum")
   const [escolhidas, setEscolhidas] = React.useState<string[]>(empresa?.transbordoContas ?? [])
   const [separar, setSeparar] = React.useState(empresa?.separar ?? false)
+  // 0.19.0: o modo (projeto pode herdar o da empresa: "herdar" vira null na nuvem)
+  const [modo, setModo] = React.useState<ModoUnidade | "herdar">(
+    empresa ? (empresa.modo ?? (projeto ? "herdar" : empresa.separar ? "ligado" : "desligado")) : projeto ? "herdar" : "desligado"
+  )
+  const [herdarTransbordo, setHerdarTransbordo] = React.useState(empresa?.herdarTransbordo ?? true)
   const contasDela = dados.marcas.filter((m) => m.empresaId === empresa?.id).length
   const [enviando, setEnviando] = React.useState(false)
   // para o transbordo, as contas de fora: as que não estão marcadas para esta empresa e não estão saindo
   const deFora = estado.contas.filter(
     (c) => !c.saiEm && !dados.marcas.some((m) => m.contaId === c.id && m.empresaId === empresa?.id)
   )
+  const comModo = dados.projetosNaNuvem
+  const modoEfetivo = modo === "herdar" ? (daEmpresa ? modoDe(daEmpresa, dados.empresas) : "desligado") : modo
+  const mostrarTransbordo = !(projeto && comModo && herdarTransbordo)
 
   return (
     <Dialog open={aberto} onOpenChange={(v) => !v && aoFechar()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{empresa ? empresa.nome : t("empresas.cadastro.nova")}</DialogTitle>
-          <DialogDescription>{t("empresas.cadastro.descricao")}</DialogDescription>
+          <DialogTitle>
+            {empresa
+              ? empresa.nome
+              : projeto
+                ? t("empresas.projetos.novoEm", { empresa: daEmpresa?.nome ?? "" })
+                : t("empresas.cadastro.nova")}
+          </DialogTitle>
+          <DialogDescription>
+            {projeto ? t("empresas.projetos.dialogoDescricao") : t("empresas.cadastro.descricao")}
+          </DialogDescription>
         </DialogHeader>
         <form
           id="form-empresa"
@@ -1334,13 +1553,23 @@ function DialogoEmpresa({
           onSubmit={async (e) => {
             e.preventDefault()
             setEnviando(true)
-            const campos = {
+            const campos: CamposEmpresa = {
               nome: nome.trim(),
               cor: Number(cor),
-              transbordo,
-              transbordoContas: transbordo === "escolhidas" ? escolhidas : [],
-              // a nuvem de antes da 0.18.0 recusa o campo: só vai quando ela já sabe separar
-              ...(dados.trilhasNaNuvem ? { separar } : {}),
+              ...(mostrarTransbordo
+                ? { transbordo, transbordoContas: transbordo === "escolhidas" ? escolhidas : [] }
+                : {}),
+              // 0.19.0: o modo no lugar de "separar" (a nuvem mantém "separar" igual a "ligado")
+              ...(comModo
+                ? {
+                    modo: modo === "herdar" ? null : modo,
+                    ...(projeto ? { herdarTransbordo } : {}),
+                    ...(!empresa && pai ? { pai } : {}),
+                  }
+                : // a nuvem de antes da 0.18.0 recusa o campo: só vai quando ela já sabe separar
+                  dados.trilhasNaNuvem
+                  ? { separar }
+                  : {}),
             }
             const [ok] = await acao(
               () => fonte.salvarEmpresa(empresa?.id ?? null, campos),
@@ -1375,7 +1604,47 @@ function DialogoEmpresa({
                 ))}
               </ToggleGroup>
             </Field>
-            {dados.trilhasNaNuvem ? (
+            {comModo ? (
+              <Field>
+                <FieldLabel>{t("empresas.projetos.modoTitulo")}</FieldLabel>
+                <RadioGroup value={modo} onValueChange={(v) => setModo(v as ModoUnidade | "herdar")}>
+                  {(projeto ? MODOS_PROJETO : MODOS_EMPRESA).map(
+                    (x) => (
+                      <FieldLabel key={x} htmlFor={`modo-${x}`}>
+                        <Field orientation="horizontal">
+                          <RadioGroupItem value={x} id={`modo-${x}`} />
+                          <FieldContent>
+                            <FieldTitle>
+                              {x === "herdar"
+                                ? t("empresas.projetos.modoHerdar", {
+                                    modo: t(
+                                      `empresas.projetos.modo.${daEmpresa ? modoDe(daEmpresa, dados.empresas) : "desligado"}`
+                                    ),
+                                  })
+                                : t(`empresas.projetos.modo.${x}`)}
+                            </FieldTitle>
+                            <FieldDescription>{t(`empresas.projetos.modoDica.${x}`)}</FieldDescription>
+                          </FieldContent>
+                        </Field>
+                      </FieldLabel>
+                    )
+                  )}
+                </RadioGroup>
+                {modoEfetivo !== "desligado" && contasDela === 0 && !projeto ? (
+                  <FieldDescription className="text-foreground">{t("empresas.cadastro.separarSemConta")}</FieldDescription>
+                ) : null}
+              </Field>
+            ) : null}
+            {comModo && projeto ? (
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldLabel htmlFor="projeto-herdar-transbordo">{t("empresas.projetos.herdarTransbordo")}</FieldLabel>
+                  <FieldDescription>{t("empresas.projetos.herdarTransbordoDica")}</FieldDescription>
+                </FieldContent>
+                <Switch id="projeto-herdar-transbordo" checked={herdarTransbordo} onCheckedChange={setHerdarTransbordo} />
+              </Field>
+            ) : null}
+            {!comModo && dados.trilhasNaNuvem ? (
               <Field orientation="horizontal">
                 <FieldContent>
                   <FieldLabel htmlFor="empresa-separar">{t("empresas.cadastro.separar")}</FieldLabel>
@@ -1389,26 +1658,28 @@ function DialogoEmpresa({
                 <Switch id="empresa-separar" checked={separar} onCheckedChange={setSeparar} />
               </Field>
             ) : null}
-            <Field>
-              <FieldLabel>{t("empresas.cadastro.transbordo")}</FieldLabel>
-              <RadioGroup value={transbordo} onValueChange={(v) => setTransbordo(v as Transbordo)}>
-                {(["nenhum", "qualquer", "escolhidas"] as const).map((x) => {
-                  const rotulo = ({ nenhum: "Nenhum", qualquer: "Qualquer", escolhidas: "Escolhidas" } as const)[x]
-                  return (
-                    <FieldLabel key={x} htmlFor={`transbordo-${x}`}>
-                      <Field orientation="horizontal">
-                        <RadioGroupItem value={x} id={`transbordo-${x}`} />
-                        <FieldContent>
-                          <FieldTitle>{t(`empresas.cadastro.transbordo${rotulo}`)}</FieldTitle>
-                          <FieldDescription>{t(`empresas.cadastro.transbordo${rotulo}Dica`)}</FieldDescription>
-                        </FieldContent>
-                      </Field>
-                    </FieldLabel>
-                  )
-                })}
-              </RadioGroup>
-            </Field>
-            {transbordo === "escolhidas" ? (
+            {mostrarTransbordo ? (
+              <Field>
+                <FieldLabel>{t("empresas.cadastro.transbordo")}</FieldLabel>
+                <RadioGroup value={transbordo} onValueChange={(v) => setTransbordo(v as Transbordo)}>
+                  {(["nenhum", "qualquer", "escolhidas"] as const).map((x) => {
+                    const rotulo = ({ nenhum: "Nenhum", qualquer: "Qualquer", escolhidas: "Escolhidas" } as const)[x]
+                    return (
+                      <FieldLabel key={x} htmlFor={`transbordo-${x}`}>
+                        <Field orientation="horizontal">
+                          <RadioGroupItem value={x} id={`transbordo-${x}`} />
+                          <FieldContent>
+                            <FieldTitle>{t(`empresas.cadastro.transbordo${rotulo}`)}</FieldTitle>
+                            <FieldDescription>{t(`empresas.cadastro.transbordo${rotulo}Dica`)}</FieldDescription>
+                          </FieldContent>
+                        </Field>
+                      </FieldLabel>
+                    )
+                  })}
+                </RadioGroup>
+              </Field>
+            ) : null}
+            {mostrarTransbordo && transbordo === "escolhidas" ? (
               <Field>
                 <FieldLabel>{t("empresas.cadastro.transbordoContas")}</FieldLabel>
                 <div className="flex flex-col gap-2">

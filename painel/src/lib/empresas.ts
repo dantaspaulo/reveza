@@ -7,7 +7,18 @@
 // Linha de antes da 0.17.0 (sem pasta): só a regra de nome, comparada com o nome curto do projeto.
 // Tudo aqui roda no navegador, na hora de ler: mudar uma regra muda também o passado.
 
-import type { AgenteOpenBot, Conta, DadosEmpresas, LinhaUso, MarcaConta, SessaoUso, TrocaUso } from "@/dados/tipos"
+import type {
+  AgenteOpenBot,
+  Conta,
+  DadosEmpresas,
+  Empresa,
+  LinhaUso,
+  MarcaConta,
+  ModoUnidade,
+  RegraPasta,
+  SessaoUso,
+  TrocaUso,
+} from "@/dados/tipos"
 import { provedorPublico } from "./cores"
 import { chaveDia } from "./formato"
 import { tokensDa, type Metrica } from "./uso"
@@ -114,6 +125,111 @@ export function criarClassificador(dados: Pick<DadosEmpresas, "empresas" | "regr
     cache.set(chave, r)
     return r
   }
+}
+
+/** 0.19.0: "Empresa / Projeto" (ou só o nome, numa empresa), como rvz_nome_unidade na nuvem. */
+export function nomeUnidade(e: Pick<Empresa, "nome" | "pai">, empresas: Pick<Empresa, "id" | "nome">[]): string {
+  if (!e.pai) return e.nome
+  const pai = empresas.find((x) => x.id === e.pai)
+  return `${pai?.nome ?? "?"} / ${e.nome}`
+}
+
+/** 0.19.0: as empresas em ordem de nome, cada uma seguida dos projetos dela (também em ordem de nome). */
+export function ordenarUnidades<E extends Pick<Empresa, "id" | "nome" | "pai">>(empresas: E[]): E[] {
+  const porNome = (a: E, b: E) => a.nome.localeCompare(b.nome)
+  const ids = new Set(empresas.map((e) => e.id))
+  // projeto cuja empresa não veio na lista fica entre as empresas, para não sumir
+  const raiz = empresas.filter((e) => !e.pai || !ids.has(e.pai)).sort(porNome)
+  const r: E[] = []
+  for (const e of raiz) r.push(e, ...empresas.filter((p) => p.pai === e.id).sort(porNome))
+  return r
+}
+
+/** 0.19.0: o modo que vale numa empresa ou projeto (o do projeto ou, sem ele, o da empresa), como rvz_modo_de. */
+export function modoDe(e: Pick<Empresa, "pai" | "modo" | "separar">, empresas: Empresa[]): ModoUnidade {
+  const daEmpresa = (x: Pick<Empresa, "modo" | "separar">): ModoUnidade =>
+    x.separar ? "ligado" : x.modo === "sombra" ? "sombra" : "desligado"
+  if (!e.pai) return daEmpresa(e)
+  if (e.modo) return e.modo
+  const pai = empresas.find((x) => x.id === e.pai)
+  return pai ? daEmpresa(pai) : "desligado"
+}
+
+/**
+ * 0.19.0: o resumo da chave "revezamento global ou por empresa e projeto". Global = nenhuma empresa ou projeto ligado
+ * nem em teste: todas as contas giram juntas, como sempre.
+ */
+export function resumoRevezamento(empresas: Empresa[]): { ligadas: number; emTeste: number; global: boolean } {
+  let ligadas = 0
+  let emTeste = 0
+  for (const e of empresas) {
+    // projeto sem modo próprio segue a empresa: conta uma vez só, na empresa
+    if (e.pai && !e.modo) continue
+    const m = modoDe(e, empresas)
+    if (m === "ligado") ligadas++
+    else if (m === "sombra") emTeste++
+  }
+  return { ligadas, emTeste, global: ligadas === 0 && emTeste === 0 }
+}
+
+/** 0.19.0: o classificador com os projetos somados na empresa deles (os números "por empresa"). */
+export function subirAEmpresa(classificar: Classificar, empresas: Pick<Empresa, "id" | "pai">[]): Classificar {
+  const pai = new Map(empresas.filter((e) => e.pai).map((e) => [e.id, e.pai as string]))
+  return (pasta, projeto) => {
+    const id = classificar(pasta, projeto)
+    return id ? (pai.get(id) ?? id) : null
+  }
+}
+
+/** "0.19.0" vira 19000 (como rvz_versao_agente na nuvem); o que não casa vira 0. */
+export function versaoNum(v: string | null | undefined): number {
+  const m = /^(\d{1,4})\.(\d{1,4})\.(\d{1,4})/.exec(v ?? "")
+  if (!m) return 0
+  return Math.min(+m[1]!, 999) * 1_000_000 + Math.min(+m[2]!, 999) * 1000 + Math.min(+m[3]!, 999)
+}
+
+/**
+ * 0.19.0: as empresas e projetos ligados que um agente anterior à 0.19.0 erraria e que, por isso, a nuvem não manda a
+ * ele (lá a separação fica desligada até atualizar). A mesma conta do portão de agente_empresas (0041): unidade (a
+ * empresa, ou o projeto com contas ou modo ligado/desligado próprio; em teste segue a empresa), modo de verdade (o teste
+ * não muda as sessões) e o projeto que tira sessões de uma empresa ligada, quando é da mesma empresa ou tem regra que
+ * pode pegar uma pasta dela com mais precisão (nome de pasta e título contam sempre).
+ */
+export function empresasForaNoAntigo(dados: Pick<DadosEmpresas, "empresas" | "regras" | "marcas">): Empresa[] {
+  const { empresas } = dados
+  const porId = new Map(empresas.map((e) => [e.id, e]))
+  const comConta = new Set(dados.marcas.map((m) => m.empresaId))
+  const proprioModo = (e: Empresa) => e.modo === "desligado" || e.modo === "ligado"
+  const unidadeDe = (e: Empresa) => (!e.pai || proprioModo(e) || comConta.has(e.id) ? e.id : e.pai)
+  const ligada = (e: Empresa): boolean => {
+    if (!e.pai) return e.separar
+    if (proprioModo(e)) return e.modo === "ligado"
+    return porId.get(e.pai)?.separar ?? false
+  }
+  const unidades = empresas.filter((e) => unidadeDe(e) === e.id)
+  const tira = (x: Empresa) =>
+    !!x.pai && !ligada(x) && unidades.some((y) => (y.id === x.pai || y.pai === x.pai) && ligada(y))
+  const regrasDe = (u: Empresa) =>
+    dados.regras.filter((r) => {
+      const e = porId.get(r.empresaId)
+      return !!e && unidadeDe(e) === u.id
+    })
+  const cruzam = (rx: RegraPasta, ru: RegraPasta) => {
+    const caminho = (r: RegraPasta) => r.tipo === "pasta" && ehCaminho(r.padrao)
+    if (!caminho(rx) || !caminho(ru)) return true
+    const x = normalizarPasta(rx.padrao)
+    const u = normalizarPasta(ru.padrao)
+    return x === u || u === "/" || x.startsWith(`${u}/`)
+  }
+  const tiram = unidades.filter((x) => tira(x) && regrasDe(x).length > 0)
+  return unidades.filter(
+    (u) =>
+      ligada(u) &&
+      tiram.some(
+        (x) =>
+          (x.pai ?? x.id) === (u.pai ?? u.id) || regrasDe(x).some((rx) => regrasDe(u).some((ru) => cruzam(rx, ru)))
+      )
+  )
 }
 
 /** O agente do OpenBot da pasta (a pasta dele ou uma de dentro), ou null. */

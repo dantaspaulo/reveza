@@ -86,6 +86,7 @@ export default secao({
         semEmpresas: "Crie uma empresa na aba Empresas para marcar as contas.",
         usoNoPeriodo: "Uso no período",
         saindo: "saindo",
+        compartilhada: "Conta compartilhada entre {empresas}. O uso de uma pode consumir a cota das outras.",
       },
       pastas: {
         semDonoTitulo: "Pastas sem dono",
@@ -162,6 +163,53 @@ export default secao({
         apagarBotao: "Tirar",
         apagarSegurar: "Segure para tirar",
         apagada: "Empresa tirada",
+      },
+      projetos: {
+        descricao:
+          "As empresas, os projetos dentro delas e o modo de cada uma. Tudo começa desligado: as contas giram juntas até você ligar uma empresa ou projeto.",
+        novo: "Novo projeto",
+        novoEm: "Novo projeto em {empresa}",
+        dialogoDescricao:
+          "Um projeto usa as contas marcadas para ele; sem nenhuma, usa as da empresa. As regras de pasta dizem quais sessões são dele.",
+        quantos: { zero: "Nenhum projeto", um: "{n} projeto", outros: "{n} projetos" },
+        usaContasDaEmpresa: "Usa as contas da empresa",
+        modoTitulo: "Revezamento",
+        modo: {
+          desligado: "Desligado",
+          sombra: "Em teste",
+          ligado: "Ligado",
+        },
+        modoDica: {
+          herdar: "Segue o que estiver escolhido na empresa.",
+          desligado: "As sessões daqui giram junto com todas as contas, como sem empresa.",
+          sombra:
+            "Nada muda nas sessões (num projeto, elas seguem a empresa): o Reveza só anota qual conta usaria, para você conferir antes de ligar.",
+          ligado: "As sessões abertas pelo lançador nas pastas daqui usam só as contas daqui (e o transbordo).",
+        },
+        modoHerdar: "Igual à empresa ({modo})",
+        modoHerdado: "{modo}, igual à empresa",
+        herdarTransbordo: "Quando as contas do projeto acabarem, usar as da empresa",
+        herdarTransbordoDica: "Depois das contas da empresa, vale o transbordo dela. Desligado: o projeto tem o transbordo próprio.",
+        apagarTexto:
+          "As marcas das contas e as regras de pasta deste projeto saem junto. O uso não é apagado: ele passa para a empresa, outra regra ou \"Sem dono\".",
+        numerosPor: "Números por",
+        porProjeto: "Projeto",
+        porEmpresa: "Empresa",
+        revezamentoGlobal: "Revezamento de todas as contas juntas",
+        revezamentoGlobalTexto:
+          "Nenhuma empresa ou projeto ligado: as contas giram juntas em todos os computadores, como antes. Ligue uma empresa ou projeto na aba Empresas.",
+        revezamentoUnidades: "Revezamento por empresa e projeto",
+        ligadas: { um: "{n} ligada", outros: "{n} ligadas" },
+        emTeste: { um: "{n} em teste", outros: "{n} em teste" },
+        atrasTitulo: "Computadores com o Reveza antigo",
+        atrasTexto:
+          "{computadores} ainda não entendem projeto desligado dentro de empresa ligada. Até atualizarem, as sessões de {empresas} giram junto com todas as contas nesses computadores.",
+        sombraTitulo: "O que o teste faria agora",
+        sombraEm: "em {computador}:",
+        sombraUsaria: "usaria",
+        sombraAgora: "e hoje usa",
+        sombraTrocas: { um: "{n} troca no teste", outros: "{n} trocas no teste" },
+        nenhuma: "nenhuma",
       },
     },
   },
@@ -246,6 +294,7 @@ export default secao({
         semEmpresas: "Create a company in the Companies tab to mark the accounts.",
         usoNoPeriodo: "Usage in this period",
         saindo: "leaving",
+        compartilhada: "Account shared by {empresas}. Usage by one can consume the others’ quota.",
       },
       pastas: {
         semDonoTitulo: "Unassigned folders",
@@ -322,6 +371,53 @@ export default secao({
         apagarBotao: "Remove",
         apagarSegurar: "Hold to remove",
         apagada: "Company removed",
+      },
+      projetos: {
+        descricao:
+          "Companies, the projects inside them and the mode of each. Everything starts off: accounts rotate together until you turn a company or project on.",
+        novo: "New project",
+        novoEm: "New project in {empresa}",
+        dialogoDescricao:
+          "A project uses the accounts marked for it; with none, it uses the company's. Folder rules say which sessions belong to it.",
+        quantos: { zero: "No projects", um: "{n} project", outros: "{n} projects" },
+        usaContasDaEmpresa: "Uses the company's accounts",
+        modoTitulo: "Rotation",
+        modo: {
+          desligado: "Off",
+          sombra: "Testing",
+          ligado: "On",
+        },
+        modoDica: {
+          herdar: "Follows whatever the company has chosen.",
+          desligado: "Sessions here rotate with all accounts, as if there were no company.",
+          sombra:
+            "Sessions don't change (in a project, they follow the company): Reveza only notes which account it would use, so you can check before turning it on.",
+          ligado: "Sessions opened by the launcher in these folders use only these accounts (and the overflow).",
+        },
+        modoHerdar: "Same as the company ({modo})",
+        modoHerdado: "{modo}, same as the company",
+        herdarTransbordo: "When the project's accounts run out, use the company's",
+        herdarTransbordoDica: "After the company's accounts, its overflow applies. Off: the project has its own overflow.",
+        apagarTexto:
+          "This project's account marks and folder rules go with it. Usage isn't deleted: it moves to the company, another rule or \"Unassigned\".",
+        numerosPor: "Numbers by",
+        porProjeto: "Project",
+        porEmpresa: "Company",
+        revezamentoGlobal: "All accounts rotate together",
+        revezamentoGlobalTexto:
+          "No company or project is on: accounts rotate together on every computer, as before. Turn a company or project on in the Companies tab.",
+        revezamentoUnidades: "Rotation by company and project",
+        ligadas: { um: "{n} on", outros: "{n} on" },
+        emTeste: { um: "{n} testing", outros: "{n} testing" },
+        atrasTitulo: "Computers with an older Reveza",
+        atrasTexto:
+          "{computadores} don't understand a project that is off inside a company that is on yet. Until they update, sessions of {empresas} rotate with all accounts on those computers.",
+        sombraTitulo: "What the test would do now",
+        sombraEm: "on {computador}:",
+        sombraUsaria: "would use",
+        sombraAgora: "and now uses",
+        sombraTrocas: { um: "{n} switch in the test", outros: "{n} switches in the test" },
+        nenhuma: "none",
       },
     },
   },

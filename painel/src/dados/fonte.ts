@@ -29,7 +29,9 @@ import type {
 } from "./tipos"
 
 /** O que o painel muda numa empresa (0.17.0). */
-export type CamposEmpresa = Partial<Pick<Empresa, "nome" | "cor" | "transbordo" | "transbordoContas" | "separar">>
+export type CamposEmpresa = Partial<
+  Pick<Empresa, "nome" | "cor" | "transbordo" | "transbordoContas" | "separar" | "pai" | "modo" | "herdarTransbordo">
+>
 
 export type CamposConta = Partial<Pick<Conta, "cor" | "prioridade" | "reserva" | "pausada" | "agenda" | "tetoSemana" | "modelo">>
 

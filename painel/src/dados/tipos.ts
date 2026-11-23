@@ -452,6 +452,33 @@ export interface Empresa {
   /** 0.18.0: as sessões nas pastas desta empresa usam só as contas dela (desligado de fábrica). */
   separar: boolean
   criadaEm: string
+  /** 0.19.0: num projeto, a empresa dele; null numa empresa. */
+  pai: string | null
+  /** 0.19.0: o modo gravado. Na empresa, null vale pelo `separar`; no projeto, null é "o mesmo da empresa". */
+  modo: ModoUnidade | null
+  /** 0.19.0, só projeto: cheias as contas dele, usa as da empresa e depois o transbordo dela. */
+  herdarTransbordo: boolean
+}
+
+/**
+ * 0.19.0: como as contas giram numa empresa ou projeto. "desligado": como antes, todas as contas giram juntas;
+ * "sombra": a nuvem decide e registra a conta que usaria, sem trocar nada; "ligado": só as contas marcadas.
+ */
+export type ModoUnidade = "desligado" | "sombra" | "ligado"
+
+/** 0.19.0: o que a trilha de uma unidade em teste faria num computador (tabela trilhas_sombra). */
+export interface SombraUnidade {
+  computadorId: string
+  empresaId: string
+  /** A conta que a trilha usaria; null quando nenhuma serve. */
+  contaId: string | null
+  /** A conta que as sessões usam de verdade agora. */
+  emUso: string | null
+  motivo: string
+  sessoes: number
+  trocas: number
+  decididoEm: string
+  vistoEm: string
 }
 
 /** A conta que a nuvem deu a uma empresa separada num computador (0.18.0, tabela atribuicao_trilhas). */
@@ -501,6 +528,10 @@ export interface DadosEmpresas {
   trilhasNaNuvem: boolean
   /** 0.18.0: as contas em uso pelas empresas separadas; vazio com a nuvem antes da 0.18.0. */
   trilhas: TrilhaEmUso[]
+  /** 0.19.0: a nuvem já sabe de projetos e do modo de teste (a 0040 está lá). Sem ela, os projetos somem da tela. */
+  projetosNaNuvem: boolean
+  /** 0.19.0: o que cada unidade em teste faria em cada computador; vazio com a nuvem antes da 0.19.0. */
+  sombras: SombraUnidade[]
 }
 
 /**

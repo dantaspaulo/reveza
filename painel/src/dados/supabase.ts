@@ -756,16 +756,20 @@ export class FonteSupabase implements Fonte {
 
   async empresas(): Promise<DadosEmpresas> {
     const sb = supabase()
-    const [e, m, r, a, t] = await Promise.all([
-      // "*": a coluna separar só existe desde a 0038 (0.18.0); com a nuvem de antes ela falta e vale desligada
+    const [e, m, r, a, t, s] = await Promise.all([
+      // "*": a coluna separar só existe desde a 0038 (0.18.0) e pai, modo e herdar_transbordo desde a 0040 (0.19.0);
+      // com a nuvem de antes elas faltam e valem como antes
       sb.from("empresas").select("*").order("nome"),
       sb.from("conta_empresas").select("conta_id,empresa_id"),
       sb.from("pastas_empresa").select("id,tipo,padrao,empresa_id").order("padrao"),
       sb.from("agentes_openbot").select("computador_id,pasta,nome,titulo,visto_em").order("pasta").limit(5000),
       sb.from("atribuicao_trilhas").select("computador_id,empresa_id,conta_id,motivo,decidido_em,pedida_em"),
+      sb.from("trilhas_sombra").select("computador_id,empresa_id,conta_id,em_uso,motivo,sessoes,trocas,decidido_em,visto_em"),
     ])
     // nuvem de antes da 0038: sem as trilhas, o resto da tela segue igual
     const trilhasNaNuvem = !t.error
+    // nuvem de antes da 0040: sem projetos nem modo de teste, a tela segue como na 0.18.0
+    const projetosNaNuvem = !s.error
     for (const x of [e, m, r, a]) {
       if (!x.error) continue
       // nuvem de antes da 0036: a tela pede para atualizar a nuvem
@@ -782,6 +786,9 @@ export class FonteSupabase implements Fonte {
         transbordoContas: ((l.transbordo_contas as string[] | null) ?? []).map(String),
         separar: l.separar === true,
         criadaEm: String(l.criado_em),
+        pai: l.pai ? String(l.pai) : null,
+        modo: (["desligado", "sombra", "ligado"].includes(String(l.modo)) ? l.modo : null) as Empresa["modo"],
+        herdarTransbordo: l.herdar_transbordo !== false,
       })),
       marcas: (m.data ?? []).map((l) => ({ contaId: String(l.conta_id), empresaId: String(l.empresa_id) })),
       regras: (r.data ?? []).map((l): RegraPasta => ({
@@ -805,6 +812,18 @@ export class FonteSupabase implements Fonte {
         motivo: String(l.motivo ?? ""),
         decididoEm: String(l.decidido_em),
         pedidaEm: String(l.pedida_em),
+      })),
+      projetosNaNuvem,
+      sombras: (s.data ?? []).map((l) => ({
+        computadorId: String(l.computador_id),
+        empresaId: String(l.empresa_id),
+        contaId: l.conta_id ? String(l.conta_id) : null,
+        emUso: l.em_uso ? String(l.em_uso) : null,
+        motivo: String(l.motivo ?? ""),
+        sessoes: Number(l.sessoes ?? 0),
+        trocas: Number(l.trocas ?? 0),
+        decididoEm: String(l.decidido_em),
+        vistoEm: String(l.visto_em),
       })),
     }
   }
@@ -886,6 +905,10 @@ export class FonteSupabase implements Fonte {
     if (campos.transbordo !== undefined) p_campos.transbordo = campos.transbordo
     if (campos.transbordoContas !== undefined) p_campos.transbordo_contas = campos.transbordoContas
     if (campos.separar !== undefined) p_campos.separar = campos.separar
+    // 0.19.0: a nuvem de antes da 0040 recusa estes campos; a tela só os manda com projetosNaNuvem
+    if (campos.pai !== undefined) p_campos.pai = campos.pai
+    if (campos.modo !== undefined) p_campos.modo = campos.modo
+    if (campos.herdarTransbordo !== undefined) p_campos.herdar_transbordo = campos.herdarTransbordo
     const r = await rpc("painel_empresa", { p_id: id, p_campos })
     return String(r.id)
   }

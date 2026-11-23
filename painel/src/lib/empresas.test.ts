@@ -8,25 +8,53 @@ import {
   contasPorEmpresa,
   criarClassificador,
   ehCaminho,
+  empresasForaNoAntigo,
+  modoDe,
+  nomeUnidade,
   numerosPorEmpresa,
+  ordenarUnidades,
   pastaAmpla,
   pastasSemDono,
   porPeriodoEmpresa,
+  resumoRevezamento,
   semanaDe,
+  subirAEmpresa,
   sugestaoPorDominio,
   trocaDoEvento,
   trocasPorEmpresa,
+  versaoNum,
 } from "./empresas"
 
 const U1 = "11111111-1111-4111-8111-111111111111"
 const U2 = "22222222-2222-4222-8222-222222222222"
 
-const empresa = (id: string): Empresa => ({ id, nome: id, cor: 0, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm: "2026-11-01T00:00:00Z" })
+const empresa = (id: string, o: Partial<Empresa> = {}): Empresa => ({
+  id,
+  nome: id,
+  cor: 0,
+  transbordo: "nenhum",
+  transbordoContas: [],
+  separar: false,
+  criadaEm: "2026-11-01T00:00:00Z",
+  pai: null,
+  modo: null,
+  herdarTransbordo: true,
+  ...o,
+})
 const regra = (tipo: RegraPasta["tipo"], padrao: string, empresaId: string): RegraPasta => ({ id: `${tipo}:${padrao}`, tipo, padrao, empresaId })
 const agente = (pasta: string, titulo: string, nome = "agente"): AgenteOpenBot => ({ computadorId: "pc", pasta, nome, titulo, vistoEm: "" })
 
 function dados(regras: RegraPasta[], agentes: AgenteOpenBot[] = []): DadosEmpresas {
-  return { empresas: ["a", "b", "c"].map(empresa), marcas: [], regras, agentes, trilhasNaNuvem: true, trilhas: [] }
+  return {
+    empresas: ["a", "b", "c"].map((id) => empresa(id)),
+    marcas: [],
+    regras,
+    agentes,
+    trilhasNaNuvem: true,
+    trilhas: [],
+    projetosNaNuvem: true,
+    sombras: [],
+  }
 }
 
 function linha(o: Partial<LinhaUso>): LinhaUso {
@@ -234,5 +262,85 @@ describe("sugestão por domínio", () => {
       { dominio: "um.exemplo.br", contas: ["1", "2"] },
       { dominio: "dois.exemplo", contas: ["3"] },
     ])
+  })
+})
+
+describe("projetos (0.19.0)", () => {
+  const loja = empresa("loja", { nome: "Loja", pai: "agencia" })
+  const blog = empresa("blog", { nome: "Blog", pai: "agencia", modo: "desligado" })
+  const agencia = empresa("agencia", { nome: "Agência", separar: true, modo: "ligado" })
+  const outra = empresa("outra", { nome: "Outra", modo: "desligado" })
+  const todas = [loja, blog, agencia, outra]
+
+  it("o nome do projeto leva o da empresa", () => {
+    expect(nomeUnidade(agencia, todas)).toBe("Agência")
+    expect(nomeUnidade(loja, todas)).toBe("Agência / Loja")
+    expect(nomeUnidade(empresa("x", { pai: "sumiu" }), todas)).toBe("? / x")
+  })
+
+  it("cada empresa vem seguida dos projetos dela, em ordem de nome", () => {
+    expect(ordenarUnidades(todas).map((e) => e.id)).toEqual(["agencia", "blog", "loja", "outra"])
+  })
+
+  it("projeto sem modo próprio segue a empresa; com modo, vale o dele", () => {
+    expect(modoDe(agencia, todas)).toBe("ligado")
+    expect(modoDe(loja, todas)).toBe("ligado")
+    expect(modoDe(blog, todas)).toBe("desligado")
+    expect(modoDe(outra, todas)).toBe("desligado")
+    // empresa de antes da 0.19.0: só o "separar"
+    expect(modoDe(empresa("velha", { separar: true }), todas)).toBe("ligado")
+  })
+
+  it("revezamento global só com tudo desligado; projeto que herda conta uma vez, na empresa", () => {
+    expect(resumoRevezamento(todas)).toEqual({ ligadas: 1, emTeste: 0, global: false })
+    expect(resumoRevezamento([outra, empresa("p", { pai: "outra" })])).toEqual({ ligadas: 0, emTeste: 0, global: true })
+    expect(resumoRevezamento([outra, empresa("p", { pai: "outra", modo: "sombra" })])).toEqual({
+      ligadas: 0,
+      emTeste: 1,
+      global: false,
+    })
+  })
+
+  it("os números por empresa somam os projetos na empresa deles", () => {
+    const classificar = (pasta: string) => (pasta === "/l" ? "loja" : pasta === "/a" ? "agencia" : null)
+    const porEmpresa = subirAEmpresa(classificar, todas)
+    expect(porEmpresa("/l", "")).toBe("agencia")
+    expect(porEmpresa("/a", "")).toBe("agencia")
+    expect(porEmpresa("/z", "")).toBeNull()
+  })
+
+  it("a versão vira número; o que não casa (ou é grande demais) conta como anterior", () => {
+    expect(versaoNum("0.19.0")).toBe(19000)
+    expect(versaoNum("0.18.4")).toBeLessThan(versaoNum("0.19.0"))
+    expect(versaoNum("0.19.0-rc1")).toBe(19000)
+    expect(versaoNum("0.9")).toBe(0)
+    expect(versaoNum(null)).toBe(0)
+    expect(versaoNum("99999.0.0")).toBe(0)
+  })
+
+  it("a empresa ligada com projeto desligado e com regra fica de fora no agente antigo", () => {
+    const regras = [regra("pasta", "~/agencia/blog", "blog")]
+    expect(empresasForaNoAntigo({ empresas: todas, regras, marcas: [] }).map((e) => e.id)).toEqual(["agencia"])
+    // sem regra no projeto desligado, o agente antigo não erra: nada fica de fora
+    expect(empresasForaNoAntigo({ empresas: todas, regras: [], marcas: [] })).toEqual([])
+    // projeto que herda o modo não conta
+    expect(empresasForaNoAntigo({ empresas: [agencia, loja], regras: [regra("pasta", "~/l", "loja")], marcas: [] })).toEqual([])
+    // projeto em teste segue a empresa: não tira nada dela
+    const teste = empresa("teste", { pai: "agencia", modo: "sombra" })
+    expect(empresasForaNoAntigo({ empresas: [agencia, teste], regras: [regra("pasta", "~/t", "teste")], marcas: [] })).toEqual([])
+  })
+
+  it("de outra empresa: nome de pasta conta sempre; caminho só com a barra", () => {
+    const beta = empresa("beta", { separar: true, modo: "ligado" })
+    const ferramenta = empresa("ferramenta", { pai: "beta", modo: "desligado" })
+    const base = [agencia, beta, ferramenta]
+    const ids = (regras: RegraPasta[]) => empresasForaNoAntigo({ empresas: base, regras, marcas: [] }).map((e) => e.id).sort()
+    expect(ids([regra("pasta", "~/Code", "agencia"), regra("pasta", "ferramenta", "ferramenta")])).toEqual(["agencia", "beta"])
+    expect(ids([regra("pasta", "~/Code/site", "agencia"), regra("pasta", "~/Code/site2", "ferramenta")])).toEqual(["beta"])
+    expect(ids([regra("pasta", "~/Code/site", "agencia"), regra("pasta", "~/Code/site/sub", "ferramenta")])).toEqual(["agencia", "beta"])
+    // a empresa de cima desligada não tira nada de ninguém (como na 0.18)
+    const gama = empresa("gama", { modo: "desligado" })
+    const g = [regra("pasta", "~/Code", "agencia"), regra("pasta", "~/Code/g", "gama")]
+    expect(empresasForaNoAntigo({ empresas: [agencia, gama], regras: g, marcas: [] })).toEqual([])
   })
 })

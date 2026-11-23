@@ -739,8 +739,10 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
 function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
   return {
     empresas: [
-      { id: "empresa-agencia", nome: "Agência", cor: 0, transbordo: "escolhidas", transbordoContas: ["conta-reserva"], separar: false, criadaEm },
-      { id: "empresa-consultoria", nome: "Consultoria", cor: 2, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm },
+      { id: "empresa-agencia", nome: "Agência", cor: 0, transbordo: "escolhidas", transbordoContas: ["conta-reserva"], separar: false, criadaEm, pai: null, modo: null, herdarTransbordo: true },
+      { id: "empresa-consultoria", nome: "Consultoria", cor: 2, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm, pai: null, modo: null, herdarTransbordo: true },
+      // 0.19.0: um projeto dentro da agência, sem nada próprio (usa as contas e o modo da empresa)
+      { id: "projeto-loja", nome: "Loja online", cor: 0, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm, pai: "empresa-agencia", modo: null, herdarTransbordo: true },
     ],
     marcas: [
       { contaId: "conta-trabalho", empresaId: "empresa-agencia" },
@@ -748,7 +750,7 @@ function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
       { contaId: "conta-cliente", empresaId: "empresa-consultoria" },
     ],
     regras: [
-      { id: "regra-1", tipo: "pasta", padrao: "~/code/loja-online", empresaId: "empresa-agencia" },
+      { id: "regra-1", tipo: "pasta", padrao: "~/code/loja-online", empresaId: "projeto-loja" },
       { id: "regra-2", tipo: "pasta", padrao: "~/code/api-pagamentos", empresaId: "empresa-agencia" },
       { id: "regra-3", tipo: "pasta", padrao: "app-mobile", empresaId: "empresa-consultoria" },
       { id: "regra-4", tipo: "titulo", padrao: "Suporte", empresaId: "empresa-consultoria" },
@@ -756,9 +758,11 @@ function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
     agentes: [
       { computadorId: "pc-notebook", pasta: "~/agentes/suporte", nome: "Suporte", titulo: "Atendimento ao cliente", vistoEm },
     ],
-    // tudo desligado de fábrica: nenhuma empresa separada, nenhuma conta em trilha
+    // tudo desligado de fábrica: nenhuma empresa separada, nenhuma conta em trilha, nada em teste
     trilhasNaNuvem: true,
     trilhas: [],
+    projetosNaNuvem: true,
+    sombras: [],
   }
 }
 
@@ -1462,26 +1466,41 @@ export class FonteDemo implements Fonte {
       const nome = campos.nome !== undefined ? campos.nome.trim() : atual?.nome
       if (!nome || nome.length > 60 || [...nome].some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127))
         throw new ErroPainel("nome_invalido")
-      if (lista.some((e) => e.id !== id && e.nome.trim().toLowerCase() === nome.toLowerCase())) throw new ErroPainel("empresa_repetida")
+      // como o banco (0041): o projeto não muda de empresa; a empresa do projeto existe e não é projeto
+      if (atual && campos.pai !== undefined && campos.pai !== atual.pai) throw new ErroPainel("falha", "o projeto não muda de empresa")
+      const pai = atual ? atual.pai : (campos.pai ?? null)
+      if (pai && !lista.some((x) => x.id === pai && x.pai === null)) throw new ErroPainel("nao_encontrado")
+      if (lista.some((e) => e.id !== id && e.pai === pai && e.nome.trim().toLowerCase() === nome.toLowerCase()))
+        throw new ErroPainel("empresa_repetida")
+      if (campos.modo === null && !pai) throw new ErroPainel("falha", "a empresa precisa de um modo")
       const contas = new Set(this.d.contas.map((c) => c.id))
       const e = atual ?? {
-        id: `empresa-${Date.now().toString(36)}${lista.length}`,
+        id: `${pai ? "projeto" : "empresa"}-${Date.now().toString(36)}${lista.length}`,
         nome,
         cor: 0,
         transbordo: "nenhum" as const,
         transbordoContas: [],
         separar: false,
         criadaEm: this.agora().toISOString(),
+        pai,
+        modo: null,
+        herdarTransbordo: true,
       }
       e.nome = nome
       if (campos.cor !== undefined) e.cor = Math.max(0, Math.min(11, Math.round(campos.cor)))
       if (campos.transbordo !== undefined) e.transbordo = campos.transbordo
       if (campos.transbordoContas !== undefined) e.transbordoContas = campos.transbordoContas.filter((c) => contas.has(c)).slice(0, 50)
-      if (campos.separar !== undefined) {
+      if (campos.herdarTransbordo !== undefined) e.herdarTransbordo = campos.herdarTransbordo
+      // o modo e o "separar" andam juntos, como no banco: separar = o modo gravado é "ligado"
+      if (campos.modo !== undefined) {
+        e.modo = campos.modo
+        e.separar = campos.modo === "ligado"
+      } else if (campos.separar !== undefined && !e.pai) {
         e.separar = campos.separar === true
-        // na nuvem a conta da trilha sai quando as sessões da empresa terminam; aqui sai na hora
-        if (!e.separar) this.d.empresas.trilhas = this.d.empresas.trilhas.filter((t) => t.empresaId !== e.id)
+        e.modo = e.separar ? "ligado" : e.modo === "ligado" ? "desligado" : e.modo
       }
+      // na nuvem a conta da trilha sai quando as sessões terminam; aqui sai na hora
+      if (!e.separar) this.d.empresas.trilhas = this.d.empresas.trilhas.filter((t) => t.empresaId !== e.id)
       if (!atual) lista.push(e)
       lista.sort((a, b) => a.nome.localeCompare(b.nome))
       this.auditar("empresa", e.id)
@@ -1493,10 +1512,13 @@ export class FonteDemo implements Fonte {
     return this.escrever(() => {
       const e = this.d.empresas
       if (!e.empresas.some((x) => x.id === id)) throw new ErroPainel("nao_encontrado")
-      e.empresas = e.empresas.filter((x) => x.id !== id)
-      e.marcas = e.marcas.filter((m) => m.empresaId !== id)
-      e.regras = e.regras.filter((r) => r.empresaId !== id)
-      e.trilhas = e.trilhas.filter((t) => t.empresaId !== id)
+      // como o banco (0041): os projetos da empresa saem junto
+      const sai = new Set([id, ...e.empresas.filter((x) => x.pai === id).map((x) => x.id)])
+      e.empresas = e.empresas.filter((x) => !sai.has(x.id))
+      e.marcas = e.marcas.filter((m) => !sai.has(m.empresaId))
+      e.regras = e.regras.filter((r) => !sai.has(r.empresaId))
+      e.trilhas = e.trilhas.filter((t) => !sai.has(t.empresaId))
+      e.sombras = e.sombras.filter((s) => !sai.has(s.empresaId))
       this.auditar("empresa_apagar", id)
     })
   }
