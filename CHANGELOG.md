@@ -7,6 +7,45 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.20.0 · 23/11/2026
+
+Empresas virou um cadastro. A ordem é a do trabalho: o **computador**, a **empresa**, os **projetos** dentro dela e a
+**conta** de cada um. A conta da empresa vale para todos os projetos que não têm a sua. Precisa da nuvem na 0.20.0.
+
+### O que muda no painel
+
+- **Empresas** agora fica em **Operação**, logo depois de Computadores, e tem só o cadastro. Os números por empresa e
+  projeto foram para a tela de **Uso**.
+- Você escolhe o computador, a empresa numa lista à esquerda e edita tudo à direita, sem janela por cima: nome, contas,
+  pasta naquele computador (ou em todos) e os projetos. Cada projeto usa a conta da empresa ou uma própria.
+- Uma linha mostra o que acontece quando a conta enche: espera ela voltar ou troca só entre as contas marcadas.
+
+### O que muda no funcionamento
+
+- **Só naquela conta:** a empresa ou o projeto salvo pelo cadastro novo roda só nas contas marcadas, sem transbordo e sem
+  cair na conta do computador. Se a conta em uso no computador já é uma das marcadas, a sessão abre nela. Sem conta
+  livre, a sessão não abre e diz o motivo.
+- **A troca respeita a sessão aberta:** enquanto uma sessão de empresa ou projeto roda na conta em uso do computador, essa
+  conta não sai dali. Se ela encher, as sessões desse computador esperam ela voltar e o painel avisa uma vez por hora; a
+  troca à mão é recusada até a sessão fechar. Isso vale também para conta pausada, sem login ou marcada para sair: ela
+  só sai depois que a sessão fechar, e o painel avisa.
+- **Sessão retomada segue a mesma regra:** a sessão que parou volta numa conta da empresa ou do projeto, ou espera na
+  fila. Comandos que não abrem conversa (versão, login, ajuda) continuam funcionando com a conta ocupada.
+- **Computador que dormiu ou religou** segue as últimas regras até a nuvem responder e não entrega a conta de uma sessão
+  aberta. Com a nuvem lenta, a sessão nova é recusada em vez de abrir na conta errada.
+- **Salvar é tudo ou nada:** se uma parte for recusada, nada do que você editou fica gravado pela metade.
+- **Atualize os computadores antes:** o painel não deixa ligar uma empresa ou projeto enquanto um computador visto nas
+  últimas 24 horas estiver abaixo da 0.20.0, e diz qual é.
+- **Uma conta pode servir a várias empresas** no mesmo computador. Em computadores diferentes, ela atende um por vez,
+  porque o login da conta gira.
+- **Cada pasta pode valer só num computador:** a mesma pasta pode ser de empresas diferentes em computadores diferentes.
+- **Ligar a empresa liga junto** os projetos dela que têm conta própria, e eles também passam a rodar só nas contas deles.
+- **Conta dividida entre empresas:** se você mudar a lista de uma delas, a troca automática só vai para uma conta que sirva
+  a todas que podem ter sessão aberta naquele login, até essas sessões fecharem.
+- **Sessão sem tela esperando a conta** volta se a conta soltar dentro do prazo da fila (2 horas, ou 6 no OpenBot). Depois
+  disso ela não reabre sozinha, e o painel avisa.
+- Quem já usa empresas segue como antes até salvar pelo cadastro novo.
+
 ## 0.19.0 · 23/11/2026
 
 Projetos dentro da empresa e um modo de teste. A empresa agora pode ter **projetos**, cada um com as contas dele (ou as

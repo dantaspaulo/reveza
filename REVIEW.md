@@ -27,6 +27,12 @@ teste, o CHANGELOG ou a release.
 - **projetos e modos** (0.19.0): a 0040 e a 0041, `agente_empresas` e o portão de versão. Com tudo desligado nada
   muda; o agente antes da 0.19.0 nunca recebe a unidade que ele mandaria para a conta errada; a sombra não troca
   posse, atribuição nem login; o painel manda `modo` e a nuvem mantém `separar` igual a "ligado".
+- **cadastro** (0.20.0): a 0043 e a 0044, `painel_unidade`, o bloqueio do lançador e a trava da conta em uso. A unidade
+  estrita nunca abre nem continua em conta fora das dela; a trava só vale para unidade ligada, estrita e com a conta
+  em uso, e vence sozinha quando o processo some; todo caminho que atribui conta à principal respeita a trava (`decidir`,
+  troca à mão, API, preferida, remover e saída agendada); quem não salvou pelo cadastro novo segue como na 0.19. A
+  trava precisa sobreviver a computador que dorme, agente que religa, processo com número reaproveitado e nuvem lenta;
+  `painel_unidades` grava tudo ou nada. Trilha dividida só troca para conta que sirva a todas as unidades anotadas nela.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

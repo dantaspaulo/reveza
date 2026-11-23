@@ -214,6 +214,61 @@ vale nas sessões abertas pelo lançador do Reveza.
   e grava em `trilhas_sombra` com a conta em uso de verdade e as trocas que teria feito. Não toca posse, atribuição
   nem login; cada mudança é um evento `info`. A linha parada há 10 min sai.
 
+## 6d. Cadastro operacional (0.20.0)
+
+A tela Empresas (menu Operação) é o cadastro: computador, empresa, projetos dentro dela e a conta de cada um. Os números
+por empresa foram para a tela de Uso. Salvar chama `painel_unidades` com a lista de passos (cada um é um
+`painel_unidade`, que confere tudo antes de gravar nome, modo, contas e pastas). A lista é uma transação: uma recusa
+desfaz os passos anteriores, e o projeto novo acha a empresa nova pelo `ref` provisório.
+
+- **Só as contas dela (`empresas.so_contas_dela`, 0043):** nasce falso, e a tela nova grava verdadeiro. Unidade assim
+  (estrita) não usa transbordo (`rvz_serve_trilha`), e a conta marcada para ela, com a unidade ligada, não fica na
+  principal de nenhum computador (`rvz_principal_pode`). Quem não salvou pela tela nova segue como na 0.19.
+- **Uma conta em várias empresas:** a tabela `atribuicao_trilhas` guarda a conta em uma trilha só, porque o login gira.
+  No mesmo computador, as unidades ligadas e estritas com o mesmo conjunto de contas dividem uma trilha
+  (`rvz_trilha_de`: a que já tem conta ali, senão a mais antiga). `agente_empresas` manda ao agente só a representante e
+  aponta as regras das outras para ela. Em computadores diferentes, a conta segue indo a um por vez.
+- **Pasta por computador (`pastas_empresa.computador_id`, 0043):** null vale em todos. A chave passa a ser tipo, padrão
+  e computador. A regra de um computador ganha, no empate, da que vale em todos. `painel_unidade` recusa a pasta que já é
+  de outra unidade no mesmo computador, ou quando um dos lados vale em todos.
+- **Sem conta livre:** `Trilhas.pedir` devolve `bloqueio` para a unidade estrita, `reveza trilha` escreve o motivo e sai
+  3, e o lançador não abre a conversa (saída 78); comando que não conversa (`--version`, `auth`, `doctor` e afins) segue.
+  No modo sombra nada é barrado. Sem a primeira leitura da nuvem, a pasta não tem empresa conhecida e o assistente abre
+  normal.
+- **Retomada (`Trilhas.retomada`):** a regra vale pela pasta, mesmo para a sessão que parou no login da principal. Ela
+  volta na trilha, na principal se a conta em uso é da unidade (o processo entra na trava) ou espera na fila, e a fila
+  mantém a trilha pedida. Depois de religar, sem as regras lidas, a retomada espera.
+- **Conta que saiu da lista:** `rvz_decidir_trilha` troca por outra da lista; sem outra, a trilha mantém a conta até as
+  sessões abertas fecharem, e o agente não deixa sessão nova entrar nela.
+- **Listas em parte iguais:** `rvz_candidatas_trilha` prefere a conta de que menos outras unidades estritas dependem.
+  Quando a representante de uma trilha dividida muda, a unidade nova espera a trilha antiga soltar.
+- **Quem dividiu a trilha (`atribuicao_trilhas.unidades`, 0043):** `rvz_lembrar_divisao` anota as unidades mandadas para a
+  trilha antes de o computador receber as regras. Até a trilha soltar, ela só troca para uma conta que sirva a todas
+  (`rvz_dividem_trilha`), porque pode haver sessão de qualquer uma nesse login. Unidade que só tem a mesma conta na
+  lista, sem ter dividido a trilha, não segura nada.
+- **Sessão sem tela na fila:** a retomada dentro da trilha entra nos processos dela, e a espera pela conta da unidade
+  respeita o mesmo prazo da fila (2 h, 6 h no OpenBot). Passado o prazo, a sessão não reabre sozinha e o painel avisa.
+- **Portão de versão:** `painel_unidade` recusa ligar enquanto houver computador não revogado, visto nas últimas 24 h,
+  abaixo da 0.20.0, porque ele ignoraria a marca de estrita.
+- **Sessão na conta da principal (`atribuicao.segura_ate` e `segura_unidades`, 0043):** quando a conta da unidade estrita
+  está na principal, a sessão abre nesse login. O agente guarda o processo em `pidsPrincipal` e avisa a nuvem
+  (`agente_segurar_principal`), que segura a conta por 3 min, renovados a cada busca enquanto o processo vive.
+  Enquanto `rvz_principal_segura` for verdadeira, `decidir` não tira a conta; cheia, as sessões do computador esperam e
+  sai um alerta `principal_segura` por hora. Troca pelo painel, pela API ou com `--local` é recusada, a preferida fica
+  guardada sem entrar, e remover a conta é recusado ou adiado. A conta pausada ou sem login também fica até a sessão
+  fechar, com alerta. O agente só abre a sessão depois que a nuvem confirma a unidade; sem resposta dela, nenhuma troca
+  chega ao computador.
+- **Quando a trava falha de lado:** a retomada pede a trava (`Trilhas.confirmarTrava`) e só abre o processo com a
+  confirmação da conta em uso; se a nuvem não responde em 3 s, a sessão nova é recusada. Com a trava vencida (computador
+  que dormiu), `aplicarAtribuicao` mantém a conta em uso enquanto a nuvem deixar. O agente guarda a hora de início de cada
+  processo (`iniciosPrincipal`), para um número reaproveitado depois de religar não prender a conta, e as contas da
+  unidade (`contasPrincipal`), para a unidade que deixou de ser representante seguir protegida. Quando a nuvem responde
+  sobre a conta que está mesmo em uso e a unidade não volta na lista, os processos deixam de prender a conta.
+- **Depois de religar:** as últimas regras lidas ficam em `estado.regrasEmpresas` e valem até a nuvem responder. O pedido
+  do lançador fecha em até 18 s, abaixo dos 20 s da ponte.
+- **Alcance:** a separação vale para o que abre pelo lançador `~/.reveza/lancador/claude`. Programa que chama o assistente
+  por outro caminho não passa por ela.
+
 ## 7. Nuvem: tabelas (todas com RLS ligado)
 
 | Tabela | Quem lê | Quem escreve |
