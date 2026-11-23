@@ -176,6 +176,44 @@ vale nas sessões abertas pelo lançador do Reveza.
   cada trilha pede de novo o login desses servidores; renovação e retomada sem tela tiram as duas variáveis do
   ambiente herdado antes de pôr as da trilha.
 
+## 6c. Projetos e o modo de cada unidade (0.19.0)
+
+- **Projeto** é uma linha de `empresas` com `pai` (0040); projeto não tem projeto e não muda de empresa; o nome é único
+  dentro da mesma empresa. **Unidade** (a que decide a sessão, `rvz_unidade_de`) é a empresa, ou o projeto com contas
+  marcadas ou modo `desligado`/`ligado` próprio; o projeto sem nada próprio é parte da empresa (a mesma trilha e o
+  mesmo login). A **unidade em teste** (`rvz_unidade_teste`) conta também o projeto com modo `sombra`. `rvz_modo_de`
+  (o modo que o painel mostra), `rvz_modo_real`, `rvz_marcada` e `rvz_nome_unidade` (0041) completam a nuvem;
+  `modoDe`, `nomeUnidade` e `ordenarUnidades` no painel.
+- **Modo:** `desligado` (de fábrica), `sombra` ou `ligado`. Na empresa, `separar` continua igual a "modo ligado" (o
+  `painel_empresa` grava os dois juntos), então o `agente_ola` da 0039 segue certo sem ser reescrito. No projeto,
+  `modo` null segue a empresa. `herdar_transbordo` (projeto): cheias as contas dele, as da empresa e depois o
+  transbordo dela. **Sombra nunca muda sessão:** `rvz_modo_real` só devolve `ligado` ou `desligado`; a empresa em
+  sombra vale `desligado` e o projeto em sombra (ou null) vale o modo real da empresa.
+- **Revezamento global** é simplesmente "nenhuma unidade ligada nem em teste": não existe chave mestra a mais.
+- **Classificação:** `agente_empresas` devolve as unidades ligadas e as regras de duas origens: das unidades ligadas e
+  das unidades que tiram pasta de uma empresa ligada (`rvz_tira_da_empresa`: projeto que é unidade, não ligado, numa
+  árvore com unidade ligada). A regra de empresa de cima desligada não vai (como na 0.18.0, ela não tira pasta de
+  ninguém). O agente 0.19.0 escolhe a regra que vence entre as recebidas (a mesma regra do painel e de
+  `rvz_classificar`) e só depois olha se a unidade está na lista; fora dela, a sessão fica na conta do computador.
+  Assim um projeto desligado dentro de uma empresa ligada volta ao revezamento de todas as contas.
+- **Portão de versão:** o agente 0.18.0 descarta as regras de unidade fora da lista antes de escolher, e a pasta de
+  um projeto desligado cairia na empresa ligada. `agente_empresas` lê `computadores.versao` (`rvz_versao_agente`; o
+  que não casa conta como anterior) e, para agente antes da 0.19.0, tira da lista a unidade ligada U quando existe
+  uma unidade X que tira pasta (`rvz_tira_da_empresa`) na mesma árvore, ou em outra árvore com regra que pode cruzar
+  com a de U (`rvz_regras_cruzam`: regra por nome de pasta ou por título cruza sempre; por caminho, quando um contém o
+  outro, com a barra como fronteira). Lá a empresa fica como antes de ligar; a trilha que já existia sai pelo caminho
+  de sempre (sem pedido há 10 min). O painel lista os computadores atrás e o que não vale neles
+  (`empresasForaNoAntigo`, a mesma conta).
+- **Regras vencidas:** sem resposta da nuvem, o agente que segue rodando usa as últimas regras que recebeu (só em
+  memória); passados `EMPRESAS_VENCIDAS_S` (600 s), a resposta ao lançador leva `vencida: true` e o registro avisa uma
+  vez por janela. Não cai para "sem empresa" só porque a nuvem demorou. Se o agente reiniciar com a nuvem fora do
+  ar, ele começa sem regras e as sessões novas ficam na conta do computador até a primeira leitura.
+- **Sombra:** `rvz_rodar_sombra` (agenda `reveza-sombra`, 0042, de minuto em minuto, sob a trava 778805) decide, para
+  cada computador e unidade em teste (`rvz_unidade_teste`) em modo `sombra` e não ligada de verdade, com sessão nos
+  últimos 10 min, a conta que a trilha usaria (`rvz_escolher_sombra`, as candidatas da trilha sem a principal impedir)
+  e grava em `trilhas_sombra` com a conta em uso de verdade e as trocas que teria feito. Não toca posse, atribuição
+  nem login; cada mudança é um evento `info`. A linha parada há 10 min sai.
+
 ## 7. Nuvem: tabelas (todas com RLS ligado)
 
 | Tabela | Quem lê | Quem escreve |
@@ -190,11 +228,12 @@ vale nas sessões abertas pelo lançador do Reveza.
 | `uso_janelas(conta_id, tipo, pct, reset_em, lido_em, fonte)` | membro | computador |
 | `uso_tokens(dia, hora, conta_id, computador_id, projeto, pasta, modelo, entrada, saida, cache_escrita, cache_leitura, usd, respostas, agentes)` | membro | computador |
 | `sessoes(id, computador_id, projeto, pasta, inicio, fim, agentes, usd, contas)` | membro | computador |
-| `empresas(id, nome, cor, transbordo, transbordo_contas, separar)` (0.17.0; `separar` na 0.18.0) | membro | admin, pela função |
+| `empresas(id, nome, cor, transbordo, transbordo_contas, separar, pai, modo, herdar_transbordo)` (0.17.0; `separar` na 0.18.0; projeto, modo e transbordo herdado na 0.19.0) | membro | admin, pela função |
 | `conta_empresas(conta_id, empresa_id)` as empresas que cada conta atende; sem linha, a conta atende todas | membro | admin, pela função |
 | `pastas_empresa(id, tipo, padrao, empresa_id)` tipo `pasta` (caminho ou nome) ou `titulo` (agente do OpenBot) | membro | admin, pela função |
 | `agentes_openbot(computador_id, pasta, nome, titulo, visto_em)` | membro | computador, pela função |
 | `atribuicao_trilhas(computador_id, empresa_id, conta_id, motivo, versao, decidido_em, pedida_em)` (0.18.0) | membro | só as funções das trilhas |
+| `trilhas_sombra(computador_id, empresa_id, conta_id, em_uso, motivo, sessoes, trocas, versao, decidido_em, visto_em)` (0.19.0) | membro | só `rvz_rodar_sombra` |
 | `eventos(em, tipo, texto, dados)` | membro | funções e computador |
 | `comandos(id, criado_por, computador_id, acao, corpo, estado, resposta)` | membro | admin cria; computador reserva e responde |
 | `ligacao_pedidos(computador_id, aprovador, idioma, publica, pedido_em, expira_em, envelope, entregue_por, entregue_em, lido_em, recusado)` | membro, sem `publica` e `envelope` | o computador novo registra a chave pública (uma vez); computador ativo entrega ou recusa; admin escolhe o aprovador |

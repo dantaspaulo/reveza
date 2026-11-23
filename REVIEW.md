@@ -15,13 +15,18 @@ teste, o CHANGELOG ou a release.
   lugares; o token de renovação gira a cada uso.
 - **nuvem**: `nuvem/migracoes`. Migração só acrescenta (nada de drop, truncate ou update que zere dado); toda tabela
   nova com RLS e na lista do teste de segurança; toda função de escrita confere o papel, valida a entrada e grava a
-  auditoria; permissões novas no `0099_permissoes.sql`.
+  auditoria; permissões novas no `0099_permissoes.sql`. Trocar um índice (criar o novo, que aceita tudo o que o velho
+  aceitava, e só depois tirar o velho) não apaga dado e vale; nome de função que já existe em outra migração não se
+  reusa com outro tipo de retorno (o `create or replace` falha e trava a atualização da nuvem).
 - **entrada de fora**: o que o agente lê do disco, do assistente e da nuvem (tamanho, tipo, caracteres de controle).
 - **CI e instalador**: `.github/workflows` e `instalador/`.
 - **trilhas** (0.18.0): `agente/src/trilhas.ts`, o lançador em `instalador/lib/programa.mjs` e a 0039. A mesma conta
   nunca em duas trilhas nem na trilha e na principal; o login renovado da trilha volta ao cofre; renovação e retomada
   tiram `CLAUDE_SECURESTORAGE_CONFIG_DIR` e `REVEZA_TRILHA` herdados; o `oauthAccount` fica o da principal; tudo
   desligado sem empresa com `separar`.
+- **projetos e modos** (0.19.0): a 0040 e a 0041, `agente_empresas` e o portão de versão. Com tudo desligado nada
+  muda; o agente antes da 0.19.0 nunca recebe a unidade que ele mandaria para a conta errada; a sombra não troca
+  posse, atribuição nem login; o painel manda `modo` e a nuvem mantém `separar` igual a "ligado".
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

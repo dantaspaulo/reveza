@@ -7,6 +7,66 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.19.0 · 23/11/2026
+
+Projetos dentro da empresa e um modo de teste. A empresa agora pode ter **projetos**, cada um com as contas dele (ou as
+da empresa) e o seu próprio **modo de revezamento**: desligado, em teste ou ligado. Vem tudo **desligado**: sem
+empresa ou projeto ligado, as contas giram juntas em todos os computadores, como antes. Precisa da nuvem na 0.19.0 (o
+instalador atualiza a nuvem; cada computador se atualiza sozinho, ou pelo painel em **Computadores → Atualizar**).
+
+### O que muda no painel (Empresas)
+
+- **Projetos:** em cada empresa, **Novo projeto**. O nome é único dentro da empresa. O projeto usa as contas marcadas
+  para ele; sem nenhuma, usa as da empresa. As regras de pasta dele vencem as da empresa (a pasta mais específica
+  ganha), então `~/clientes/loja/site` pode ir para o projeto "Site" e o resto de `~/clientes/loja` para a empresa.
+- **Modo de cada empresa e projeto**, no lugar da chave "Separar as contas":
+  - **Desligado:** as sessões giram junto com todas as contas (o de fábrica).
+  - **Em teste:** nada muda nas sessões. De minuto em minuto a nuvem decide qual conta a empresa ou o projeto usaria
+    em cada computador com sessão aberta nas pastas dele, e o painel mostra "usaria X, e hoje usa Y", com as trocas
+    que teria feito. Serve para conferir antes de ligar. Nas sessões, a empresa em teste fica como desligada, e o
+    projeto em teste segue o modo de verdade da empresa dele.
+  - **Ligado:** como a "Separar as contas" da 0.18.0: as sessões abertas pelo lançador nas pastas dele usam só as
+    contas dele (e o transbordo).
+  - O projeto pode seguir o modo da empresa (o de fábrica) ou ter o seu. Um projeto desligado dentro de uma empresa
+    ligada volta para o revezamento de todas as contas. Uma empresa desligada não tira pasta nenhuma do revezamento,
+    como na 0.18.0.
+- **Transbordo do projeto:** quando as contas do projeto acabam, ele usa as da empresa e depois o transbordo dela (o de
+  fábrica), ou tem um transbordo próprio.
+- **Revezamento:** o quadro do topo diz se as contas giram todas juntas ou por empresa e projeto, quantas estão ligadas
+  e quantas em teste.
+- **Números por projeto:** custo, tokens, trocas, sessões e contas de cada projeto, ou somados na empresa (a chave
+  "Números por").
+- **Conta compartilhada:** a conta marcada para mais de uma empresa ou projeto ganha um aviso de que o uso de um pode
+  consumir a cota dos outros.
+
+### Computadores em versões diferentes
+
+- O agente da 0.18.0 não sabe mandar uma subpasta de volta para o revezamento de todas as contas. Enquanto um
+  computador estiver antes da 0.19.0, a nuvem não manda a ele a empresa que ele erraria: a empresa ligada com um
+  projeto desligado que tem regra de pasta, e a empresa ligada cuja regra pode cruzar com a de um projeto desligado de
+  outra empresa (regra por nome de pasta conta sempre; por caminho, quando um está dentro do outro). Lá essa empresa
+  fica como antes de ser ligada, sem conta errada e sem sessão interrompida. O painel lista quais computadores estão
+  atrás e o que não vale neles. Ao se atualizar, o computador passa a receber tudo.
+- Com a nuvem fora do ar, o agente que segue rodando continua usando as últimas regras que recebeu (passados 10
+  minutos, a resposta ao lançador vem marcada como vencida, e o registro avisa uma vez a cada 10 minutos). Nada volta
+  para o revezamento de todas as contas só porque a nuvem demorou a responder. Se o agente reiniciar com a nuvem
+  fora do ar, as sessões novas vão para o revezamento de todas as contas até a nuvem voltar.
+
+### Por baixo
+
+- Nuvem: `empresas.pai`, `empresas.modo` e `empresas.herdar_transbordo` (0040), a tabela `trilhas_sombra` (só
+  leitura para membros) e as funções na 0041; a agenda do teste (0042) roda de minuto em minuto e, sem nada em
+  teste, só apaga linhas paradas. O índice do nome da empresa passa a valer dentro da mesma empresa (nenhum dado
+  sai).
+- O modo "em teste" não troca posse, atribuição nem login: só grava o que faria.
+
+### Limites desta versão
+
+- O projeto não muda de empresa (crie outro e mova as regras).
+- O modo em teste só olha as sessões que o computador relatou nos últimos 10 minutos.
+- Os limites da 0.18.0 seguem: a sessão já aberta não muda de empresa, o login de servidor MCP com OAuth é pedido de
+  novo dentro de uma trilha, e o Windows segue sem lançador.
+
 ## 0.18.0 · 21/11/2026
 
 Cada empresa nas contas dela. Na 0.17.0 as marcas só separavam os números; agora a empresa pode **separar as contas**:
