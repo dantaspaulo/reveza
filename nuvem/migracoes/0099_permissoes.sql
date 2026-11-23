@@ -42,8 +42,10 @@ grant execute on function
   public.painel_alerta_segredo(uuid, text), public.painel_webhook_segredo(uuid), public.painel_credenciais_apagar(),
   public.painel_computador_preferida(uuid, uuid), public.painel_computador_enxugar(uuid, boolean), public.painel_computador_nome(uuid, text),
   public.agente_relatar_agentes(jsonb), public.agente_empresas(), public.agente_trilhas(uuid[]),
+  public.agente_segurar_principal(uuid[]),
   public.painel_empresa(uuid, jsonb), public.painel_empresa_apagar(uuid), public.painel_conta_empresas(uuid, jsonb),
-  public.painel_pasta_empresa(text, text, uuid), public.painel_pasta_empresa_apagar(uuid)
+  public.painel_pasta_empresa(text, text, uuid), public.painel_pasta_empresa_apagar(uuid),
+  public.painel_unidade(uuid, jsonb), public.painel_unidades(jsonb)
 to authenticated;
 
 -- As servico_nuvem_* (0021) não são liberadas para ninguém: só o papel dono do banco as chama, pela conexão que a

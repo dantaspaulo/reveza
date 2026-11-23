@@ -96,7 +96,7 @@ test("projeto sem nada próprio é parte da empresa: a regra dele aponta para a 
   await regra(b, admin, "~/Code/alfa", x);
   await regra(b, admin, "~/Code/alfa/site", p);
   const emp = await b.rpc(pc, "agente_empresas");
-  assert.deepEqual(emp.empresas, [{ id: x, nome: "Alfa" }]);
+  assert.deepEqual(emp.empresas.map(({ id, nome }) => ({ id, nome })), [{ id: x, nome: "Alfa" }]);
   assert.deepEqual(emp.regras.map((r) => [r.padrao, r.empresa]), [["~/Code/alfa", x], ["~/Code/alfa/site", x]]);
   assert.equal((await b.rpc(pc, "agente_ola", { p_versao: "0.18.0" })).trilhas, true);
   await pedir(b, pc, [x]);
@@ -115,7 +115,7 @@ test("projeto com contas próprias tem trilha própria; a principal não usa as 
   await regra(b, admin, "~/Code/alfa", x);
   await regra(b, admin, "~/Code/alfa/site", p);
   const emp = await b.rpc(pc, "agente_empresas");
-  assert.deepEqual(emp.empresas, [{ id: x, nome: "Alfa" }, { id: p, nome: "Alfa / Site" }]);
+  assert.deepEqual(emp.empresas.map(({ id, nome }) => ({ id, nome })), [{ id: x, nome: "Alfa" }, { id: p, nome: "Alfa / Site" }]);
   assert.deepEqual(emp.regras.map((r) => [r.padrao, r.empresa]), [["~/Code/alfa", x], ["~/Code/alfa/site", p]]);
   await pedir(b, pc, [x, p]);
   assert.equal(await trilha(b, pc, x), a);
@@ -238,7 +238,7 @@ test("projeto ligado numa empresa desligada liga as trilhas do computador", asyn
   const s = await b.conta(pc, "s@exemplo.com", 5);
   await marcar(b, admin, s, [p]);
   assert.equal((await b.rpc(pc, "agente_ola", { p_versao: "0.18.0" })).trilhas, true);
-  assert.deepEqual((await b.rpc(pc, "agente_empresas")).empresas, [{ id: p, nome: "Alfa / Site" }]);
+  assert.deepEqual((await b.rpc(pc, "agente_empresas")).empresas.map(({ id, nome }) => ({ id, nome })), [{ id: p, nome: "Alfa / Site" }]);
   await pedir(b, pc, [p]);
   assert.equal(await trilha(b, pc, p), s);
   // desligar o projeto: a trilha fica até a última sessão sair (como na 0.18.0), sem troca nova

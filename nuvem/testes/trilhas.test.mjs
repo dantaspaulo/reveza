@@ -285,7 +285,7 @@ test("o agente: só computador pede trilha, lista com no máximo 50; recebe só 
   await assert.rejects(b.rpc(admin, "agente_empresas"));
   await assert.rejects(pedir(b, pc, Array.from({ length: 51 }, () => x)), /lista/);
   const r = await b.rpc(pc, "agente_empresas");
-  assert.deepEqual(r.empresas, [{ id: x, nome: "Alfa" }]);
+  assert.deepEqual(r.empresas.map(({ id, nome }) => ({ id, nome })), [{ id: x, nome: "Alfa" }]);
   assert.deepEqual(r.regras, [{ tipo: "pasta", padrao: "~/Code/alfa", empresa: x }]);
   assert.equal(r.computador_id, pc.pc);
   // ninguém de fora lê a tabela das trilhas

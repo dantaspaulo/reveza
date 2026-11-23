@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 // Parâmetros jsonb vão como JSON (como o PostgREST faz com o corpo da chamada).
 const JSONB = new Set(["p_valor", "p_campos", "p_corpo", "p_destino", "p_janelas", "p_historico", "p_linhas",
-  "p_sessoes", "p_dados", "p_diagnostico", "p_resposta", "p_publica", "p_envelope", "p_lista"]);
+  "p_sessoes", "p_dados", "p_diagnostico", "p_resposta", "p_publica", "p_envelope", "p_lista", "p_passos"]);
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 const migracoes = path.join(aqui, "..", "migracoes");
