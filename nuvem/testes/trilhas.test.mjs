@@ -127,7 +127,8 @@ test("a trilha pega a conta da empresa, troca no gatilho, vai ao transbordo e vo
   await esperar(b);
   r = await pedir(b, pc, [x]);
   assert.equal(r.trilhas[0].conta_id, a);
-  assert.equal(r.trilhas[0].motivo, "voltou para uma conta da empresa");
+  // a 0041 redefine a função com o texto que serve também a projeto
+  assert.equal(r.trilhas[0].motivo, "voltou para uma conta da empresa ou do projeto");
   const [ev] = await b.sql("select dados from public.eventos where tipo = 'troca' and dados ->> 'empresa' is not null order by id desc limit 1");
   assert.equal(ev.dados.empresa, x);
   assert.equal(ev.dados.de, e);

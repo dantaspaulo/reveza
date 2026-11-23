@@ -93,8 +93,17 @@ function rodarAqui(nome, cmd, args, cwd) {
   const env = NODE22 ? { ...process.env, PATH: `${NODE22}${path.delimiter}${process.env.PATH}` } : process.env;
   const r = spawnSync(cmd, args, { cwd: path.join(RAIZ, cwd), env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, shell: process.platform === "win32" });
   if (r.status !== 0) {
+    const tudo = (r.stdout || "") + (r.stderr || "");
     console.log("FALHOU");
-    console.error(((r.stdout || "") + (r.stderr || "")).slice(-3000));
+    // a tela leva só o fim; a saída inteira fica num arquivo, senão achar a falha custa rodar a bateria de novo
+    const arquivo = path.join(RAIZ, `ensaio-falhou-${nome.replace(/[^a-z0-9]+/gi, "-")}.log`);
+    try {
+      writeFileSync(arquivo, tudo);
+      console.error(`saída inteira em ${arquivo}`);
+    } catch {
+      console.error("não deu para gravar a saída inteira; segue só o fim dela");
+    }
+    console.error(tudo.slice(-3000));
     throw new Error(`${nome} falhou aqui: nada foi ao GitHub`);
   }
   console.log("ok");

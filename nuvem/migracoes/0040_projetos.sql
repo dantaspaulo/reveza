@@ -1,4 +1,5 @@
 -- Reveza AI · 0040 · projetos dentro da empresa e o modo de teste (sombra). Só acrescenta.
+-- reaplicável: tudo com "if not exists"; o índice do nome é refeito com o mesmo nome, sem mexer em dado.
 --
 -- Um projeto é uma linha da própria tabela de empresas, com `pai` apontando para a empresa. Assim as marcas das contas,
 -- as regras de pasta, o transbordo e as trilhas da 0.18.0 servem a ele sem mudar nada: a regra de pasta mais longa
