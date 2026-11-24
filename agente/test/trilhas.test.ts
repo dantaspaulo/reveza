@@ -2,6 +2,7 @@
 
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { aadConta, cifrarLogin } from "../src/cofre/cifra.js";
@@ -786,6 +787,48 @@ describe("trilhas no agente", () => {
     const troca = await m.agente.alvoPonte().trocar!({ email: "c@exemplo.com", local: true });
     assert.equal(troca.status, 409);
     assert.match(String((troca.corpo as { erro?: string }).erro), /sessão de projeto/);
+  });
+
+  test("plano B versão 2 (regra 4): a conversa que segurava a conta em uso fechou, e a trava na nuvem acaba na hora", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    const filho = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+    try {
+      assert.deepEqual(await pedir(cwd, filho.pid!), { ok: true, trilha: null });
+      assert.deepEqual(fns("segurarPrincipal").at(-1)?.args, [[E1]], "a nuvem segura a conta em uso para a conversa");
+    } finally {
+      const saiu = new Promise((ok) => filho.on("exit", ok));
+      filho.kill("SIGKILL");
+      await saiu;
+    }
+    await m.agente.busca();
+    assert.deepEqual(fns("segurarPrincipal").at(-1)?.args, [[]], "a nuvem fica sabendo na hora que ninguém segura mais");
+    const n = fns("segurarPrincipal").length;
+    await m.agente.busca();
+    await m.agente.busca();
+    assert.equal(fns("segurarPrincipal").length, n, "uma vez só: sem nada a segurar, não chama a nuvem a cada volta");
+  });
+
+  test("plano B versão 2 (regra 4): comando que não conversa pergunta sem o processo, e nada fica anotado nem seguro", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.deepEqual(await pedir(cwd, null), { ok: true, trilha: null });
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal ?? [], [], "o lançador não mandou processo: nada a anotar");
+    assert.equal(fns("segurarPrincipal").length, 0, "a nuvem não segura a conta em uso para um claude --version");
+    await m.agente.busca();
+    assert.equal(fns("segurarPrincipal").length, 0);
   });
 
   test("sessão que já fechou não segura a conta em uso", async () => {

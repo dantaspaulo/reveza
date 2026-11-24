@@ -199,6 +199,8 @@ export class Trilhas {
   private travaPedida = new Map<string, number>();
   /** O que a nuvem confirmou por último: até quando, e em qual conta local. */
   private confirmadas = new Map<string, { ate: number; conta: string | null }>();
+  /** Este agente pediu à nuvem para segurar a conta em uso e ainda não soltou (plano B versão 2, regra 4). */
+  private seguraNaNuvem = false;
 
   constructor(private d: DepsTrilhas) {}
 
@@ -567,8 +569,21 @@ export class Trilhas {
     const presas = this.naPrincipal();
     const ids = [...new Set([...presas, ...this.travaPedida.keys()])].slice(0, 50);
     const nuvem = this.d.nuvem();
-    if (!ids.length || !nuvem || this.d.sombra) return null;
+    if (!nuvem || this.d.sombra) return null;
+    if (!ids.length) {
+      // plano B versão 2 (regra 4): a última sessão presa fechou. A lista vazia solta a trava na nuvem agora, em vez de a
+      // conta em uso ficar segura até vencer; uma vez só, e de novo só depois de outra trava
+      if (!this.seguraNaNuvem) return null;
+      try {
+        if ((await nuvem.segurarPrincipal([])).ok) this.seguraNaNuvem = false;
+      } catch (e) {
+        this.d.log.erro(`soltar a conta em uso das sessões do projeto: ${(e as Error).message}`);
+      }
+      return null;
+    }
     const ativa = this.d.estado().ativa;
+    // antes da chamada: sem resposta, a nuvem pode ter gravado a trava mesmo assim, e a lista vazia a solta depois
+    this.seguraNaNuvem = true;
     try {
       const r = await nuvem.segurarPrincipal(ids);
       if (!r.ok) return null;

@@ -252,9 +252,21 @@ function aspasSh(s) {
  * (15 s) até REVEZA_ESPERA_S (720 s, pelo relógio: cada pergunta leva até 20 s), abaixo dos 15 min sem sinal em que o
  * OpenBot fecha a conversa. O agente sem responder (saída 4) não abre a sessão na principal: segue esperando. Versão 2
  * (regra 1): só sai da espera a trilha com as duas linhas (saída 0) ou a principal com a certeza do agente (saída 5).
+ * Regra 4: o comando que não conversa (COMANDOS_SEM_CONVERSA) pergunta sem o processo e nunca espera.
  * REVEZA_ESPERA_S=0 volta ao comportamento antigo. Toda pergunta roda com </dev/null (quem chama pelo SDK deixa a
  * primeira mensagem na entrada), e o sleep da espera roda com wait, para Ctrl+C e sinal de encerrar saírem na hora.
  */
+/**
+ * O primeiro argumento que não abre conversa: o lançador pergunta sem o processo (o agente não anota nem segura a conta
+ * em uso por ele) e nunca espera a conta do projeto. Saiu do `claude --help` (2.1.331) e um teste compara com a ajuda do
+ * Claude Code instalado. "help" fica fora de propósito: pode ser o começo de um pedido.
+ */
+export const COMANDOS_SEM_CONVERSA = [
+  "-v", "--version", "-h", "--help", "agents", "attach", "auth", "auto-mode", "config", "doctor", "gateway", "import",
+  "install", "kill", "logs", "mcp", "migrate-installer", "plugin", "plugins", "purge", "respawn", "rm", "setup-token",
+  "stop", "ultrareview", "update", "upgrade",
+];
+
 export function lancadorClaude(dir, cli, node = process.execPath) {
   const marca = path.join(path.dirname(dir), "trilhas", "ligadas");
   return [
@@ -283,13 +295,23 @@ export function lancadorClaude(dir, cli, node = process.execPath) {
     `if [ -z "\${REVEZA_TRILHA:-}" ] && [ -z "\${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ] && [ -f ${aspasSh(marca)} ]; then`,
     // a pasta como ela é no disco (sem atalho), a mesma que o registro de uso vê e as regras dos projetos usam
     '  aqui=$(pwd -P 2>/dev/null || pwd 2>/dev/null || echo "$PWD")',
-    `  saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" </dev/null 2>/dev/null)`,
-    "  rc=$?",
-    // sem conta da empresa, a conversa espera a conta dela (plano B); o comando que não conversa (versão, login, ajuda)
-    // segue valendo na hora
+    // o comando que não conversa (versão, login, ajuda) pergunta sem o processo: o agente não segura a conta em uso por
+    // ele (plano B versão 2, regra 4)
+    "  conversa=1",
+    '  case "${1:-}" in',
+    `    ${COMANDOS_SEM_CONVERSA.join("|")}) conversa=0 ;;`,
+    "  esac",
+    '  if [ "$conversa" = 1 ]; then',
+    `    saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" </dev/null 2>/dev/null)`,
+    "    rc=$?",
+    "  else",
+    `    saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" </dev/null 2>/dev/null)`,
+    "    rc=$?",
+    "  fi",
+    // sem conta da empresa, a conversa espera a conta dela (plano B); o comando que não conversa segue valendo na hora
     '  if [ "$rc" = 3 ]; then',
-    '    case "${1:-}" in',
-    '      -v|--version|-h|--help|auth|config|doctor|install|mcp|migrate-installer|plugin|setup-token|update) saida="" ;;',
+    '    case "$conversa" in',
+    '      0) saida="" ;;',
     "      *)",
     '        printf "reveza: %s\\n" "$saida" >&2',
     '        espera=${REVEZA_ESPERA_S:-720}',

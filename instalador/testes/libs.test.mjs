@@ -10,7 +10,7 @@ import { Vercel, listar } from "../lib/vercel.mjs";
 import { criarProjeto, conferirToken, organizacoes, projetos, regiaoSugerida } from "../lib/supabase.mjs";
 import { dnsPronto, dominioPedido, dominioValido, passosCloudflare, passosDns } from "../lib/dominio.mjs";
 import { acharChatTelegram, testar } from "../lib/alertas.mjs";
-import { copiarEstado, criarLancador, criarLancadorClaude, gravarConfigLocal, gravarInstalacao, lancadorWindows, lerInstalacao, linhaPath, voltarAtualizacao } from "../lib/programa.mjs";
+import { COMANDOS_SEM_CONVERSA, copiarEstado, criarLancador, criarLancadorClaude, gravarConfigLocal, gravarInstalacao, lancadorWindows, lerInstalacao, linhaPath, voltarAtualizacao } from "../lib/programa.mjs";
 import { emailValido, senhaForte, t } from "../lib/texto.mjs";
 import { completarRecuperada, dadosDaInstalacao, instalacaoNoDisco, lerArgs, semNuvemPrevisto, soEsteComputador } from "../instalar.mjs";
 
@@ -457,6 +457,72 @@ test("plano B versão 2 (regra 3): regravar no mesmo arquivo durante a espera ta
     assert.equal(r.out.trim(), `dir=${l.e1} trilha=e1 args=-p oi entrada=`);
     assert.doesNotMatch(r.out + r.err, /invadiu/);
   } finally { limpar(); }
+});
+
+test("plano B versão 2 (regra 4): comando que não conversa pergunta sem o processo e nunca espera", { skip: process.platform === "win32" }, () => {
+  const { d, limpar } = pasta();
+  try {
+    const l = montarEspera(d, ["bloqueio"]);
+    const comandos = [
+      ["--version"], ["-v"], ["--help"], ["-h"], ["auth", "status"], ["doctor"], ["update"], ["upgrade"], ["plugin", "list"],
+      ["plugins", "list"], ["mcp", "list"], ["stop", "x"], ["kill", "x"], ["logs", "x"], ["rm", "x"], ["purge"], ["auto-mode"],
+      ["import"], ["gateway"], ["agents"], ["attach", "x"], ["respawn"], ["setup-token"], ["install"], ["ultrareview"],
+    ];
+    for (const args of comandos) {
+      const nome = args.join(" ");
+      const antes = l.perguntas().length;
+      const t0 = Date.now();
+      const r = spawnSync(SH_DO_TESTE, [l.arq, ...args], { cwd: d, env: { ...l.env, REVEZA_ESPERA_S: "3" }, encoding: "utf8", timeout: 20_000 });
+      assert.equal(r.status, 0, `${nome}: ${r.stderr}`);
+      assert.ok(Date.now() - t0 < 5000, `${nome}: não esperou`);
+      assert.equal(r.stdout.trim(), `dir= trilha= args=${nome} entrada=`, nome);
+      const p = l.perguntas();
+      assert.equal(p.length, antes + 1, `${nome}: perguntou uma vez`);
+      assert.doesNotMatch(p.at(-1), /--pid/, `${nome}: sem o processo, a nuvem não segura a conta em uso para ele`);
+    }
+    // a conversa segue perguntando com o processo (e espera): o prompt solto e as opções de conversa
+    const r = spawnSync(SH_DO_TESTE, [l.arq, "--output-format", "stream-json"], { cwd: d, env: { ...l.env, REVEZA_ESPERA_S: "0" }, encoding: "utf8", timeout: 20_000 });
+    assert.equal(r.status, 78, r.stderr);
+    assert.match(l.perguntas().at(-1), /--pid \d+$/);
+  } finally { limpar(); }
+});
+
+/** O Claude Code de verdade deste computador (não o lançador), ou null. */
+function claudeDeVerdade() {
+  const pastas = [...(process.env.PATH || "").split(path.delimiter), path.join(os.homedir(), ".local", "bin")];
+  for (const p of pastas) {
+    if (!p) continue;
+    const arq = path.join(p, "claude");
+    try {
+      if (!statSync(arq).isFile()) continue;
+      const inicio = readFileSync(arq).subarray(0, 300).toString("utf8");
+      if (inicio.includes("Reveza AI: lançador")) continue;
+      return arq;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+test("plano B versão 2 (regra 4): a lista dos comandos que não conversam cobre a ajuda do Claude Code instalado", { skip: process.platform === "win32" }, (t) => {
+  const real = claudeDeVerdade();
+  if (!real) return t.skip("sem o Claude Code neste computador");
+  const r = spawnSync(real, ["--help"], { encoding: "utf8", timeout: 30_000 });
+  if (r.status !== 0) return t.skip(`a ajuda do Claude Code não abriu (${r.status})`);
+  const linhas = r.stdout.split("\n");
+  const i = linhas.findIndex((x) => /^Commands:/.test(x));
+  assert.ok(i >= 0, "a ajuda tem a seção de comandos");
+  const comandos = [];
+  for (const x of linhas.slice(i + 1)) {
+    if (!x.trim()) break;
+    const m = /^ {2}([a-z][\w-]*(?:\|[a-z][\w-]*)*)(?:\s|$)/.exec(x);
+    if (m) comandos.push(...m[1].split("|"));
+  }
+  assert.ok(comandos.length >= 5, `achei os comandos: ${comandos.join(", ")}`);
+  // "help" fica de fora de propósito (programa.mjs): pode ser o começo de um pedido, e esperar a conta é o lado seguro
+  const faltam = comandos.filter((c) => c !== "help" && !COMANDOS_SEM_CONVERSA.includes(c));
+  assert.deepEqual(faltam, [], "o Claude Code tem comando novo: entra em COMANDOS_SEM_CONVERSA (instalador/lib/programa.mjs)");
 });
 
 test("Windows: o reveza.cmd roda em UTF-8 (caminho com acento), volta à página de código e devolve a saída do agente", () => {
