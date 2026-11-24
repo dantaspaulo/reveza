@@ -80,6 +80,19 @@ describe("reveza trilha", () => {
     assert.deepEqual(amb.saidas, ["Alfa: a conta deste projeto não está livre agora.", "Alfa: a conta deste projeto não está livre agora."]);
   });
 
+  test("--sem-conversa (regra 4) vai marcada e sem o processo; com --de-novo, vale a espera", async () => {
+    const p = await ponte(200, { ok: true, trilha: null });
+    const amb = ambiente(p.porta);
+    const pasta = tmp!.dir;
+    const fisica = fs.realpathSync.native(pasta);
+    assert.equal(await executarCli(["trilha", "--cwd", pasta, "--sem-conversa"], amb), 0);
+    assert.equal(await executarCli(["trilha", "--cwd", pasta, "--pid", "4321", "--sem-conversa"], amb), 0);
+    assert.equal(await executarCli(["trilha", "--cwd", pasta, "--pid", "4321", "--de-novo", "--sem-conversa"], amb), 4);
+    assert.deepEqual(p.recebidos[0], { cwd: fisica, pid: null, semConversa: true });
+    assert.deepEqual(p.recebidos[1], { cwd: fisica, pid: null, semConversa: true }, "o processo não vai: nada a segurar");
+    assert.deepEqual(p.recebidos[2], { cwd: fisica, pid: 4321, deNovo: true });
+  });
+
   test("sem resposta da ponte, ou resposta de erro, sai 4 e não escreve trilha", async () => {
     const amb = ambiente(1);
     assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321"], amb), 4);

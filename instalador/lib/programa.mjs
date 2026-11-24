@@ -263,8 +263,8 @@ function aspasSh(s) {
  * do Claude Code instalado e falha com comando novo sem lista: cada um se decide de propósito. "help" fica fora de
  * propósito: pode ser o começo de um pedido, e esperar a conta é o lado seguro.
  *
- * Os que não abrem conversa: o lançador pergunta sem o processo (o agente não anota nem segura a conta em uso por ele) e
- * nunca espera a conta do projeto.
+ * Os que não abrem conversa: o lançador pergunta sem o processo e com `--sem-conversa` (o agente responde pelo que já
+ * sabe: não anota, não pede conta à nuvem nem segura a conta em uso) e nunca espera a conta do projeto.
  */
 export const COMANDOS_SEM_CONVERSA = [
   "-v", "--version", "-h", "--help", "auto-mode", "config", "doctor", "import", "install", "kill", "logs", "mcp",
@@ -341,7 +341,7 @@ export function lancadorClaude(dir, cli, node = process.execPath) {
     '      saida=""',
     "    fi",
     "  else",
-    `    saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" </dev/null 2>/dev/null)`,
+    `    saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --sem-conversa </dev/null 2>/dev/null)`,
     "    rc=$?",
     "  fi",
     // sem conta da empresa, a conversa espera a conta dela (plano B); o comando que não conversa segue valendo na hora

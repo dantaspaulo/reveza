@@ -408,11 +408,17 @@ async function cmdStatus(amb: Ambiente, a: Args, soContas: boolean): Promise<num
  * Plano B versão 2 (regra 1): na pergunta de novo, só resposta positiva e explícita tira a sessão da espera. A trilha
  * conferida sai 0 com as duas linhas; a principal sai 5, e só quando o agente manda a marca de certeza (o agente antigo
  * nunca a manda). Tudo o mais (principal sem certeza, trilha que não confere, resposta estranha) sai 4, "não sei".
+ *
+ * `--sem-conversa` (regra 4): o comando que não conversa (versão, ajuda, mcp) não manda o processo, e o agente responde
+ * pelo que já sabe, sem pedir conta à nuvem nem segurar a conta em uso.
  */
 async function cmdTrilha(amb: Ambiente, a: Args): Promise<number> {
   const recebida = typeof a.flags.cwd === "string" ? a.flags.cwd : process.cwd();
   const pid = typeof a.flags.pid === "string" && /^\d{1,10}$/.test(a.flags.pid) ? Number(a.flags.pid) : null;
   const deNovo = a.flags["de-novo"] === true;
+  // plano B versão 2 (regra 4): o comando que não conversa avisa, e o agente responde pelo que já sabe, sem anotar o
+  // processo, pedir conta ou segurar a conta em uso
+  const semConversa = !deNovo && a.flags["sem-conversa"] === true;
   const naoSei = deNovo ? 4 : 0;
   if (!path.isAbsolute(recebida)) return naoSei;
   // plano B versão 2 (regra 2): a pasta como ela é no disco, sem atalho (a que o registro de uso vê e as regras dos
@@ -423,7 +429,7 @@ async function cmdTrilha(amb: Ambiente, a: Args): Promise<number> {
   } catch {
     cwd = recebida;
   }
-  const corpo = deNovo ? { cwd, pid, deNovo: true } : { cwd, pid };
+  const corpo = deNovo ? { cwd, pid, deNovo: true } : semConversa ? { cwd, pid: null, semConversa: true } : { cwd, pid };
   const r = await pedirPonte(portaDe(amb, a), "POST", "/api/trilha", corpo, chaveDaPonte(amb.c.ponteChave, false), 20_000);
   if (!r || r.status !== 200) return 4;
   const c = r.corpo as {

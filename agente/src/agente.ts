@@ -2847,7 +2847,8 @@ export class Agente {
         const cwd = typeof corpo.cwd === "string" && corpo.cwd.length <= 4096 && path.isAbsolute(corpo.cwd) ? corpo.cwd : null;
         if (!cwd) return { status: 400, corpo: { ok: false, erro: "cwd precisa ser um caminho absoluto" } };
         const pid = typeof corpo.pid === "number" && Number.isInteger(corpo.pid) && corpo.pid > 1 ? corpo.pid : null;
-        return { status: 200, corpo: await this.trilhas.pedir(cwd, pid, { deNovo: corpo.deNovo === true }) };
+        const opcoes = { deNovo: corpo.deNovo === true, semConversa: corpo.semConversa === true };
+        return { status: 200, corpo: await this.trilhas.pedir(cwd, pid, opcoes) };
       },
       trilhaAtiva: (corpo: Record<string, unknown>): Resposta => {
         const tr = this.trilhas?.daSessao(corpo) ?? null;

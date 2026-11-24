@@ -32,7 +32,8 @@ export interface OpenBot {
   continuar(agente: string, texto: string, chave: string): Promise<number>;
   /**
    * Os agentes deste OpenBot: a pasta de trabalho (caminho absoluto), o nome e o título (0.17.0: o painel liga a pasta
-   * de um agente a uma empresa pelo título). Vazio quando não dá para ler.
+   * de um agente a uma empresa pelo título). Vazio só quando não há OpenBot neste computador; a leitura que falha
+   * lança erro (0.21.0), para o agente manter a última lista em vez de tirar as pastas dos projetos.
    */
   agentes?(): AgenteOpenBot[];
 }

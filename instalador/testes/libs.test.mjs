@@ -482,6 +482,7 @@ test("plano B versão 2 (regra 4): comando que não conversa pergunta sem o proc
       const p = l.perguntas();
       assert.equal(p.length, antes + 1, `${nome}: perguntou uma vez`);
       assert.doesNotMatch(p.at(-1), /--pid/, `${nome}: sem o processo, a nuvem não segura a conta em uso para ele`);
+      assert.match(p.at(-1), /--sem-conversa/, `${nome}: o agente responde pelo que sabe, sem pedir conta nem esperar`);
     }
     // a conversa segue perguntando com o processo (e espera): o prompt solto, as opções de conversa e os comandos que
     // abrem, despacham ou reiniciam sessões, ou gastam a conta (a revisão na nuvem)
@@ -490,6 +491,7 @@ test("plano B versão 2 (regra 4): comando que não conversa pergunta sem o proc
       const r = spawnSync(SH_DO_TESTE, [l.arq, ...args], { cwd: d, env: { ...l.env, REVEZA_ESPERA_S: "0" }, encoding: "utf8", timeout: 20_000 });
       assert.equal(r.status, 78, `${nome}: ${r.stderr}`);
       assert.match(l.perguntas().at(-1), /--pid \d+$/, nome);
+      assert.doesNotMatch(l.perguntas().at(-1), /--sem-conversa/, nome);
     }
   } finally { limpar(); }
 });

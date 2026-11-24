@@ -119,6 +119,12 @@ async function pedir(cwd: string, pid: number | null = process.pid) {
   return r.corpo as { ok: boolean; trilha: { empresa: string; nome: string; pasta: string } | null; aviso?: string; bloqueio?: string };
 }
 
+/** O comando que não conversa (`reveza trilha --sem-conversa`, plano B versão 2, regra 4): vai sem o processo. */
+async function semConversa(cwd: string) {
+  const r = await m.agente.alvoPonte().trilha!({ cwd, pid: null, semConversa: true });
+  return r.corpo as { ok: boolean; trilha: { empresa: string; nome: string; pasta: string } | null; bloqueio?: string };
+}
+
 describe("trilhas no agente", () => {
   test("sem empresa separada nada muda: nem empresas, nem trilhas, nem a marca do lançador", async () => {
     await preparar();
@@ -824,11 +830,58 @@ describe("trilhas no agente", () => {
     banco.trilhas.get("pc-1")!.delete(E1);
     await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
     await m.agente.busca();
-    assert.deepEqual(await pedir(cwd, null), { ok: true, trilha: null });
-    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal ?? [], [], "o lançador não mandou processo: nada a anotar");
+    const pedida = m.agente.estado.trilhas?.[E1]?.pedidaEm;
+    const buscas = fns("trilhas").length;
+    await m.relogio.dormir(5_000);
+    assert.deepEqual(await semConversa(cwd), { ok: true, trilha: null });
+    assert.deepEqual(m.agente.estado.trilhas?.[E1]?.pidsPrincipal ?? [], [], "o lançador não mandou processo: nada a anotar");
+    assert.equal(m.agente.estado.trilhas?.[E1]?.pedidaEm, pedida, "a trilha não fica pedida por um claude --version");
+    assert.equal(fns("trilhas").length, buscas, "nem a nuvem é perguntada pela conta: ele não espera nada");
     assert.equal(fns("segurarPrincipal").length, 0, "a nuvem não segura a conta em uso para um claude --version");
     await m.agente.busca();
     assert.equal(fns("segurarPrincipal").length, 0);
+  });
+
+  test("plano B versão 2 (regra 4): comando que não conversa, com a trilha que já tem conta, abre nela sem anotar nada", async () => {
+    await preparar();
+    await comPrincipal();
+    const { cwd } = await comEmpresa();
+    await pedir(cwd, null);
+    const t = m.agente.estado.trilhas![E1]!;
+    assert.ok(t.conta, "a trilha já tem a conta");
+    const pedida = t.pedidaEm;
+    const buscas = fns("trilhas").length;
+    await m.relogio.dormir(5_000);
+    const r = await semConversa(cwd);
+    assert.equal(r.trilha?.empresa, E1);
+    assert.equal(r.trilha?.pasta, t.pasta, "a mesma pasta de login da conversa do projeto");
+    assert.deepEqual(t.pids, [], "o processo não fica na trilha");
+    assert.equal(t.pedidaEm, pedida);
+    assert.equal(fns("trilhas").length, buscas);
+  });
+
+  test("revisão da 0.21.0: a mesma sessão pergunta de novo (a resposta passou do prazo da ponte) e abre na trilha: solta a conta em uso", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { b, cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem, b] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    // a primeira resposta (a conta em uso, com a trava) se perde no prazo da ponte; o lançador pergunta de novo 1 s depois
+    assert.deepEqual(await pedir(cwd), { ok: true, trilha: null });
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, [process.pid]);
+    banco.trilhas.get("pc-1")!.set(E1, { conta: b, versao: 2, motivo: "conta marcada para a empresa" });
+    await m.relogio.dormir(1_000);
+    const r = await pedir(cwd);
+    assert.equal(r.trilha?.empresa, E1, "a busca atrasada deu a conta à trilha, e a sessão abre nela");
+    const t = m.agente.estado.trilhas![E1]!;
+    assert.deepEqual(t.pidsPrincipal ?? [], [], "a sessão da trilha não segura a conta em uso");
+    assert.equal(t.iniciosPrincipal?.[String(process.pid)], undefined);
+    assert.deepEqual(carregarEstado(m.c.estado).trilhas?.[E1]?.pidsPrincipal ?? [], [], "e o disco também já não tem o processo");
+    await m.agente.busca();
+    assert.deepEqual(fns("segurarPrincipal").at(-1)?.args, [[]], "a nuvem fica sabendo que ninguém segura mais a conta em uso");
   });
 
   test("plano B versão 2 (regra 5): com a trava recusada, a pergunta de novo não anota o processo nem grava", async () => {
@@ -859,6 +912,11 @@ describe("trilhas no agente", () => {
     assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true });
     assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, [process.pid], "confirmada a trava, a sessão segura a conta");
     assert.equal(gravou, 1, "uma gravação, a do processo anotado");
+    // revisão da 0.21.0: a resposta com a trava se perdeu no prazo da ponte, e a pergunta seguinte é a espera de novo
+    nuvemFalsa.recusarTrava = true;
+    await m.relogio.dormir(15_000);
+    assert.match((await deNovo(cwd)).bloqueio ?? "", /Empresa Um/);
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal ?? [], [], "quem segue esperando não segura a conta em uso");
   });
 
   test("plano B versão 2: a renovação do ciclo no meio da pergunta de novo não apaga a trava que ela pediu", async () => {

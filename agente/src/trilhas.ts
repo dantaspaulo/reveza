@@ -330,13 +330,35 @@ export class Trilhas {
    * `certa` (veja `certeza`). Por isso ela não sai pelo atalho do começo: o projeto desligado durante a espera também
    * desliga a separação, e o atalho responderia sem ler as regras.
    */
-  async pedir(cwd: string, pid: number | null, opcoes: { deNovo?: boolean } = {}): Promise<RespostaTrilha> {
+  async pedir(
+    cwd: string,
+    pid: number | null,
+    opcoes: { deNovo?: boolean; semConversa?: boolean } = {},
+  ): Promise<RespostaTrilha> {
+    const feito = { anotou: false };
+    const r = await this.responder(cwd, pid, opcoes, feito);
+    // a mesma pergunta pode chegar de novo: a resposta que passa dos 20 s da ponte se perde, e o lançador pergunta outra
+    // vez. O processo só segura a conta em uso quando esta resposta o pôs nela; a que abre na trilha, espera ou abre sem
+    // trava o solta (revisão da 0.21.0)
+    if (pid !== null && (r.trilha || r.bloqueio || !feito.anotou)) this.largarPrincipal(pid);
+    return r;
+  }
+
+  private async responder(
+    cwd: string,
+    pid: number | null,
+    opcoes: { deNovo?: boolean; semConversa?: boolean },
+    feito: { anotou: boolean },
+  ): Promise<RespostaTrilha> {
     this.carregarGuardadas();
     const deNovo = opcoes.deNovo === true;
     const conhecida = this.empresas.some((e) => e.estrita);
     if (!this.d.nuvem() || (!deNovo && !this.ligadas && !conhecida && !Object.values(this.trilhas).some((t) => t.conta))) {
       return { ok: true, trilha: null };
     }
+    // plano B versão 2 (regra 4): o comando que não conversa (versão, ajuda, mcp) responde pelo que o agente já sabe. Não
+    // anota, não pede conta à nuvem, não segura a conta em uso e não espera
+    if (opcoes.semConversa === true && !deNovo) return this.semConversa(cwd);
     // a ponte espera 20 s: tudo aqui fecha antes, para a sessão ser recusada em vez de abrir em outra conta sem resposta
     const inicio = Date.now();
     try {
@@ -399,22 +421,26 @@ export class Trilhas {
         try {
           const seguras = await this.noPrazo(this.segurarPrincipal(), PEDIR_TRAVA_MS);
           certa = !!seguras?.includes(emp.id);
-          if (certa && pid !== null) this.anotarPrincipal(emp.id, pid);
+          if (certa && pid !== null) {
+            this.anotarPrincipal(emp.id, pid);
+            feito.anotou = true;
+          }
         } finally {
           if (!tinha) this.travaPedida.delete(emp.id);
         }
         if (certa) return { ok: true, trilha: null, certa: true };
       } else if (this.principalServe(emp.id)) {
         // a sessão vai seguir este login: a nuvem precisa confirmar antes, para a principal não trocar com ela aberta
-        if (pid !== null) this.anotarPrincipal(emp.id, pid);
+        if (pid !== null) {
+          this.anotarPrincipal(emp.id, pid);
+          feito.anotou = true;
+        }
         const seguras = await this.noPrazo(this.segurarPrincipal(), PEDIR_TRAVA_MS);
         // a nuvem confirmou a trava: a conta em uso não troca com a sessão aberta
         if (seguras?.includes(emp.id)) return { ok: true, trilha: null };
         // nuvem fora (null) no primeiro pedido: nenhuma troca chega aqui. Disse que não, ou não respondeu a tempo: não dá
-        // para garantir a conta
+        // para garantir a conta, e o bloqueio solta o processo (em `pedir`)
         if (seguras === null) return { ok: true, trilha: null };
-        t.pidsPrincipal = (t.pidsPrincipal ?? []).filter((p) => p !== pid);
-        this.d.salvar();
       }
       // só as contas dela: não abre em outra. A trilha segue pedida, e a nuvem dá a conta assim que ela soltar.
       return this.bloquear(emp);
@@ -544,6 +570,30 @@ export class Trilhas {
     t.pids.splice(0, Math.max(0, t.pids.length - 200));
     t.pedidaEm = this.agora();
     this.d.salvar();
+  }
+
+  /**
+   * A resposta ao comando que não conversa (plano B versão 2, regra 4): a trilha que já tem uma conta que vale para o
+   * projeto, ou a principal. Sem busca, sem trava e sem gravar: ele não gasta conta nenhuma.
+   */
+  private semConversa(cwd: string): RespostaTrilha {
+    const emp = this.empresaDe(cwd);
+    const t = emp ? this.trilhas[emp.id] : undefined;
+    if (!emp || !t?.conta) return { ok: true, trilha: null };
+    if (emp.estrita === true && !this.d.sombra && !this.contaServe(emp, t.conta)) return { ok: true, trilha: null };
+    return { ok: true, trilha: { empresa: emp.id, nome: emp.nome, pasta: t.pasta } };
+  }
+
+  /** O processo não roda no login da principal: sai das unidades que o anotaram. Grava só quando mudou. */
+  private largarPrincipal(pid: number): void {
+    let mudou = false;
+    for (const t of Object.values(this.trilhas)) {
+      if (!t.pidsPrincipal?.includes(pid)) continue;
+      t.pidsPrincipal = t.pidsPrincipal.filter((p) => p !== pid);
+      if (t.iniciosPrincipal) delete t.iniciosPrincipal[String(pid)];
+      mudou = true;
+    }
+    if (mudou) this.d.salvar();
   }
 
   /** Um processo desta unidade roda no login da principal: enquanto ele viver, a conta em uso não sai. */
