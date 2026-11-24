@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { aadConta, cifrarLogin } from "../src/cofre/cifra.js";
 import { FILA_VALIDA_OPENBOT_S } from "../src/config.js";
+import { carregarEstado } from "../src/estado.js";
 import { lerChave } from "../src/ligar.js";
 import { NuvemRpc } from "../src/nuvem/rpc.js";
 import { criarClassificador, ehCaminho, EMPRESAS_LER_S, EMPRESAS_VENCIDAS_S, normalizarPasta } from "../src/trilhas.js";
@@ -295,6 +296,55 @@ describe("trilhas no agente", () => {
     assert.equal(r.aviso, undefined, "não diz que abriu na conta em uso");
     assert.deepEqual(m.agente.estado.trilhas![E1]!.pids, [], "a sessão que não abriu não segura a trilha");
     assert.ok(m.agente.estado.trilhas![E1]!.pedidaEm > 0, "segue pedida: a nuvem dá a conta quando ela soltar");
+  });
+
+  test("plano B: o pedido de novo da espera, ainda sem conta, não grava o estado e não segura a trilha", async () => {
+    await preparar();
+    await comPrincipal();
+    const { cwd } = await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/);
+    const antes = m.agente.estado.trilhas![E1]!.pedidaEm;
+    await m.relogio.dormir(15_000);
+    const gravar = m.agente.salvar.bind(m.agente);
+    let gravou = 0;
+    m.agente.salvar = () => {
+      gravou++;
+      gravar();
+    };
+    const r = await m.agente.alvoPonte().trilha!({ cwd, pid: process.pid, deNovo: true });
+    const c = r.corpo as { trilha: unknown; bloqueio?: string };
+    assert.equal(c.trilha, null);
+    assert.match(c.bloqueio ?? "", /Empresa Um/);
+    assert.equal(gravou, 0, "a espera pergunta a cada 15 s: regravar o estado a cada pergunta desfaria o ganho no disco");
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pids, [], "quem espera não segura a trilha");
+    assert.ok(m.agente.estado.trilhas![E1]!.pedidaEm > antes, "segue pedida: a nuvem dá a conta quando ela soltar");
+  });
+
+  test("plano B: o pedido de novo que ganha a conta abre na trilha e grava o processo no disco", async () => {
+    await preparar();
+    await comPrincipal();
+    const { b, cwd } = await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [b] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "começa sem conta livre");
+    banco.trilhas.get("pc-1")!.set(E1, { conta: b, versao: 2, motivo: "conta marcada para a empresa" });
+    // o caso comum: a conta chega pelo ciclo do agente (de 5 em 5 s), entre duas perguntas da espera
+    await m.relogio.dormir(5_000);
+    await m.agente.busca();
+    assert.ok(m.agente.estado.trilhas![E1]!.conta, "a conta chegou pelo ciclo");
+    assert.equal(m.agente.estado.trilhas![E1]!.pids.includes(process.pid), false);
+    await m.relogio.dormir(10_000);
+    const r = await m.agente.alvoPonte().trilha!({ cwd, pid: process.pid, deNovo: true });
+    assert.equal((r.corpo as { trilha: { empresa: string } | null }).trilha?.empresa, E1);
+    assert.ok(m.agente.estado.trilhas![E1]!.pids.includes(process.pid));
+    const noDisco = carregarEstado(m.c.estado).trilhas?.[E1];
+    assert.ok(noDisco?.pids.includes(process.pid), "a sessão que abriu precisa estar no disco: numa queda, a trilha não solta a conta dela");
   });
 
   test("empresa só nas contas dela, com a conta livre: abre normal na trilha", async () => {

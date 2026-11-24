@@ -135,7 +135,8 @@ interface Args {
 export function lerArgs(argv: string[]): Args {
   const pos: string[] = [];
   const flags: Record<string, string | true> = {};
-  const comValor = new Set(["porta", "de", "dias", "frase", "idioma", "url", "chave-publica", "email", "painel"]);
+  // cwd e pid: os do `reveza trilha` do lançador (até a 0.20.1 chegavam sem o valor, e o agente não via o processo)
+  const comValor = new Set(["porta", "de", "dias", "frase", "idioma", "url", "chave-publica", "email", "painel", "cwd", "pid"]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a.startsWith("--")) {
@@ -399,13 +400,19 @@ async function cmdStatus(amb: Ambiente, a: Args, soContas: boolean): Promise<num
  * assistente, menos num caso (0.20.0): a pasta é de uma empresa que roda só nas contas dela e nenhuma está livre. Aí
  * escreve o motivo em uma linha e sai 3, e o lançador não abre. O lançador antigo ignora a saída e lê uma linha só como
  * "sem trilha".
+ *
+ * Plano B (0.21.0): com a saída 3, o lançador espera e pergunta de novo com `--de-novo` (o agente não regrava o estado a
+ * cada pergunta). Sem resposta da ponte, ou resposta que não é 200, sai 4: o lançador que espera segue esperando, em vez
+ * de abrir na principal uma sessão que já se sabe ser de projeto. O lançador antigo só olha a saída 3 e abre como antes.
  */
 async function cmdTrilha(amb: Ambiente, a: Args): Promise<number> {
   const cwd = typeof a.flags.cwd === "string" ? a.flags.cwd : process.cwd();
   const pid = typeof a.flags.pid === "string" && /^\d{1,10}$/.test(a.flags.pid) ? Number(a.flags.pid) : null;
   if (!path.isAbsolute(cwd)) return 0;
-  const r = await pedirPonte(portaDe(amb, a), "POST", "/api/trilha", { cwd, pid }, chaveDaPonte(amb.c.ponteChave, false), 20_000);
-  const c = (r?.status === 200 ? r.corpo : null) as {
+  const corpo = a.flags["de-novo"] === true ? { cwd, pid, deNovo: true } : { cwd, pid };
+  const r = await pedirPonte(portaDe(amb, a), "POST", "/api/trilha", corpo, chaveDaPonte(amb.c.ponteChave, false), 20_000);
+  if (!r || r.status !== 200) return 4;
+  const c = r.corpo as {
     ok?: boolean;
     trilha?: { pasta?: unknown; empresa?: unknown } | null;
     aviso?: unknown;

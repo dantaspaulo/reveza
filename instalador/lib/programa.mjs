@@ -247,6 +247,12 @@ function aspasSh(s) {
  * própria pasta de login no ambiente, fica como está. Um `claude` achado que é o próprio lançador (um link para ele no
  * PATH) para com erro em vez de abrir a si mesmo sem fim (o exec mantém o número do processo). Pasta de uma empresa que
  * roda só nas contas dela, sem conta livre (`reveza trilha` sai 3): mostra o motivo e não abre, com a saída 78.
+ *
+ * Plano B (0.21.0): antes dos 78, espera a conta do projeto. Pergunta de novo (`--de-novo`) a cada REVEZA_ESPERA_PASSO_S
+ * (15 s) até REVEZA_ESPERA_S (720 s, pelo relógio: cada pergunta leva até 20 s), abaixo dos 15 min sem sinal em que o
+ * OpenBot fecha a conversa. O agente sem responder (saída 4) não abre a sessão na principal: segue esperando.
+ * REVEZA_ESPERA_S=0 volta ao comportamento antigo. Toda pergunta roda com </dev/null (quem chama pelo SDK deixa a
+ * primeira mensagem na entrada), e o sleep da espera roda com wait, para Ctrl+C e sinal de encerrar saírem na hora.
  */
 export function lancadorClaude(dir, cli, node = process.execPath) {
   const marca = path.join(path.dirname(dir), "trilhas", "ligadas");
@@ -272,13 +278,47 @@ export function lancadorClaude(dir, cli, node = process.execPath) {
     "export REVEZA_LANCADOR_PID",
     `if [ -z "\${REVEZA_TRILHA:-}" ] && [ -z "\${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ] && [ -f ${aspasSh(marca)} ]; then`,
     '  aqui=$(pwd 2>/dev/null || echo "$PWD")',
-    `  saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" 2>/dev/null)`,
+    `  saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" </dev/null 2>/dev/null)`,
     "  rc=$?",
-    // sem conta da empresa, a conversa não abre; o comando que não conversa (versão, login, ajuda) segue valendo
+    // sem conta da empresa, a conversa espera a conta dela (plano B); o comando que não conversa (versão, login, ajuda)
+    // segue valendo na hora
     '  if [ "$rc" = 3 ]; then',
     '    case "${1:-}" in',
     '      -v|--version|-h|--help|auth|config|doctor|install|mcp|migrate-installer|plugin|setup-token|update) saida="" ;;',
-    '      *) printf "reveza: %s\\n" "$saida" >&2; exit 78 ;;',
+    "      *)",
+    '        printf "reveza: %s\\n" "$saida" >&2',
+    '        espera=${REVEZA_ESPERA_S:-720}',
+    '        case "$espera" in ""|*[!0-9]*) espera=720 ;; esac',
+    '        passo=${REVEZA_ESPERA_PASSO_S:-15}',
+    '        case "$passo" in ""|*[!0-9]*|0) passo=15 ;; esac',
+    '        [ "$espera" -gt 0 ] || exit 78',
+    '        printf "reveza: esperando uma conta do projeto ficar livre, por até %s min (Ctrl+C cancela).\\n" "$(( (espera + 59) / 60 ))" >&2',
+    '        fim=$(( $(date +%s) + espera ))',
+    '        sono=""',
+    '        parar() { [ -n "$sono" ] && kill "$sono" 2>/dev/null; exit "$1"; }',
+    "        trap 'parar 130' INT",
+    "        trap 'parar 143' TERM",
+    "        trap 'parar 129' HUP",
+    "        while :; do",
+    '          if [ "$(date +%s)" -ge "$fim" ]; then',
+    '            printf "reveza: a espera terminou sem conta livre; a sessão não abriu.\\n" >&2',
+    '            printf "reveza: %s\\n" "$saida" >&2',
+    "            exit 78",
+    "          fi",
+    '          sleep "$passo" &',
+    "          sono=$!",
+    '          wait "$sono"',
+    '          sono=""',
+    `          nova=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" --de-novo </dev/null 2>/dev/null)`,
+    "          rc=$?",
+    // 3: segue sem conta; 4: o agente não respondeu (reinício, atualização), e a pasta já se sabe que é de projeto
+    '          if [ "$rc" = 3 ]; then [ -n "$nova" ] && saida=$nova; continue; fi',
+    '          [ "$rc" = 4 ] && continue',
+    "          saida=$nova",
+    "          break",
+    "        done",
+    "        trap - INT TERM HUP",
+    "        ;;",
     "    esac",
     "  fi",
     '  pasta=$(printf "%s\\n" "$saida" | sed -n 1p)',

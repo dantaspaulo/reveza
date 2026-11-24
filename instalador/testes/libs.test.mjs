@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import { Vercel, listar } from "../lib/vercel.mjs";
 import { criarProjeto, conferirToken, organizacoes, projetos, regiaoSugerida } from "../lib/supabase.mjs";
@@ -249,9 +249,9 @@ test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com e
     r = rodar({ REVEZA_CLAUDE_REAL: arq });
     assert.equal(r.status, 127, "o lançador achado no lugar do assistente para, sem abrir a si mesmo sem fim");
 
-    // empresa que roda só nas contas dela, sem conta livre: não abre, e diz por quê
+    // empresa que roda só nas contas dela, sem conta livre: não abre, e diz por quê (com a espera do plano B desligada)
     writeFileSync(cli, `console.log("Alfa: a conta está em uso");\nprocess.exit(3);\n`);
-    r = rodar();
+    r = rodar({ REVEZA_ESPERA_S: "0" });
     assert.equal(r.status, 78);
     assert.equal(r.stdout, "", "o assistente não abriu");
     assert.match(r.stderr, /^reveza: Alfa: a conta está em uso\n$/);
@@ -261,6 +261,126 @@ test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com e
       assert.equal(r.status, 0, r.stderr);
       assert.equal(r.stdout.trim(), `dir= trilha= args=${args.join(" ")}`);
     }
+  } finally { limpar(); }
+});
+
+/**
+ * O lançador do plano B (0.21.0), com uma linha de comando de mentira que segue um roteiro de respostas: "bloqueio"
+ * (saída 3), "sem-resposta" (4, a ponte não respondeu), "principal" (0 sem trilha) e "trilha" (0 com a trilha e1). Ela
+ * também tenta ler a entrada, para provar que a pergunta não come a primeira mensagem do SDK. REVEZA_TESTE_SH troca o
+ * shell (o /bin/sh do Linux é o dash: REVEZA_TESTE_SH=/bin/dash roda os mesmos casos nele, também no macOS).
+ */
+const SH_DO_TESTE = process.env.REVEZA_TESTE_SH || "/bin/sh";
+function montarEspera(d, roteiro) {
+  const bin = path.join(d, "bin-real");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "claude"), '#!/bin/sh\nentrada=$(cat)\necho "dir=${CLAUDE_SECURESTORAGE_CONFIG_DIR:-} trilha=${REVEZA_TRILHA:-} args=$* entrada=$entrada"\n', { mode: 0o755 });
+  const sonos = path.join(d, "sonos.txt");
+  writeFileSync(path.join(bin, "sleep"), `#!/bin/sh\necho $$ >> '${sonos}'\nexec /bin/sleep "$@"\n`, { mode: 0o755 });
+  const perguntas = path.join(d, "perguntas.txt");
+  const entradas = path.join(d, "entradas.txt");
+  const cli = path.join(d, "cli.mjs");
+  writeFileSync(cli, [
+    'import { appendFileSync, readFileSync } from "node:fs";',
+    `appendFileSync(${JSON.stringify(perguntas)}, process.argv.slice(2).join(" ") + "\\n");`,
+    'let entrada = ""; try { entrada = readFileSync(0, "utf8"); } catch {}',
+    `appendFileSync(${JSON.stringify(entradas)}, entrada.length + "\\n");`,
+    `const roteiro = ${JSON.stringify(roteiro)};`,
+    `const n = readFileSync(${JSON.stringify(perguntas)}, "utf8").split("\\n").filter(Boolean).length;`,
+    "const passo = roteiro[Math.min(n - 1, roteiro.length - 1)];",
+    `if (passo === "trilha") { console.log(${JSON.stringify(path.join(d, "trilhas", "e1"))}); console.log("e1"); process.exit(0); }`,
+    'if (passo === "principal") process.exit(0);',
+    'if (passo === "sem-resposta") process.exit(4);',
+    'console.log("Alfa: a conta deste projeto não está livre agora.");',
+    "process.exit(3);",
+    "",
+  ].join("\n"));
+  const arq = criarLancadorClaude(path.join(d, "lancador"), cli, process.execPath);
+  mkdirSync(path.join(d, "trilhas"));
+  writeFileSync(path.join(d, "trilhas", "ligadas"), "x");
+  const env = { PATH: `${path.join(d, "lancador")}:${bin}:/usr/bin:/bin`, HOME: d, REVEZA_ESPERA_PASSO_S: "1" };
+  const rodar = (extra = {}, input = "") => {
+    const t0 = Date.now();
+    // teto por execução: um prazo que nunca vence falha aqui em vez de prender a bateria
+    const r = spawnSync(SH_DO_TESTE, [arq, "-p", "oi"], { cwd: d, env: { ...env, ...extra }, encoding: "utf8", input, timeout: 20_000 });
+    return { ...r, ms: Date.now() - t0 };
+  };
+  const linhas = (f) => (existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean) : []);
+  return { arq, env, rodar, perguntas: () => linhas(perguntas), entradas: () => linhas(entradas), sonos: () => linhas(sonos), e1: path.join(d, "trilhas", "e1") };
+}
+
+test("plano B: sem conta livre, o lançador espera a conta do projeto e abre nela; a entrada fica para o assistente", { skip: process.platform === "win32" }, () => {
+  const { d, limpar } = pasta();
+  try {
+    const l = montarEspera(d, ["bloqueio", "bloqueio", "trilha"]);
+    const r = l.rodar({ REVEZA_ESPERA_S: "30" }, "primeira mensagem\n");
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), `dir=${l.e1} trilha=e1 args=-p oi entrada=primeira mensagem`);
+    const p = l.perguntas();
+    assert.equal(p.length, 3);
+    assert.doesNotMatch(p[0], /--de-novo/, "o primeiro pedido segue como antes");
+    assert.match(p[1], /^trilha --cwd .+ --pid \d+ --de-novo$/);
+    assert.match(p[2], /--de-novo$/);
+    assert.deepEqual(l.entradas(), ["0", "0", "0"], "nenhuma pergunta leu a mensagem do SDK");
+    assert.match(r.stderr, /^reveza: Alfa: a conta deste projeto não está livre agora\.\n/);
+    assert.match(r.stderr, /esperando uma conta do projeto ficar livre/);
+    assert.ok(r.ms >= 1900, `esperou de verdade entre as perguntas (${r.ms} ms)`);
+  } finally { limpar(); }
+});
+
+test("plano B: no fim do prazo sai 78 sem abrir; com o agente fora no meio, segue esperando e nunca abre na principal", { skip: process.platform === "win32" }, () => {
+  const casos = [
+    { roteiro: ["bloqueio"], espera: "1", status: 78, saida: "" },
+    { roteiro: ["bloqueio", "sem-resposta"], espera: "1", status: 78, saida: "" },
+    { roteiro: ["bloqueio", "sem-resposta", "sem-resposta", "trilha"], espera: "30", status: 0, saida: "trilha" },
+    { roteiro: ["bloqueio", "principal"], espera: "30", status: 0, saida: "principal" },
+  ];
+  for (const c of casos) {
+    const { d, limpar } = pasta();
+    try {
+      const l = montarEspera(d, c.roteiro);
+      const r = l.rodar({ REVEZA_ESPERA_S: c.espera });
+      const nome = c.roteiro.join(",");
+      assert.equal(r.status, c.status, `${nome}: ${r.stderr}`);
+      if (c.status === 78) {
+        assert.equal(r.stdout, "", `${nome}: o assistente não abriu`);
+        assert.match(r.stderr, /a espera terminou/, nome);
+        assert.match(r.stderr, /Alfa: a conta deste projeto não está livre agora\.\n$/, `${nome}: o último motivo`);
+      } else if (c.saida === "trilha") assert.equal(r.stdout.trim(), `dir=${l.e1} trilha=e1 args=-p oi entrada=`, nome);
+      else assert.equal(r.stdout.trim(), "dir= trilha= args=-p oi entrada=", `${nome}: o projeto foi desligado, a regra não vale mais`);
+    } finally { limpar(); }
+  }
+});
+
+test("plano B: valor de espera que não é número usa o padrão (não desliga a espera) e nunca vira comando", { skip: process.platform === "win32" }, () => {
+  const { d, limpar } = pasta();
+  try {
+    const l = montarEspera(d, ["bloqueio", "trilha"]);
+    const marca = path.join(d, "invadiu");
+    const r = l.rodar({ REVEZA_ESPERA_S: `1;touch ${marca}`, REVEZA_ESPERA_PASSO_S: "1" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), `dir=${l.e1} trilha=e1 args=-p oi entrada=`);
+    assert.equal(existsSync(marca), false);
+  } finally { limpar(); }
+});
+
+test("plano B: sinal de encerrar durante a espera sai na hora, sem sleep sobrando", { skip: process.platform === "win32" }, async () => {
+  const { d, limpar } = pasta();
+  try {
+    const l = montarEspera(d, ["bloqueio"]);
+    const filho = spawn(SH_DO_TESTE, [l.arq, "-p", "oi"], { cwd: d, env: { ...l.env, REVEZA_ESPERA_S: "60", REVEZA_ESPERA_PASSO_S: "30" }, stdio: "ignore" });
+    const fim = new Promise((ok) => filho.on("exit", (code, signal) => ok({ code, signal })));
+    for (let i = 0; i < 100 && !l.sonos().length; i++) await new Promise((ok) => setTimeout(ok, 50));
+    const sono = Number(l.sonos()[0]);
+    assert.ok(sono > 1, "a espera começou");
+    const t0 = Date.now();
+    filho.kill("SIGTERM");
+    const r = await Promise.race([fim, new Promise((ok) => setTimeout(() => ok("preso"), 3000))]);
+    assert.notEqual(r, "preso", "o lançador não saiu em 3 s");
+    assert.ok(Date.now() - t0 < 1500, "saiu na hora");
+    assert.equal(r.code, 143);
+    await new Promise((ok) => setTimeout(ok, 100));
+    assert.throws(() => process.kill(sono, 0), "o sleep da espera não ficou sobrando");
   } finally { limpar(); }
 });
 

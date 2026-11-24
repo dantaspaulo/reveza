@@ -287,8 +287,12 @@ export class Trilhas {
    * O lançador pergunta antes de abrir o Claude Code: em qual trilha a sessão roda. Anota o processo (o lançador troca
    * de programa sem mudar de número) para a trilha seguir pedida enquanto ele viver. Trilha sem conta ainda: espera a
    * nuvem decidir, por até 15 s; sem conta mesmo assim, a sessão abre na principal e o painel recebe um aviso.
+   *
+   * `deNovo` (plano B, 0.21.0): a pergunta que o lançador repete a cada 15 s enquanto espera a conta do projeto. Ela não
+   * regrava o estado antes da busca (só a hora do pedido mudou, e o ciclo do agente grava); grava só quando a sessão
+   * abre na trilha, para o processo dela estar no disco numa queda.
    */
-  async pedir(cwd: string, pid: number | null): Promise<RespostaTrilha> {
+  async pedir(cwd: string, pid: number | null, opcoes: { deNovo?: boolean } = {}): Promise<RespostaTrilha> {
     this.carregarGuardadas();
     const conhecida = this.empresas.some((e) => e.estrita);
     if (!this.d.nuvem() || (!this.ligadas && !conhecida && !Object.values(this.trilhas).some((t) => t.conta))) {
@@ -308,12 +312,14 @@ export class Trilhas {
     const t = this.trilha(emp.id, emp.nome);
     // a conta saiu da lista e a sessão antiga segue nela até fechar: sessão nova não entra, e a trilha não se renova
     if (estrita && t.conta && !(await this.contaAindaServe(emp, t.conta))) return this.bloquear(emp);
+    let novo = false;
     if (pid !== null && Number.isInteger(pid) && pid > 1 && !t.pids.includes(pid)) {
       t.pids.push(pid);
       t.pids.splice(0, Math.max(0, t.pids.length - 200));
+      novo = true;
     }
     t.pedidaEm = this.agora();
-    this.d.salvar();
+    if (!opcoes.deNovo) this.d.salvar();
     if (!t.conta) {
       // a busca em voo pode ter lido as trilhas antes deste pedido: sem conta depois dela, uma segunda já o leva
       const havia = this.emVoo !== null;
@@ -362,6 +368,8 @@ export class Trilhas {
       }
       return { ok: true, trilha: null, aviso };
     }
+    // a sessão abre na trilha: o processo dela vai ao disco, senão numa queda a trilha soltaria a conta com ela aberta
+    if (opcoes.deNovo && novo) this.d.salvar();
     if (this.vencidas()) {
       if ((this.avisadoVencida.get(emp.id) ?? 0) <= this.agora()) {
         this.avisadoVencida.set(emp.id, this.agora() + EMPRESAS_VENCIDAS_S);
