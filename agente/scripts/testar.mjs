@@ -12,6 +12,11 @@ const arquivos = readdirSync(dir)
   .filter((n) => n.endsWith(".test.js") && (!filtro || n.includes(filtro)))
   .sort()
   .map((n) => path.join(dir, n));
+// sem nenhum arquivo, o node --test procura sozinho na pasta e roda também os .ts da fonte, que falham todos
+if (!arquivos.length) {
+  console.error(`nenhum teste compilado em ${dir}${filtro ? ` com "${filtro}" no nome` : ""} (rode o tsc antes)`);
+  process.exit(1);
+}
 // --test-timeout só existe a partir do Node 20.11; no 18 os testes rodam sem limite próprio.
 const [maior, menor] = process.versions.node.split(".").map(Number);
 const limite = maior > 20 || (maior === 20 && menor >= 11) ? ["--test-timeout=60000"] : [];
