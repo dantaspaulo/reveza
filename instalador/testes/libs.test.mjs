@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
@@ -310,7 +310,23 @@ function montarEspera(d, roteiro) {
     return { ...r, ms: Date.now() - t0 };
   };
   const linhas = (f) => (existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean) : []);
-  return { arq, env, rodar, perguntas: () => linhas(perguntas), entradas: () => linhas(entradas), sonos: () => linhas(sonos), e1: path.join(d, "trilhas", "e1") };
+  return { arq, cli, env, rodar, perguntas: () => linhas(perguntas), entradas: () => linhas(entradas), sonos: () => linhas(sonos), e1: path.join(d, "trilhas", "e1") };
+}
+
+/** Roda o lançador solto, para mexer no arquivo dele enquanto espera; devolve o fim com a saída. */
+function rodarSolto(l, d, extra = {}) {
+  const filho = spawn(SH_DO_TESTE, [l.arq, "-p", "oi"], { cwd: d, env: { ...l.env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  let err = "";
+  filho.stdout.on("data", (b) => (out += b));
+  filho.stderr.on("data", (b) => (err += b));
+  const fim = new Promise((ok) => filho.on("exit", (code) => ok({ code, out, err })));
+  return Promise.race([fim, new Promise((ok) => setTimeout(() => { filho.kill("SIGKILL"); ok({ code: "preso", out, err }); }, 15_000))]);
+}
+
+async function esperarSono(l) {
+  for (let i = 0; i < 100 && !l.sonos().length; i++) await new Promise((ok) => setTimeout(ok, 50));
+  assert.ok(l.sonos().length, "a espera começou");
 }
 
 test("plano B: sem conta livre, o lançador espera a conta do projeto e abre nela; a entrada fica para o assistente", { skip: process.platform === "win32" }, () => {
@@ -390,6 +406,56 @@ test("plano B: sinal de encerrar durante a espera sai na hora, sem sleep sobrand
     assert.equal(r.code, 143);
     await new Promise((ok) => setTimeout(ok, 100));
     assert.throws(() => process.kill(sono, 0), "o sleep da espera não ficou sobrando");
+  } finally { limpar(); }
+});
+
+test("plano B versão 2 (regra 2): a pergunta leva a pasta como ela é no disco, também aberta por atalho", { skip: process.platform === "win32" }, () => {
+  const { d, limpar } = pasta();
+  try {
+    const l = montarEspera(d, ["trilha"]);
+    const real = path.join(d, "projeto-real");
+    mkdirSync(real);
+    const atalho = path.join(d, "atalho");
+    symlinkSync(real, atalho);
+    // o PWD com o atalho é o que um terminal ou o OpenBot deixam ao abrir a conversa nele
+    const r = spawnSync(SH_DO_TESTE, [l.arq, "-p", "oi"], { cwd: atalho, env: { ...l.env, PWD: atalho }, encoding: "utf8", timeout: 20_000 });
+    assert.equal(r.status, 0, r.stderr);
+    const p = l.perguntas();
+    assert.equal(p.length, 1);
+    assert.ok(p[0].startsWith(`trilha --cwd ${realpathSync.native(real)} --pid `), p[0]);
+  } finally { limpar(); }
+});
+
+test("plano B versão 2 (regra 3): o lançador novo entra por troca de arquivo, e quem espera termina com o antigo", { skip: process.platform === "win32" }, async () => {
+  const { d, limpar } = pasta();
+  try {
+    const l = montarEspera(d, ["bloqueio", "bloqueio", "bloqueio", "trilha"]);
+    const antes = statSync(l.arq).ino;
+    const fim = rodarSolto(l, d, { REVEZA_ESPERA_S: "30" });
+    await esperarSono(l);
+    // a atualização refaz o lançador com outro caminho, mais comprido: o texto inteiro muda de posição
+    criarLancadorClaude(path.join(d, "lancador"), `${l.cli}-de-uma-versao-nova-com-nome-bem-maior.mjs`, process.execPath);
+    assert.notEqual(statSync(l.arq).ino, antes, "trocado por outro arquivo, não regravado no lugar");
+    assert.ok(statSync(l.arq).mode & 0o100);
+    assert.deepEqual(readdirSync(path.join(d, "lancador")), ["claude"], "sem temporário sobrando");
+    const r = await fim;
+    assert.equal(r.code, 0, r.err);
+    assert.equal(r.out.trim(), `dir=${l.e1} trilha=e1 args=-p oi entrada=`);
+  } finally { limpar(); }
+});
+
+test("plano B versão 2 (regra 3): regravar no mesmo arquivo durante a espera também não pega quem espera", { skip: process.platform === "win32" }, async () => {
+  const { d, limpar } = pasta();
+  try {
+    const l = montarEspera(d, ["bloqueio", "bloqueio", "bloqueio", "trilha"]);
+    const fim = rodarSolto(l, d, { REVEZA_ESPERA_S: "30" });
+    await esperarSono(l);
+    // um instalador antigo grava no lugar: o shell que lê o roteiro pela posição leria isto depois da espera
+    writeFileSync(l.arq, "#!/bin/sh\n" + "echo invadiu; exit 99\n".repeat(600));
+    const r = await fim;
+    assert.equal(r.code, 0, r.err);
+    assert.equal(r.out.trim(), `dir=${l.e1} trilha=e1 args=-p oi entrada=`);
+    assert.doesNotMatch(r.out + r.err, /invadiu/);
   } finally { limpar(); }
 });
 

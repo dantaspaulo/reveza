@@ -260,6 +260,9 @@ export function lancadorClaude(dir, cli, node = process.execPath) {
   return [
     "#!/bin/sh",
     "# Reveza AI: lançador do Claude Code com as trilhas das empresas separadas. Refeito pelo instalador a cada versão.",
+    "# O corpo é uma função chamada na última linha: o shell lê tudo antes de rodar, e o arquivo trocado ou regravado",
+    "# durante a espera não muda o que já roda.",
+    "reveza_lancar() {",
     `eu=${aspasSh(dir)}`,
     'real="${REVEZA_CLAUDE_REAL:-}"',
     'if [ -z "$real" ]; then',
@@ -278,7 +281,8 @@ export function lancadorClaude(dir, cli, node = process.execPath) {
     "REVEZA_LANCADOR_PID=$$",
     "export REVEZA_LANCADOR_PID",
     `if [ -z "\${REVEZA_TRILHA:-}" ] && [ -z "\${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ] && [ -f ${aspasSh(marca)} ]; then`,
-    '  aqui=$(pwd 2>/dev/null || echo "$PWD")',
+    // a pasta como ela é no disco (sem atalho), a mesma que o registro de uso vê e as regras dos projetos usam
+    '  aqui=$(pwd -P 2>/dev/null || pwd 2>/dev/null || echo "$PWD")',
     `  saida=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" </dev/null 2>/dev/null)`,
     "  rc=$?",
     // sem conta da empresa, a conversa espera a conta dela (plano B); o comando que não conversa (versão, login, ajuda)
@@ -339,16 +343,29 @@ export function lancadorClaude(dir, cli, node = process.execPath) {
     "  fi",
     "fi",
     'exec "$real" "$@"',
+    "}",
+    'reveza_lancar "$@"',
     "",
   ].join("\n");
 }
 
+/**
+ * Grava o lançador num temporário da mesma pasta e troca pelo nome (plano B versão 2, regra 3): quem já roda segue no
+ * arquivo antigo, que o shell lê pela posição, e quem abre agora pega o antigo ou o novo inteiro, nunca a metade.
+ */
 export function criarLancadorClaude(dir, cli, node = process.execPath) {
   if (WIN) return null;
   mkdirSync(dir, { recursive: true });
   const arq = path.join(dir, "claude");
-  writeFileSync(arq, lancadorClaude(dir, cli, node));
-  chmodSync(arq, 0o755);
+  const tmp = path.join(dir, `.claude.${process.pid}.${Date.now()}.tmp`);
+  try {
+    writeFileSync(tmp, lancadorClaude(dir, cli, node), { mode: 0o755 });
+    chmodSync(tmp, 0o755);
+    renameSync(tmp, arq);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
   return arq;
 }
 

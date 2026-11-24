@@ -2,6 +2,7 @@
 // vai marcada, e a falta de resposta da ponte tem saída própria (o lançador segue esperando em vez de abrir na principal).
 import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import * as path from "node:path";
@@ -72,8 +73,10 @@ describe("reveza trilha", () => {
     const pasta = tmp!.dir;
     assert.equal(await executarCli(["trilha", "--cwd", pasta, "--pid", "4321"], amb), 3);
     assert.equal(await executarCli(["trilha", "--cwd", pasta, "--pid", "4321", "--de-novo"], amb), 3);
-    assert.deepEqual(p.recebidos[0], { cwd: pasta, pid: 4321 }, "o primeiro pedido segue como antes");
-    assert.deepEqual(p.recebidos[1], { cwd: pasta, pid: 4321, deNovo: true });
+    // a pasta de verdade (no macOS, a pasta temporária fica atrás de um atalho: /var é /private/var)
+    const fisica = fs.realpathSync.native(pasta);
+    assert.deepEqual(p.recebidos[0], { cwd: fisica, pid: 4321 }, "o primeiro pedido segue como antes");
+    assert.deepEqual(p.recebidos[1], { cwd: fisica, pid: 4321, deNovo: true });
     assert.deepEqual(amb.saidas, ["Alfa: a conta deste projeto não está livre agora.", "Alfa: a conta deste projeto não está livre agora."]);
   });
 
@@ -93,6 +96,21 @@ describe("reveza trilha", () => {
     const amb = ambiente(p.porta);
     assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321"], amb), 0);
     assert.deepEqual(amb.saidas, []);
+  });
+
+  // plano B versão 2 (regra 2): a regra do projeto é pela pasta de verdade, como o registro de uso a vê
+  test("a pasta vai ao agente como ela é no disco: a aberta por atalho chega pelo caminho de verdade", async () => {
+    const p = await ponte(200, { ok: true, trilha: null });
+    const amb = ambiente(p.porta);
+    const real = path.join(tmp!.dir, "projeto-real");
+    fs.mkdirSync(real);
+    const atalho = path.join(tmp!.dir, "atalho");
+    fs.symlinkSync(real, atalho, "junction");
+    assert.equal(await executarCli(["trilha", "--cwd", atalho, "--pid", "4321"], amb), 0);
+    assert.equal(p.recebidos[0]!.cwd, fs.realpathSync.native(real));
+    const sumiu = path.join(tmp!.dir, "nao-existe");
+    assert.equal(await executarCli(["trilha", "--cwd", sumiu, "--pid", "4321"], amb), 0);
+    assert.equal(p.recebidos[1]!.cwd, sumiu, "pasta que não dá para resolver vai como chegou");
   });
 
   // plano B versão 2 (regra 1): dentro da espera, só resposta positiva e explícita tira a sessão de lá

@@ -410,11 +410,19 @@ async function cmdStatus(amb: Ambiente, a: Args, soContas: boolean): Promise<num
  * nunca a manda). Tudo o mais (principal sem certeza, trilha que não confere, resposta estranha) sai 4, "não sei".
  */
 async function cmdTrilha(amb: Ambiente, a: Args): Promise<number> {
-  const cwd = typeof a.flags.cwd === "string" ? a.flags.cwd : process.cwd();
+  const recebida = typeof a.flags.cwd === "string" ? a.flags.cwd : process.cwd();
   const pid = typeof a.flags.pid === "string" && /^\d{1,10}$/.test(a.flags.pid) ? Number(a.flags.pid) : null;
   const deNovo = a.flags["de-novo"] === true;
   const naoSei = deNovo ? 4 : 0;
-  if (!path.isAbsolute(cwd)) return naoSei;
+  if (!path.isAbsolute(recebida)) return naoSei;
+  // plano B versão 2 (regra 2): a pasta como ela é no disco, sem atalho (a que o registro de uso vê e as regras dos
+  // projetos usam); a que não dá para resolver vai como chegou
+  let cwd = recebida;
+  try {
+    cwd = fs.realpathSync.native(recebida);
+  } catch {
+    cwd = recebida;
+  }
   const corpo = deNovo ? { cwd, pid, deNovo: true } : { cwd, pid };
   const r = await pedirPonte(portaDe(amb, a), "POST", "/api/trilha", corpo, chaveDaPonte(amb.c.ponteChave, false), 20_000);
   if (!r || r.status !== 200) return 4;
