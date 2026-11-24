@@ -83,6 +83,8 @@ const VAZIO = (): EstadoRegistro => ({
   vistosRecentes: [],
 });
 
+/** O registro inteiro vai ao disco no máximo a cada este tempo (e sempre ao desligar). */
+export const REGISTRO_GRAVAR_S = 600;
 const LIMITE_RECENTES = 20_000;
 const BLOCO = 1 << 20;
 const USAGE = Buffer.from('"usage"');
@@ -105,6 +107,8 @@ export class Contador {
   completo = false;
   private pendH = new Set<string>();
   private pendS = new Set<string>();
+  /** A última gravação do arquivo (em segundos); null antes da primeira desde que o agente ligou. */
+  private gravadoEm: number | null = null;
 
   constructor(
     private dir: string,
@@ -152,16 +156,35 @@ export class Contador {
 
   // ------------------------------------------------------------------------------------------------ persistência
 
+  /** Grava na hora (importação e desligamento). As voltas normais usam `salvarNoRitmo`. */
   salvar(): void {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    this.e.pendentesHoras = [...this.pendH];
+    this.e.pendentesSessoes = [...this.pendS];
+    // se refaz sozinho (os ids seguram a repetição): sem esperar o disco
+    gravarJson(path.join(this.dir, "estado.json"), this.e, 0o600, { duravel: false });
+    this.gravadoEm = this.agora();
+    // só depois de o total estar no disco: um id no vistos.txt sem a conta gravada faria a resposta sumir numa queda
     if (this.e.vistosRecentes.length > LIMITE_RECENTES) {
       fs.appendFileSync(path.join(this.dir, "vistos.txt"), this.e.vistosRecentes.join("\n") + "\n", { mode: 0o600 });
       this.e.vistosRecentes = [];
     }
-    this.e.pendentesHoras = [...this.pendH];
-    this.e.pendentesSessoes = [...this.pendS];
-    // a cada 2 s numa varredura, e se refaz sozinho (os ids seguram a repetição): sem esperar o disco
-    gravarJson(path.join(this.dir, "estado.json"), this.e, 0o600, { duravel: false });
+  }
+
+  /**
+   * O registro tem megabytes, e regravar o arquivo inteiro a cada varredura com novidade era a maior parte do que o
+   * agente escrevia no disco (medido em 23/11/2026: cerca de 22 de 28 GB por dia). Aqui ele vai no máximo a cada
+   * REGISTRO_GRAVAR_S. Uma queda no intervalo não perde nada: as conversas são relidas de onde o arquivo parou, e a
+   * nuvem recebe o valor absoluto de cada linha. Devolve se gravou.
+   */
+  salvarNoRitmo(): boolean {
+    if (this.gravadoEm !== null) {
+      const passou = this.agora() - this.gravadoEm;
+      // relógio que voltou atrás (passou < 0) não pode segurar a gravação até alcançar a hora antiga
+      if (passou >= 0 && passou < REGISTRO_GRAVAR_S) return false;
+    }
+    this.salvar();
+    return true;
   }
 
   // ------------------------------------------------------------------------------------------------ leitura
@@ -201,20 +224,15 @@ export class Contador {
     }
     fila.sort((a, b) => a[0] - b[0]);
     let mudou = false;
-    let ultimaGravacao = Date.now();
     for (const [, caminho] of fila) {
       if (orcamentoMs && Date.now() - inicio > orcamentoMs) {
-        if (mudou) this.salvar();
+        if (mudou) this.salvarNoRitmo();
         return false;
       }
       await this.ler(caminho);
       mudou = true;
-      if (Date.now() - ultimaGravacao > 2000) {
-        this.salvar();
-        ultimaGravacao = Date.now();
-      }
     }
-    if (mudou) this.salvar();
+    if (mudou) this.salvarNoRitmo();
     this.completo = true;
     return true;
   }

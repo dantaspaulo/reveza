@@ -1520,6 +1520,12 @@ export class Agente {
     })();
     await Promise.race([trabalho, new Promise((r) => this.d.relogio.agendar(() => r(undefined), prazoMs))]);
     this.salvar();
+    // o registro vai ao disco no ritmo dele: o que ficou só na memória é gravado aqui, e um erro não impede de sair
+    try {
+      this.contador.salvar();
+    } catch (e) {
+      this.d.log.erro(`registro de uso: ${(e as Error).message}`);
+    }
     this.parar();
   }
 
@@ -2681,7 +2687,7 @@ export class Agente {
         if (!r.ok) break;
         this.contador.confirmarEnvio(lote.chaves, lote.ids);
       }
-      this.contador.salvar();
+      this.contador.salvarNoRitmo();
       await this.relatarAgentes(nuvem);
     } catch (e) {
       this.d.log.erro(`registro de uso: ${(e as Error).message}`);
