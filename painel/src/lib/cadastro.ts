@@ -4,7 +4,7 @@
 import type { CamposUnidade } from "@/dados/fonte"
 import type { DadosEmpresas, ModoUnidade, RegraPasta } from "@/dados/tipos"
 
-import { modoDe, normalizarPasta, ordenarUnidades } from "./empresas"
+import { modoDe, nomeUnidade, normalizarPasta, ordenarUnidades } from "./empresas"
 
 export interface PastaRascunho {
   /** null: vale em todos os computadores. */
@@ -25,11 +25,13 @@ export interface UnidadeRascunho {
   pastas: PastaRascunho[]
   /** As regras por título de agente: aparecem como etiqueta junto da pasta e podem ser removidas. */
   titulos: { tipo: RegraPasta["tipo"]; padrao: string; computador: string | null }[]
+  /** 0.20.1. null: roda em todos; lista: só nesses; undefined: nuvem antiga ou subprojeto (segue o projeto). */
+  computadores?: string[] | null
 }
 
 export interface ErroCadastro {
   id: string
-  chave: "erroNomeEmpresa" | "erroNomeProjeto" | "erroConta" | "erroDuplicado" | "erroPasta"
+  chave: "erroNomeEmpresa" | "erroNomeProjeto" | "erroConta" | "erroDuplicado" | "erroPasta" | "erroComputador"
   nome?: string
   pasta?: string
   dono?: string
@@ -41,7 +43,10 @@ export interface PassoGravar {
   campos: CamposUnidade
 }
 
-export function rascunhoDe(d: Pick<DadosEmpresas, "empresas" | "marcas" | "regras">): UnidadeRascunho[] {
+export function rascunhoDe(
+  d: Pick<DadosEmpresas, "empresas" | "marcas" | "regras"> &
+    Partial<Pick<DadosEmpresas, "computadoresNaNuvem" | "computadores">>
+): UnidadeRascunho[] {
   return ordenarUnidades(d.empresas).map((e) => {
     const regras = d.regras.filter((r) => r.empresaId === e.id)
     return {
@@ -61,8 +66,89 @@ export function rascunhoDe(d: Pick<DadosEmpresas, "empresas" | "marcas" | "regra
       titulos: regras
         .filter((r) => r.tipo === "titulo")
         .map((r) => ({ tipo: r.tipo, padrao: r.padrao, computador: r.computadorId ?? null })),
+      computadores:
+        !d.computadoresNaNuvem || e.pai
+          ? undefined
+          : e.emTodosComputadores === false
+            ? (d.computadores ?? [])
+                .filter((l) => l.empresaId === e.id)
+                .map((l) => l.computadorId)
+                .sort()
+            : null,
     }
   })
+}
+
+/**
+ * 0.20.1: o projeto aparece na aba deste computador. Sem nenhum computador ativo na escolha (o último foi removido, ou
+ * a pessoa acabou de desmarcar), aparece em todas: nada some da tela antes de escolher outro.
+ */
+export function rodaNoComputador(u: UnidadeRascunho, computador: string, ativos: string[]): boolean {
+  if (u.computadores == null) return true
+  if (u.computadores.includes(computador)) return true
+  return !u.computadores.some((c) => ativos.includes(c))
+}
+
+/** 0.20.1: os computadores ativos onde o projeto roda de verdade; null é "todos". Computador removido não conta. */
+export function computadoresAtivos(u: UnidadeRascunho, ativos: string[]): string[] | null {
+  return u.computadores == null ? null : u.computadores.filter((c) => ativos.includes(c))
+}
+
+/** 0.20.1: clicar num computador. De "todos" fica só ele; computador removido sai da lista quando a pessoa mexe nela. */
+export function alternarComputador(atual: string[] | null | undefined, computador: string, ativos: string[]): string[] {
+  if (atual == null) return [computador]
+  const validos = atual.filter((c) => ativos.includes(c))
+  return validos.includes(computador) ? validos.filter((c) => c !== computador) : [...validos, computador]
+}
+
+type PcDaConta = { id: string; nome: string; revogado: boolean; atribuicao: { contaId: string | null } | null }
+
+/** Onde uma conta está em uso: `unidade` null é a conta principal do computador. */
+export interface OndeEsta {
+  computadorId: string
+  computador: string
+  unidade: string | null
+}
+
+/** 0.20.1: os lugares em que a conta está agora, por computador ativo: a principal e as trilhas de cada projeto. */
+export function ondeEsta(
+  contaId: string,
+  computadores: PcDaConta[],
+  trilhas: { computadorId: string; empresaId: string; contaId: string }[],
+  lista: UnidadeRascunho[]
+): OndeEsta[] {
+  const r: OndeEsta[] = []
+  const poe = (c: PcDaConta, unidade: string | null) => {
+    if (!r.some((x) => x.computadorId === c.id && x.unidade === unidade))
+      r.push({ computadorId: c.id, computador: c.nome, unidade })
+  }
+  for (const c of computadores) {
+    if (c.revogado) continue
+    if (c.atribuicao?.contaId === contaId) poe(c, null)
+    for (const t of trilhas) {
+      if (t.computadorId !== c.id || t.contaId !== contaId) continue
+      const u = lista.find((x) => x.id === t.empresaId)
+      // trilha de um projeto que saiu da lista: a conta segue em uso, só sem o nome
+      poe(c, u ? nomeUnidade(u, lista) : null)
+    }
+  }
+  return r
+}
+
+/**
+ * 0.20.1: os computadores que saem desta conta ao salvar. Conta marcada num projeto ligado deixa de servir de conta
+ * principal em qualquer computador (rvz_principal_pode), então quem está nela troca. Já era assim antes: não avisa.
+ */
+export function saemDaConta(
+  u: UnidadeRascunho,
+  lista: UnidadeRascunho[],
+  antes: UnidadeRascunho[],
+  contaId: string,
+  computadores: PcDaConta[]
+): string[] {
+  if (!ligada(u, lista) || !contasDe(u, lista).includes(contaId)) return []
+  if (antes.some((x) => ligada(x, antes) && contasDe(x, antes).includes(contaId))) return []
+  return computadores.filter((c) => !c.revogado && c.atribuicao?.contaId === contaId).map((c) => c.nome)
 }
 
 /** Em teste (sombra) nada muda nas sessões: conta como desligada, e o projeto em teste segue a empresa. */
@@ -120,6 +206,10 @@ function pastasValidas(u: UnidadeRascunho): PastaRascunho[] {
   return r
 }
 
+/** A escolha de computadores como texto: a ordem não conta, e "todos" é diferente de "nuvem antiga". */
+const chaveComputadores = (u: UnidadeRascunho) =>
+  u.computadores == null ? String(u.computadores) : [...u.computadores].sort().join(",")
+
 function assinatura(u: UnidadeRascunho): string {
   return JSON.stringify([
     u.nome.trim(),
@@ -129,6 +219,7 @@ function assinatura(u: UnidadeRascunho): string {
       .map((p) => `${p.computador ?? ""}|${p.padrao}`)
       .sort(),
     u.titulos.map((r) => `${r.computador ?? ""}|${r.padrao}`).sort(),
+    chaveComputadores(u),
   ])
 }
 
@@ -151,6 +242,7 @@ export function validar(lista: UnidadeRascunho[], mudou: UnidadeRascunho[] = lis
   for (const u of lista.filter((x) => ids.has(x.id) || (x.pai !== null && ids.has(x.pai)))) {
     const nome = u.nome.trim()
     if (!nome) return { id: u.id, chave: u.pai ? "erroNomeProjeto" : "erroNomeEmpresa" }
+    if (!u.pai && Array.isArray(u.computadores) && !u.computadores.length) return { id: u.id, chave: "erroComputador", nome }
     if (ligada(u, lista) && !contasDe(u, lista).length) return { id: u.id, chave: "erroConta", nome }
     const igual = lista.some(
       (x) => x.id !== u.id && x.pai === u.pai && x.nome.trim().toLowerCase() === nome.toLowerCase()
@@ -164,12 +256,16 @@ export function validar(lista: UnidadeRascunho[], mudou: UnidadeRascunho[] = lis
   return null
 }
 
-const camposDe = (u: UnidadeRascunho): CamposUnidade => ({
+// os computadores só vão quando mudaram: salvar outro campo não desfaz o que outra pessoa escolheu nesse meio tempo
+const camposDe = (u: UnidadeRascunho, antes?: UnidadeRascunho): CamposUnidade => ({
   nome: u.nome.trim(),
   modo: u.modo,
   contas: u.contas,
   pastas: [...pastasValidas(u).map((p) => ({ tipo: "pasta" as const, ...p })), ...u.titulos],
   ...(u.novo ? { cor: u.cor, ...(u.pai ? { pai: u.pai } : {}) } : {}),
+  ...(!u.pai && u.computadores !== undefined && (u.novo || !antes || chaveComputadores(u) !== chaveComputadores(antes))
+    ? { computadores: u.computadores }
+    : {}),
 })
 
 /**
@@ -196,7 +292,14 @@ export function planoDeGravar(base: UnidadeRascunho[], lista: UnidadeRascunho[])
       })
   }
   const empresas = mudou.filter((u) => !u.pai)
-  const passo = (u: UnidadeRascunho): PassoGravar => ({ id: u.id, novo: u.novo, campos: camposDe(u) })
+  const passo = (u: UnidadeRascunho): PassoGravar => ({
+    id: u.id,
+    novo: u.novo,
+    campos: camposDe(
+      u,
+      base.find((x) => x.id === u.id)
+    ),
+  })
   return [
     ...passos,
     ...empresas.filter((u) => u.novo || u.contas.length).map(passo),

@@ -63,9 +63,29 @@ export function trocaDoEvento(em: string, texto: string, dados: Record<string, u
 /** `computador` (0.20.0): a regra de um computador só vale nele; sem ele, só as regras que valem para todos. */
 export type Classificar = (pasta: string, projeto: string, computador?: string) => string | null
 
+/** 0.20.1: onde o projeto roda, como rvz_roda_em: o subprojeto segue o projeto; sem a escolha (ou nuvem antiga), em todos. */
+export function criarRodaEm(
+  dados: Pick<DadosEmpresas, "empresas"> & Partial<Pick<DadosEmpresas, "computadores">>
+): (empresa: string, computador: string) => boolean {
+  const restritos = new Map<string, Set<string>>()
+  for (const e of dados.empresas) if (!e.pai && e.emTodosComputadores === false) restritos.set(e.id, new Set())
+  for (const l of dados.computadores ?? []) restritos.get(l.empresaId)?.add(l.computadorId)
+  const paiDe = new Map(dados.empresas.map((e) => [e.id, e.pai]))
+  return (empresa, computador) => {
+    const s = restritos.get(paiDe.get(empresa) ?? empresa)
+    return !s || s.has(computador)
+  }
+}
+
 /** O classificador das regras de agora: devolve o id da empresa da pasta, ou null (sem dono). */
-export function criarClassificador(dados: Pick<DadosEmpresas, "empresas" | "regras" | "agentes">): Classificar {
+export function criarClassificador(
+  dados: Pick<DadosEmpresas, "empresas" | "regras" | "agentes"> & Partial<Pick<DadosEmpresas, "computadores">>
+): Classificar {
   const existe = new Set(dados.empresas.map((e) => e.id))
+  // 0.20.1: o projeto escolhido para alguns computadores não classifica pasta nos outros (como rvz_classificar);
+  // a linha sem computador conhecido não perde o dono
+  const roda = criarRodaEm(dados)
+  const rodaAqui = (empresa: string, pc?: string) => pc === undefined || roda(empresa, pc)
   // a regra de um computador vem antes da que vale para todos: no empate, ela ganha (como rvz_classificar)
   const regras = dados.regras
     .filter((r) => existe.has(r.empresaId))
@@ -93,7 +113,8 @@ export function criarClassificador(dados: Pick<DadosEmpresas, "empresas" | "regr
   const cache = new Map<string, string | null>()
   return (pasta, projeto, computador) => {
     const chave = `${pasta}\u0000${projeto}\u0000${computador ?? ""}`
-    const vale = (r: { pc: string | null }) => r.pc === null || r.pc === computador
+    const vale = (r: { pc: string | null; empresa: string }) =>
+      (r.pc === null || r.pc === computador) && rodaAqui(r.empresa, computador)
     const ja = cache.get(chave)
     if (ja !== undefined) return ja
     let melhor: { nota: number; empresa: string } | null = null

@@ -37,6 +37,19 @@ describe("FonteSupabase (partes puras)", () => {
     expect(codigoDoErro("qualquer coisa")).toBe("falha")
   })
 
+  it("as recusas do cadastro de projetos (textos exatos da 0046) mostram o motivo, não o 'tente de novo'", () => {
+    for (const m of [
+      "escolha um computador para este projeto",
+      "escolha uma conta para ligar",
+      "um subprojeto ligado usa a conta deste projeto",
+      "atualize o computador AIR antes de ligar: a versão dele ainda não segue a conta do projeto",
+      "a pasta ~/Code/alfa já é de Alfa",
+      "há sessões abertas na trilha deste projeto ou de um subprojeto dele: desligue e espere as sessões terminarem",
+    ]) {
+      expect(codigoDoErro(m), m).toBe("cadastro")
+    }
+  })
+
   it("chaves de configuração e padrões iguais aos do banco", () => {
     expect(Object.values(CHAVES_CONFIG).sort()).toEqual(
       [

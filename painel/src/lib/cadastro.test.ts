@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest"
 
+import type { Empresa } from "@/dados/tipos"
+
 import {
   alteradas,
+  alternarComputador,
+  computadoresAtivos,
   contasDe,
   ligada,
   modoAlternado,
+  ondeEsta,
   pastasEm,
   planoDeGravar,
+  rascunhoDe,
   rodaEm,
+  rodaNoComputador,
+  saemDaConta,
   validar,
   type UnidadeRascunho,
 } from "./cadastro"
@@ -159,5 +167,177 @@ describe("a ordem de gravar", () => {
     const [editado] = planoDeGravar([u("x")], [u("x", { nome: "Novo" })])
     expect(editado.campos).not.toHaveProperty("cor")
     expect(editado.campos).not.toHaveProperty("pai")
+  })
+})
+
+describe("projeto por computador", () => {
+  const ativos = ["pc1", "pc2"]
+  const daNuvem = (id: string, o: Partial<Empresa> = {}): Empresa => ({
+    id,
+    nome: id,
+    cor: 0,
+    transbordo: "nenhum",
+    transbordoContas: [],
+    separar: false,
+    criadaEm: "2026-11-01T00:00:00Z",
+    pai: null,
+    modo: null,
+    herdarTransbordo: true,
+    ...o,
+  })
+
+  it("com a escolha, aparece só nos computadores escolhidos; em todos, aparece em todos", () => {
+    const so = u("e", { computadores: ["pc1"] })
+    expect(rodaNoComputador(so, "pc1", ativos)).toBe(true)
+    expect(rodaNoComputador(so, "pc2", ativos)).toBe(false)
+    const todos = u("t", { computadores: null })
+    expect(ativos.every((pc) => rodaNoComputador(todos, pc, ativos))).toBe(true)
+  })
+
+  it("nuvem antiga, sem a escolha: aparece em todos, como antes", () => {
+    const antigo = u("e")
+    expect(ativos.every((pc) => rodaNoComputador(antigo, pc, ativos))).toBe(true)
+  })
+
+  it("o único computador foi removido: o projeto não some, aparece em todas as abas para escolher outro", () => {
+    const orfao = u("e", { computadores: ["removido"] })
+    expect(ativos.every((pc) => rodaNoComputador(orfao, pc, ativos))).toBe(true)
+    const misto = u("m", { computadores: ["removido", "pc2"] })
+    expect(rodaNoComputador(misto, "pc1", ativos)).toBe(false)
+    expect(rodaNoComputador(misto, "pc2", ativos)).toBe(true)
+  })
+
+  it("desmarcar o último computador deixa o projeto na tela até escolher outro", () => {
+    expect(rodaNoComputador(u("e", { computadores: [] }), "pc1", ativos)).toBe(true)
+  })
+
+  it("computador removido não conta como lugar onde o projeto roda de verdade", () => {
+    expect(computadoresAtivos(u("t", { computadores: null }), ativos)).toBeNull()
+    expect(computadoresAtivos(u("a"), ativos)).toBeNull()
+    expect(computadoresAtivos(u("m", { computadores: ["removido", "pc2"] }), ativos)).toEqual(["pc2"])
+    expect(computadoresAtivos(u("o", { computadores: ["removido"] }), ativos)).toEqual([])
+  })
+
+  it("lê da nuvem a escolha do projeto; o subprojeto e a nuvem antiga ficam sem", () => {
+    const d = {
+      empresas: [
+        daNuvem("e", { emTodosComputadores: false }),
+        daNuvem("f", { emTodosComputadores: true }),
+        daNuvem("p", { pai: "e" }),
+      ],
+      marcas: [],
+      regras: [],
+      computadoresNaNuvem: true,
+      computadores: [
+        { empresaId: "e", computadorId: "pc2" },
+        { empresaId: "e", computadorId: "pc1" },
+      ],
+    }
+    const de = (l: UnidadeRascunho[], id: string) => l.find((x) => x.id === id)?.computadores
+    const r = rascunhoDe(d)
+    expect(de(r, "e")).toEqual(["pc1", "pc2"])
+    expect(de(r, "f")).toBeNull()
+    expect(de(r, "p")).toBeUndefined()
+    const antiga = rascunhoDe({ ...d, computadoresNaNuvem: false, computadores: [] })
+    for (const id of ["e", "f", "p"]) expect(de(antiga, id)).toBeUndefined()
+  })
+
+  it("mudar os computadores é uma mudança; a ordem não conta", () => {
+    const base = [u("e", { computadores: ["pc1", "pc2"] })]
+    expect(alteradas(base, [u("e", { computadores: ["pc2", "pc1"] })])).toEqual([])
+    expect(alteradas(base, [u("e", { computadores: ["pc1"] })]).map((x) => x.id)).toEqual(["e"])
+    expect(alteradas(base, [u("e", { computadores: null })]).map((x) => x.id)).toEqual(["e"])
+  })
+
+  it("só manda os computadores quando mudaram: o que outra pessoa escolheu não volta ao valor antigo", () => {
+    const base = [u("e", { computadores: ["pc1"] })]
+    const [passo] = planoDeGravar(base, [u("e", { nome: "Novo", computadores: ["pc1"] })])
+    expect(passo.campos).not.toHaveProperty("computadores")
+    const [mudou] = planoDeGravar(base, [u("e", { computadores: ["pc2"] })])
+    expect(mudou.campos.computadores).toEqual(["pc2"])
+    const [todos] = planoDeGravar(base, [u("e", { computadores: null })])
+    expect(todos.campos.computadores).toBeNull()
+  })
+
+  it("projeto novo leva os computadores; subprojeto e nuvem antiga nunca mandam o campo", () => {
+    const [novo] = planoDeGravar([], [u("n", { novo: true, computadores: ["pc1"] })])
+    expect(novo.campos.computadores).toEqual(["pc1"])
+    const [sub] = planoDeGravar([], [u("s", { novo: true, pai: "e", computadores: ["pc1"] })])
+    expect(sub.campos).not.toHaveProperty("computadores")
+    const [antiga] = planoDeGravar([u("x")], [u("x", { nome: "Y" })])
+    expect(antiga.campos).not.toHaveProperty("computadores")
+  })
+
+  it("projeto sem computador escolhido pede um antes de salvar", () => {
+    expect(validar([u("e", { computadores: [] })])).toMatchObject({ id: "e", chave: "erroComputador" })
+    expect(validar([u("e", { computadores: ["pc1"] })])).toBeNull()
+    expect(validar([u("e", { computadores: null })])).toBeNull()
+  })
+
+  it("com Todos, clicar num computador deixa só ele", () => {
+    expect(alternarComputador(null, "pc2", ativos)).toEqual(["pc2"])
+  })
+
+  it("clicar põe ou tira o computador; o último pode sair, e aí a tela pede um", () => {
+    expect(alternarComputador(["pc1"], "pc2", ativos)).toEqual(["pc1", "pc2"])
+    expect(alternarComputador(["pc1", "pc2"], "pc1", ativos)).toEqual(["pc2"])
+    expect(alternarComputador(["pc1"], "pc1", ativos)).toEqual([])
+  })
+
+  it("computador removido sai da lista quando a pessoa mexe nela", () => {
+    expect(alternarComputador(["removido", "pc1"], "pc2", ativos)).toEqual(["pc1", "pc2"])
+    expect(alternarComputador(["removido", "pc1"], "pc1", ativos)).toEqual([])
+  })
+})
+
+describe("onde a conta está e quem perde a conta", () => {
+  const pc = (id: string, nome: string, contaId: string | null, revogado = false) => ({
+    id,
+    nome,
+    revogado,
+    atribuicao: contaId ? { contaId, motivo: "", decididoEm: "" } : null,
+  })
+  const pcs = [pc("pc1", "Mac", "a"), pc("pc2", "VPS", "b"), pc("pc3", "Velho", "a", true), pc("pc4", "Novo", null)]
+  const trilha = (computadorId: string, empresaId: string, contaId: string) => ({ computadorId, empresaId, contaId })
+
+  it("mostra a conta em uso de cada computador e a trilha de cada projeto; computador removido não conta", () => {
+    const lista = [u("e", { nome: "Alfa" }), u("p", { nome: "Site", pai: "e" })]
+    expect(ondeEsta("a", pcs, [trilha("pc2", "p", "a"), trilha("pc3", "e", "a")], lista)).toEqual([
+      { computadorId: "pc1", computador: "Mac", unidade: null },
+      { computadorId: "pc2", computador: "VPS", unidade: "Alfa / Site" },
+    ])
+  })
+
+  it("conta parada não está em lugar nenhum", () => {
+    expect(ondeEsta("z", pcs, [], [])).toEqual([])
+  })
+
+  it("marcar a conta num projeto ligado tira ela da conta em uso do computador", () => {
+    const antes = [u("e", { modo: "ligado", contas: ["c"] })]
+    const agora = [u("e", { modo: "ligado", contas: ["c", "a"] })]
+    expect(saemDaConta(agora[0]!, agora, antes, "a", pcs)).toEqual(["Mac"])
+  })
+
+  it("ligar um projeto que já tinha a conta também tira", () => {
+    const antes = [u("e", { modo: "desligado", contas: ["a"] })]
+    const agora = [u("e", { modo: "ligado", contas: ["a"] })]
+    expect(saemDaConta(agora[0]!, agora, antes, "a", pcs)).toEqual(["Mac"])
+  })
+
+  it("projeto novo ligado com a conta tira", () => {
+    const novo = u("n", { novo: true, modo: "ligado", contas: ["b"] })
+    expect(saemDaConta(novo, [novo], [], "b", pcs)).toEqual(["VPS"])
+  })
+
+  it("não avisa quando nada muda: já era dele, desligado, conta sem marca ou computador removido", () => {
+    const ja = [u("e", { modo: "ligado", contas: ["a"] })]
+    expect(saemDaConta(ja[0]!, ja, ja, "a", pcs)).toEqual([])
+    const off = [u("e", { modo: "desligado", contas: ["a"] })]
+    expect(saemDaConta(off[0]!, off, [], "a", pcs)).toEqual([])
+    const semMarca = [u("e", { modo: "ligado", contas: ["c"] })]
+    expect(saemDaConta(semMarca[0]!, semMarca, [], "a", pcs)).toEqual([])
+    const so = [pc("pc3", "Velho", "a", true)]
+    const novo = [u("e", { modo: "ligado", contas: ["a"] })]
+    expect(saemDaConta(novo[0]!, novo, [], "a", so)).toEqual([])
   })
 })

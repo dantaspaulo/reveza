@@ -7,6 +7,7 @@ import {
   contaPeloTexto,
   contasPorEmpresa,
   criarClassificador,
+  criarRodaEm,
   ehCaminho,
   empresasForaNoAntigo,
   modoDe,
@@ -54,6 +55,8 @@ function dados(regras: RegraPasta[], agentes: AgenteOpenBot[] = []): DadosEmpres
     trilhas: [],
     projetosNaNuvem: true,
     sombras: [],
+    computadoresNaNuvem: true,
+    computadores: [],
   }
 }
 
@@ -108,6 +111,31 @@ describe("classificador", () => {
     expect(c("~/Code/outra", "outra", "pc2")).toBe("b")
     expect(c("~/Code/outra", "outra", "pc1")).toBeNull()
     expect(c("~/Code/outra", "outra")).toBeNull()
+  })
+
+  it("0.20.1: a regra de um projeto só vale nos computadores dele, e o subprojeto segue o projeto", () => {
+    const d = dados(
+      [regra("pasta", "~/Code/alfa", "a"), regra("pasta", "~/Code/alfa/site", "s"), regra("titulo", "cliente x", "a")],
+      [agente("~/agentes/x", "Cliente X")]
+    )
+    d.empresas = [empresa("a", { emTodosComputadores: false }), empresa("s", { pai: "a" }), empresa("b")]
+    d.computadores = [{ empresaId: "a", computadorId: "pc1" }]
+    const c = criarClassificador(d)
+    expect(c("~/Code/alfa", "alfa", "pc1")).toBe("a")
+    expect(c("~/Code/alfa/site", "site", "pc1")).toBe("s")
+    expect(c("~/agentes/x", "x", "pc1")).toBe("a")
+    expect(c("~/Code/alfa", "alfa", "pc2")).toBeNull()
+    expect(c("~/Code/alfa/site", "site", "pc2")).toBeNull()
+    expect(c("~/agentes/x", "x", "pc2")).toBeNull()
+  })
+
+  it("0.20.1: projeto em todos segue valendo, e a linha sem computador conhecido não perde o dono", () => {
+    const d = dados([regra("pasta", "~/Code/alfa", "a"), regra("pasta", "~/Code/beta", "b")])
+    d.empresas = [empresa("a", { emTodosComputadores: false }), empresa("b", { emTodosComputadores: true })]
+    d.computadores = [{ empresaId: "a", computadorId: "pc1" }]
+    const c = criarClassificador(d)
+    expect(c("~/Code/beta", "beta", "pc2")).toBe("b")
+    expect(c("~/Code/alfa", "alfa")).toBe("a")
   })
 
   it("prefixo: a pasta e tudo dentro dela; o mais comprido ganha; não confunde nome parecido", () => {
@@ -357,5 +385,20 @@ describe("projetos (0.19.0)", () => {
     const gama = empresa("gama", { modo: "desligado" })
     const g = [regra("pasta", "~/Code", "agencia"), regra("pasta", "~/Code/g", "gama")]
     expect(empresasForaNoAntigo({ empresas: [agencia, gama], regras: g, marcas: [] })).toEqual([])
+  })
+
+  it("onde o projeto roda (como rvz_roda_em): o subprojeto segue o projeto; sem a escolha, em todos", () => {
+    const so = empresa("so", { emTodosComputadores: false })
+    const sub = empresa("sub", { pai: "so" })
+    const todos = empresa("todos", { emTodosComputadores: true })
+    const antigo = empresa("antigo")
+    const roda = criarRodaEm({
+      empresas: [so, sub, todos, antigo],
+      computadores: [{ empresaId: "so", computadorId: "pc1" }],
+    })
+    expect([roda("so", "pc1"), roda("so", "pc2"), roda("sub", "pc1"), roda("sub", "pc2")]).toEqual([true, false, true, false])
+    expect([roda("todos", "pc2"), roda("antigo", "pc2")]).toEqual([true, true])
+    // nuvem antiga, sem a lista: tudo roda em todos
+    expect(criarRodaEm({ empresas: [antigo] })("antigo", "pc9")).toBe(true)
   })
 })

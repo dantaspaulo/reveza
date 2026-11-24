@@ -3,8 +3,8 @@
 import {
   ActivityIcon,
   BellIcon,
-  Building2Icon,
   ChartColumnIcon,
+  FolderKanbanIcon,
   LaptopIcon,
   LayoutDashboardIcon,
   PlugIcon,
@@ -43,7 +43,7 @@ export const SECOES: Secao[] = [
   { id: "visao", caminho: "/", icone: LayoutDashboardIcon, grupo: "operacao" },
   { id: "contas", caminho: "/contas", icone: WalletCardsIcon, grupo: "operacao" },
   { id: "computadores", caminho: "/computadores", icone: LaptopIcon, grupo: "operacao" },
-  { id: "empresas", caminho: "/empresas", icone: Building2Icon, grupo: "operacao" },
+  { id: "empresas", caminho: "/projetos", icone: FolderKanbanIcon, grupo: "operacao" },
   { id: "troca", caminho: "/troca", icone: ShuffleIcon, grupo: "operacao" },
   { id: "uso", caminho: "/uso", icone: ChartColumnIcon, grupo: "consumo" },
   { id: "alertas", caminho: "/alertas", icone: BellIcon, grupo: "configuracao" },
@@ -56,8 +56,11 @@ export const SECOES: Secao[] = [
 
 export const GRUPOS: Grupo[] = ["operacao", "consumo", "configuracao", "ajuda"]
 
-/** Endereços de telas que saíram, para quem guardou o link: a tela Plano saiu na 0.13.0 (o ritmo da semana foi para Contas). */
-const ANTIGOS: Record<string, string> = { "/plano": "/contas" }
+/**
+ * Endereços de telas que saíram, para quem guardou o link: a tela Plano saiu na 0.13.0 (o ritmo da semana foi para
+ * Contas) e Empresas passou a se chamar Projetos na 0.20.1.
+ */
+const ANTIGOS: Record<string, string> = { "/plano": "/contas", "/empresas": "/projetos" }
 
 export function secaoDoCaminho(caminho: string): Secao | undefined {
   const limpo = caminho.replace(/\/+$/, "") || "/"

@@ -30,7 +30,7 @@ const PAGINAS = [
   ["contas", "/contas"],
   ["computadores", "/computadores"],
   ["uso", "/uso"],
-  ["empresas", "/empresas"],
+  ["projetos", "/projetos"],
   ["troca", "/troca"],
   ["alertas", "/alertas"],
   ["integracoes", "/integracoes"],
@@ -51,25 +51,25 @@ const L = (pt, en) => (process.env.IDIOMA === "en" ? en : pt)
 
 const INTERACOES = [
   [
-    "i-empresas-contas",
-    "/empresas",
+    // 0.20.1: no outro computador a consultoria não aparece, e o botão traz ela para cá
+    "i-projetos-outro-computador",
+    "/projetos",
     async (p) => {
-      await p.getByRole("tab", { name: L("Contas", "Accounts") }).click()
+      await p.getByRole("tab", { name: "Desktop" }).click()
     },
   ],
   [
-    "i-empresas-pastas",
-    "/empresas",
+    "i-projetos-novo",
+    "/projetos",
     async (p) => {
-      await p.getByRole("tab", { name: L("Pastas", "Folders") }).click()
+      await p.getByRole("button", { name: L("Novo projeto", "New project") }).first().click()
     },
   ],
   [
-    "i-empresas-editar",
-    "/empresas",
+    "i-projetos-so-neste-computador",
+    "/projetos",
     async (p) => {
-      await p.getByRole("tab", { name: L("Empresas", "Companies") }).click()
-      await p.getByRole("button", { name: L("Editar", "Edit") }).first().click()
+      await p.getByRole("button", { name: L("Todos", "All") }).first().click()
     },
   ],
   [

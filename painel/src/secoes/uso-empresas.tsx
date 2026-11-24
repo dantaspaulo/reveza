@@ -4,7 +4,7 @@
 
 import * as React from "react"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
-import { Building2Icon } from "lucide-react"
+import { FolderKanbanIcon } from "lucide-react"
 import { NomeConta } from "@/components/painel/conta"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
@@ -210,7 +210,7 @@ function AbaNumeros({
         <Empty className="border">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Building2Icon />
+              <FolderKanbanIcon />
             </EmptyMedia>
             <EmptyTitle>{t("empresas.vazio.titulo")}</EmptyTitle>
             <EmptyDescription>{t("empresas.vazio.texto")}</EmptyDescription>

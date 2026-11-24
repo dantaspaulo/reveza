@@ -737,12 +737,15 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
   }
 }
 
-/** As empresas de exemplo: uma agência e uma consultoria; o resto do uso fica sem dono, para a tela mostrar a lista. */
+/**
+ * Os projetos de exemplo: uma agência, em todos os computadores, e uma consultoria, só no notebook (0.20.1); o resto do
+ * uso fica sem dono, para a tela mostrar a lista.
+ */
 function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
   return {
     empresas: [
-      { id: "empresa-agencia", nome: "Agência", cor: 0, transbordo: "escolhidas", transbordoContas: ["conta-reserva"], separar: false, criadaEm, pai: null, modo: null, herdarTransbordo: true },
-      { id: "empresa-consultoria", nome: "Consultoria", cor: 2, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm, pai: null, modo: null, herdarTransbordo: true },
+      { id: "empresa-agencia", nome: "Agência", cor: 0, transbordo: "escolhidas", transbordoContas: ["conta-reserva"], separar: false, criadaEm, pai: null, modo: null, herdarTransbordo: true, emTodosComputadores: true },
+      { id: "empresa-consultoria", nome: "Consultoria", cor: 2, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm, pai: null, modo: null, herdarTransbordo: true, emTodosComputadores: false },
       // 0.19.0: um projeto dentro da agência, sem nada próprio (usa as contas e o modo da empresa)
       { id: "projeto-loja", nome: "Loja online", cor: 0, transbordo: "nenhum", transbordoContas: [], separar: false, criadaEm, pai: "empresa-agencia", modo: null, herdarTransbordo: true },
     ],
@@ -765,6 +768,8 @@ function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
     trilhas: [],
     projetosNaNuvem: true,
     sombras: [],
+    computadoresNaNuvem: true,
+    computadores: [{ empresaId: "empresa-consultoria", computadorId: "pc-notebook" }],
   }
 }
 
@@ -1519,6 +1524,12 @@ export class FonteDemo implements Fonte {
     const modo = campos.modo !== undefined ? campos.modo : (atual?.modo ?? null)
     if (modo === "ligado" && !contas.length && !(pai && e.marcas.some((m) => m.empresaId === pai)))
       throw new ErroPainel("cadastro", "escolha uma conta para ligar")
+    // como o banco (0046): o subprojeto segue os computadores do projeto
+    if (campos.computadores !== undefined) {
+      if (pai) throw new ErroPainel("cadastro", "o subprojeto roda nos computadores do projeto")
+      if (campos.computadores !== null && !campos.computadores.length)
+        throw new ErroPainel("cadastro", "escolha um computador para este projeto")
+    }
     const pastas = (campos.pastas ?? []).map((p) => ({ ...p, padrao: p.tipo === "pasta" ? p.padrao.trim().replace(/(.)\/+$/, "$1") : p.padrao.trim() }))
     for (const p of pastas) {
       if (!p.padrao || p.padrao.length > 300 || /^(~|\/+|[A-Za-z]:)$/.test(p.padrao)) throw new ErroPainel("padrao_invalido")
@@ -1536,6 +1547,13 @@ export class FonteDemo implements Fonte {
         e.regras = [
           ...e.regras.filter((r) => r.empresaId !== novo),
           ...pastas.map((p, i) => ({ id: `regra-${Date.now().toString(36)}${i}`, tipo: p.tipo, padrao: p.padrao, empresaId: novo, computadorId: p.computador })),
+        ]
+      }
+      if (campos.computadores !== undefined) {
+        u.emTodosComputadores = campos.computadores === null
+        e.computadores = [
+          ...e.computadores.filter((l) => l.empresaId !== novo),
+          ...[...new Set(campos.computadores ?? [])].map((computadorId) => ({ empresaId: novo, computadorId })),
         ]
       }
       this.auditar("unidade", novo)
@@ -1572,6 +1590,7 @@ export class FonteDemo implements Fonte {
       e.regras = e.regras.filter((r) => !sai.has(r.empresaId))
       e.trilhas = e.trilhas.filter((t) => !sai.has(t.empresaId))
       e.sombras = e.sombras.filter((s) => !sai.has(s.empresaId))
+      e.computadores = e.computadores.filter((l) => !sai.has(l.empresaId))
       this.auditar("empresa_apagar", id)
     })
   }

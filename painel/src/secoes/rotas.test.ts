@@ -10,4 +10,11 @@ describe("rotas", () => {
     expect(secaoDoCaminho("/constructor")).toBeUndefined()
     expect(secaoDoCaminho("/contas")?.id).toBe("contas")
   })
+
+  it("Empresas virou Projetos (0.20.1): o endereço novo abre a tela e o guardado continua abrindo", () => {
+    expect(SECOES.some((s) => s.caminho === "/empresas")).toBe(false)
+    expect(secaoDoCaminho("/projetos")?.id).toBe("empresas")
+    expect(secaoDoCaminho("/empresas")?.id).toBe("empresas")
+    expect(secaoDoCaminho("/empresas/")?.id).toBe("empresas")
+  })
 })

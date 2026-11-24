@@ -460,6 +460,8 @@ export interface Empresa {
   herdarTransbordo: boolean
   /** 0.20.0: roda só nas contas marcadas, sem transbordo. Undefined: nuvem antiga. */
   soContasDela?: boolean
+  /** 0.20.1: false, o projeto roda só nos computadores de `DadosEmpresas.computadores`. Undefined: nuvem antiga. */
+  emTodosComputadores?: boolean
 }
 
 /**
@@ -536,6 +538,16 @@ export interface DadosEmpresas {
   projetosNaNuvem: boolean
   /** 0.19.0: o que cada unidade em teste faria em cada computador; vazio com a nuvem antes da 0.19.0. */
   sombras: SombraUnidade[]
+  /** 0.20.1: a nuvem já sabe em quais computadores cada projeto roda (a 0045 está lá). Sem ela, roda em todos. */
+  computadoresNaNuvem: boolean
+  /** 0.20.1: os computadores de cada projeto que não roda em todos; vazio com a nuvem antes da 0.20.1. */
+  computadores: ComputadorDoProjeto[]
+}
+
+/** 0.20.1: um computador em que o projeto roda (tabela empresa_computadores). */
+export interface ComputadorDoProjeto {
+  empresaId: string
+  computadorId: string
 }
 
 /**

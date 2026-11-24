@@ -226,8 +226,8 @@ const MENSAGENS: [RegExp, string][] = [
   [/já existe um computador com este nome/i, "nome_repetido"],
   [/nome inválido: até 60 caracteres/i, "nome_invalido"],
   [/computador novo desconhecido|computador desconhecido/i, "computador_revogado"],
-  [/conta desconhecida|empresa desconhecida|regra desconhecida/i, "nao_encontrado"],
-  [/já existe uma empresa com esse nome/i, "empresa_repetida"],
+  [/conta desconhecida|empresa desconhecida|projeto desconhecido|regra desconhecida/i, "nao_encontrado"],
+  [/já existe (uma empresa|um projeto|um subprojeto) com esse nome/i, "empresa_repetida"],
   [/^nome inválido$/i, "nome_invalido"],
   [/padrão inválido/i, "padrao_invalido"],
   [/duplicate key|already exists|unique/i, "ja_existe"],
@@ -243,7 +243,7 @@ const MENSAGENS: [RegExp, string][] = [
 
 export function codigoDoErro(mensagem: string, codigoPg?: string): string {
   // 0.20.0: o motivo da recusa do cadastro traz nomes e vai para a tela como o banco escreveu
-  if (/^a pasta .+ já é de |^escolha uma conta para ligar$|^um projeto ligado usa a conta|^atualize o computador .+ antes de ligar/.test(mensagem)) return "cadastro"
+  if (/^a pasta .+ já é de |^escolha uma conta para ligar$|^escolha um computador para este projeto$|^um (sub)?projeto ligado usa a conta|^atualize o computador .+ antes de ligar|^há sessões abertas na trilha/.test(mensagem)) return "cadastro"
   for (const [re, codigo] of MENSAGENS) if (re.test(mensagem)) return codigo
   if (codigoPg === "42501") return "sem_permissao"
   return "falha"
@@ -760,7 +760,7 @@ export class FonteSupabase implements Fonte {
 
   async empresas(): Promise<DadosEmpresas> {
     const sb = supabase()
-    const [e, m, r, a, t, s] = await Promise.all([
+    const [e, m, r, a, t, s, c] = await Promise.all([
       // "*": a coluna separar só existe desde a 0038 (0.18.0) e pai, modo e herdar_transbordo desde a 0040 (0.19.0);
       // com a nuvem de antes elas faltam e valem como antes
       sb.from("empresas").select("*").order("nome"),
@@ -770,16 +770,23 @@ export class FonteSupabase implements Fonte {
       sb.from("agentes_openbot").select("computador_id,pasta,nome,titulo,visto_em").order("pasta").limit(5000),
       sb.from("atribuicao_trilhas").select("computador_id,empresa_id,conta_id,motivo,decidido_em,pedida_em"),
       sb.from("trilhas_sombra").select("computador_id,empresa_id,conta_id,em_uso,motivo,sessoes,trocas,decidido_em,visto_em"),
+      // só existe desde a 0045 (0.20.1)
+      sb.from("empresa_computadores").select("empresa_id,computador_id"),
     ])
+    const semTabela = (x: { code?: string; message: string }) =>
+      x.code === "42P01" || x.code === "PGRST205" || /does not exist|could not find the table/i.test(x.message)
     // nuvem de antes da 0038: sem as trilhas, o resto da tela segue igual
     const trilhasNaNuvem = !t.error
     // nuvem de antes da 0040: sem projetos nem modo de teste, a tela segue como na 0.18.0
     const projetosNaNuvem = !s.error
+    // nuvem de antes da 0045: todo projeto roda em todos os computadores
+    const computadoresNaNuvem = !c.error
+    // falha passageira não vira "nuvem antiga": mostraria todos os projetos em todos os computadores
+    if (c.error && !semTabela(c.error)) erro(c.error)
     for (const x of [e, m, r, a]) {
       if (!x.error) continue
       // nuvem de antes da 0036: a tela pede para atualizar a nuvem
-      if (x.error.code === "42P01" || x.error.code === "PGRST205" || /does not exist|could not find the table/i.test(x.error.message))
-        throw new ErroPainel("indisponivel", x.error.message)
+      if (semTabela(x.error)) throw new ErroPainel("indisponivel", x.error.message)
       erro(x.error)
     }
     return {
@@ -795,6 +802,7 @@ export class FonteSupabase implements Fonte {
         modo: (["desligado", "sombra", "ligado"].includes(String(l.modo)) ? l.modo : null) as Empresa["modo"],
         herdarTransbordo: l.herdar_transbordo !== false,
         soContasDela: l.so_contas_dela === true,
+        ...(typeof l.em_todos_computadores === "boolean" ? { emTodosComputadores: l.em_todos_computadores } : {}),
       })),
       marcas: (m.data ?? []).map((l) => ({ contaId: String(l.conta_id), empresaId: String(l.empresa_id) })),
       regras: (r.data ?? []).map((l): RegraPasta => ({
@@ -831,6 +839,11 @@ export class FonteSupabase implements Fonte {
         trocas: Number(l.trocas ?? 0),
         decididoEm: String(l.decidido_em),
         vistoEm: String(l.visto_em),
+      })),
+      computadoresNaNuvem,
+      computadores: (c.data ?? []).map((l) => ({
+        empresaId: String(l.empresa_id),
+        computadorId: String(l.computador_id),
       })),
     }
   }

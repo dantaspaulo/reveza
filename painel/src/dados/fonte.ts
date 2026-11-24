@@ -41,6 +41,8 @@ export interface CamposUnidade {
   modo?: Empresa["modo"]
   contas?: string[]
   pastas?: { tipo: RegraPasta["tipo"]; padrao: string; computador: string | null }[]
+  /** 0.20.1, só no projeto: null, roda em todos; lista, só nesses. Ausente: não muda. */
+  computadores?: string[] | null
 }
 
 /** Um passo de salvar várias unidades. `ref`: o nome provisório da unidade nova, que um projeto novo cita em `pai`. */

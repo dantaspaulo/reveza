@@ -1,11 +1,13 @@
-// Empresas (0.20.0): o cadastro operacional. Escolhe o computador, a empresa à esquerda e edita tudo à direita, sem
-// janela por cima: conta, pasta e projetos. Cada projeto usa a conta da empresa ou uma própria. Salvar grava o que mudou
-// (painel_unidade) e a empresa ou o projeto passa a rodar só nas contas marcadas. Os números ficaram na tela de Uso.
+// Projetos (0.20.0, "Empresas" até a 0.20.1): o cadastro operacional. Escolhe o computador, o projeto à esquerda e edita
+// tudo à direita, sem janela por cima: em quais computadores ele roda, conta, pasta e subprojetos. Cada subprojeto usa a
+// conta do projeto ou uma própria. Salvar grava o que mudou (painel_unidade) e o projeto ou subprojeto passa a rodar só
+// nas contas marcadas. Os números ficaram na tela de Uso. Nos nomes internos, projeto ainda é "empresa".
 
 import * as React from "react"
 import {
-  Building2Icon,
   ChevronRightIcon,
+  FolderKanbanIcon,
+  ImportIcon,
   InfoIcon,
   LaptopIcon,
   PlusIcon,
@@ -14,31 +16,43 @@ import {
   XIcon,
 } from "lucide-react"
 
-import { NomeConta } from "@/components/painel/conta"
+import { BarraFable, BarraUso, NomeConta, SeloEstado } from "@/components/painel/conta"
 import { AvisoPermissao, Pagina } from "@/components/painel/pagina"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Toggle } from "@/components/ui/toggle"
-import { useAcao, useConsulta, useDados, useEstado, usePermissao } from "@/dados/contexto"
+import { useAcao, useAgora, useConsulta, useDados, useEstado, usePermissao } from "@/dados/contexto"
+import { estadoComputador, estadoConta, p5, p7, resetDe } from "@/dados/derivados"
 import { ErroPainel } from "@/dados/fonte"
-import type { Conta, DadosEmpresas, SessaoUso } from "@/dados/tipos"
+import type { Computador, Conta, DadosEmpresas, SessaoUso, TrilhaEmUso } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import {
   alteradas,
+  alternarComputador,
+  computadoresAtivos,
   contasDe,
   ligada,
   modoAlternado,
+  ondeEsta,
   pastasEm,
   planoDeGravar,
   rascunhoDe,
   rodaEm,
+  rodaNoComputador,
+  saemDaConta,
   temRegraEm,
   validar,
   type ErroCadastro,
@@ -46,12 +60,16 @@ import {
 } from "@/lib/cadastro"
 import { N_CORES } from "@/lib/cores"
 import { comDemo } from "@/lib/demo"
-import { empresasForaNoAntigo, versaoNum } from "@/lib/empresas"
+import { criarRodaEm, empresasForaNoAntigo, nomeUnidade as rotuloUnidade, versaoNum } from "@/lib/empresas"
+import { fmtFuturo } from "@/lib/formato"
 import { Link } from "@/lib/rota"
 import { cn } from "@/lib/utils"
 
 let ultimoNovo = 0
 const idNovo = () => `novo-${++ultimoNovo}`
+
+const CHIP =
+  "h-auto min-h-7 max-w-full justify-start rounded-full px-3 py-1 font-normal text-muted-foreground whitespace-normal hover:text-foreground aria-pressed:border-primary aria-pressed:bg-primary/15 aria-pressed:text-foreground data-[state=on]:border-primary data-[state=on]:bg-primary/15"
 
 /** As pastas que a pessoa já usa naquele computador: agentes do OpenBot e sessões dos últimos 30 dias. */
 function sugestoesDe(dados: DadosEmpresas, sessoes: SessaoUso[] | null, computador: string): string[] {
@@ -62,17 +80,24 @@ function sugestoesDe(dados: DadosEmpresas, sessoes: SessaoUso[] | null, computad
   return [...new Set(todas.filter(Boolean))].sort().slice(0, 100)
 }
 
-/** O que os campos de uma empresa ou projeto precisam para ler e mudar o rascunho. */
+/** O que os campos de um projeto ou subprojeto precisam para ler e mudar o rascunho. */
 interface Edicao {
   lista: UnidadeRascunho[]
   contas: Conta[]
   computador: string
   nomeComputador: string
+  /** Os computadores ativos: as opções de "Roda em" e onde cada conta está. */
+  computadores: Computador[]
+  /** As contas em uso pelos projetos separados, em cada computador. */
+  trilhas: TrilhaEmUso[]
+  /** O cadastro de antes de editar: diz quem perde a conta ao salvar. */
+  antes: UnidadeRascunho[]
   sugestoes: string[]
   pode: boolean
   mudar: (id: string, campos: Partial<UnidadeRascunho>) => void
   marcarConta: (u: UnidadeRascunho, conta: string) => void
   alternar: (u: UnidadeRascunho) => void
+  escolherComputadores: (u: UnidadeRascunho, computadores: string[] | null) => void
 }
 
 export default function Empresas() {
@@ -115,7 +140,12 @@ export default function Empresas() {
   // cadastro novo: marcar a primeira conta já liga, até a pessoa mexer na chave
   const [tocados, setTocados] = React.useState<ReadonlySet<string>>(() => new Set())
 
-  const empresa = raizes.find((u) => u.id === selecionada) ?? raizes[0] ?? null
+  const ativos = computadores.map((c) => c.id)
+  const rodaAqui = (u: UnidadeRascunho) => !computador || rodaNoComputador(u, computador.id, ativos)
+  // a lista mostra o que roda nesta aba, mais o escolhido: tirar este computador não faz o projeto sumir da tela
+  const raizesAqui = raizes.filter((u) => u.id === selecionada || rodaAqui(u))
+  const deFora = raizes.filter((u) => !rodaAqui(u))
+  const empresa = raizesAqui.find((u) => u.id === selecionada) ?? raizesAqui[0] ?? null
   const mudanca = alteradas(referencia, lista).length > 0 && !aguardando
 
   const dadosVistos = React.useRef(dados)
@@ -166,13 +196,46 @@ export default function Empresas() {
   }
   const novaEmpresa = () => {
     const id = idNovo()
+    // nasce só neste computador; com a nuvem antiga fica sem a escolha
+    const onde = dados?.computadoresNaNuvem && computador ? { computadores: [computador.id] } : {}
     editar((atual) => [
       ...atual,
-      { id, novo: true, nome: "", pai: null, cor: atual.length % N_CORES, modo: "desligado", contas: [], pastas: [], titulos: [] },
+      {
+        id,
+        novo: true,
+        nome: "",
+        pai: null,
+        cor: atual.length % N_CORES,
+        modo: "desligado",
+        contas: [],
+        pastas: [],
+        titulos: [],
+        ...onde,
+      },
     ])
     setSelecionada(id)
     setAberto(null)
     setApagar(null)
+  }
+  const escolherComputadores = (u: UnidadeRascunho, escolha: string[] | null) => {
+    mudar(u.id, { computadores: escolha })
+    // fica na tela mesmo que este computador tenha saído da escolha
+    setSelecionada(u.id)
+  }
+  const trazer = (u: UnidadeRascunho) => {
+    if (!computador) return
+    escolherComputadores(u, [...(u.computadores ?? []).filter((c) => ativos.includes(c)), computador.id])
+    setAberto(null)
+    setApagar(null)
+  }
+  const trocarComputador = (id: string) => {
+    setEscolhido(id)
+    const atual = raizes.find((u) => u.id === selecionada)
+    if (atual && !rodaNoComputador(atual, id, ativos)) {
+      setSelecionada(null)
+      setAberto(null)
+      setApagar(null)
+    }
   }
   const novoProjeto = (e: UnidadeRascunho) => {
     const id = idNovo()
@@ -234,23 +297,48 @@ export default function Empresas() {
           contas: estado.contas,
           computador: computador.id,
           nomeComputador: computador.nome,
+          computadores,
+          trilhas: dados.trilhas,
+          antes: referencia,
           sugestoes: sugestoesDe(dados, sessoes.dados, computador.id),
           pode,
           mudar,
           marcarConta,
           alternar,
+          escolherComputadores,
         }
       : null
+
+  const barraSalvar =
+    mudanca || erro ? (
+      <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur">
+        <p className={cn("text-sm", erro && "text-erro")} role={erro ? "alert" : undefined}>
+          {erro ? textoErro(erro, t) : t("empresas.op.naoSalvas")}
+        </p>
+        <div className="ml-auto flex gap-1.5">
+          <Button size="sm" variant="ghost" disabled={salvando} onClick={descartar}>
+            {t("empresas.op.descartar")}
+          </Button>
+          <Button size="sm" disabled={salvando || !pode} onClick={() => void salvar()}>
+            {salvando ? <Spinner /> : null}
+            {t("empresas.op.salvar")}
+          </Button>
+        </div>
+      </div>
+    ) : null
 
   return (
     <Pagina
       titulo={t("menu.secoes.empresas")}
       descricao={t("empresas.op.subtitulo")}
       acoes={
-        <Button size="sm" disabled={!pode || !edicao} onClick={novaEmpresa}>
-          <PlusIcon />
-          {t("empresas.op.novaEmpresa")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {edicao && deFora.length ? <TrazerProjeto fora={deFora} pode={pode} aoTrazer={trazer} /> : null}
+          <Button size="sm" disabled={!pode || !edicao} onClick={novaEmpresa}>
+            <PlusIcon />
+            {t("empresas.op.novaEmpresa")}
+          </Button>
+        </div>
       }
     >
       <AvisoPermissao />
@@ -262,7 +350,7 @@ export default function Empresas() {
         </span>
         <div className="flex flex-wrap items-center gap-1.5">
           {computadores.length ? (
-            <Tabs value={computador?.id ?? ""} onValueChange={setEscolhido} className="max-w-full min-w-0">
+            <Tabs value={computador?.id ?? ""} onValueChange={trocarComputador} className="max-w-full min-w-0">
               <TabsList className="h-auto max-w-full flex-wrap justify-start">
                 {computadores.map((c) => (
                   <TabsTrigger key={c.id} value={c.id} className="h-8 flex-none px-3">
@@ -299,27 +387,35 @@ export default function Empresas() {
           </EmptyHeader>
         </Empty>
       ) : !empresa ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <Building2Icon />
-            </EmptyMedia>
-            <EmptyTitle>{t("empresas.op.semEmpresa")}</EmptyTitle>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button size="sm" disabled={!pode} onClick={novaEmpresa}>
-              <PlusIcon />
-              {t("empresas.op.novaEmpresa")}
-            </Button>
-          </EmptyContent>
-        </Empty>
+        <>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FolderKanbanIcon />
+              </EmptyMedia>
+              <EmptyTitle>{t(raizes.length ? "empresas.op.semProjetoAqui" : "empresas.op.semEmpresa")}</EmptyTitle>
+              {raizes.length ? <EmptyDescription>{t("empresas.op.semProjetoAquiTexto")}</EmptyDescription> : null}
+            </EmptyHeader>
+            <EmptyContent>
+              <div className="flex flex-wrap justify-center gap-1.5">
+                <Button size="sm" disabled={!pode} onClick={novaEmpresa}>
+                  <PlusIcon />
+                  {t("empresas.op.novaEmpresa")}
+                </Button>
+                {deFora.length ? <TrazerProjeto fora={deFora} pode={pode} aoTrazer={trazer} /> : null}
+              </div>
+            </EmptyContent>
+          </Empty>
+          {barraSalvar ? <div className="overflow-clip rounded-3xl border bg-card">{barraSalvar}</div> : null}
+        </>
       ) : (
         <div className="grid grid-cols-1 items-start gap-3.5 md:grid-cols-[232px_minmax(0,1fr)]">
           <ListaEmpresas
-            raizes={raizes}
+            raizes={raizesAqui}
             lista={lista}
             atual={empresa.id}
             computador={edicao.computador}
+            ativos={ativos}
             aoEscolher={(id) => {
               setSelecionada(id)
               setAberto(null)
@@ -332,7 +428,7 @@ export default function Empresas() {
           >
             <div className="flex items-center gap-2.5 border-b bg-gradient-to-r from-primary/20 via-primary/5 to-transparent p-4">
               <span className="hidden size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground sm:grid">
-                <Building2Icon className="size-4" />
+                <FolderKanbanIcon className="size-4" />
               </span>
               <Input
                 aria-label={t("empresas.op.nomeEmpresa")}
@@ -404,22 +500,7 @@ export default function Empresas() {
               </div>
             </div>
 
-            {mudanca || erro ? (
-              <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur">
-                <p className={cn("text-sm", erro && "text-erro")} role={erro ? "alert" : undefined}>
-                  {erro ? textoErro(erro, t) : t("empresas.op.naoSalvas")}
-                </p>
-                <div className="ml-auto flex gap-1.5">
-                  <Button size="sm" variant="ghost" disabled={salvando} onClick={descartar}>
-                    {t("empresas.op.descartar")}
-                  </Button>
-                  <Button size="sm" disabled={salvando || !pode} onClick={() => void salvar()}>
-                    {salvando ? <Spinner /> : null}
-                    {t("empresas.op.salvar")}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
+            {barraSalvar}
           </section>
         </div>
       )}
@@ -447,7 +528,11 @@ function Avisos({ dados }: { dados: DadosEmpresas }) {
   const { t, tn } = useT()
   const estado = useEstado()
   const fora = React.useMemo(() => empresasForaNoAntigo(dados), [dados])
-  const atras = estado.computadores.filter((c) => !c.revogado && versaoNum(c.versao) < versaoNum("0.19.0"))
+  const roda = React.useMemo(() => criarRodaEm(dados), [dados])
+  // só o computador atrasado em que algum desses projetos roda: nos outros a nuvem nem manda o projeto
+  const atras = estado.computadores.filter(
+    (c) => !c.revogado && versaoNum(c.versao) < versaoNum("0.19.0") && fora.some((e) => roda(e.id, c.id))
+  )
   const mostraAtraso = fora.length > 0 && atras.length > 0
   if (!mostraAtraso && dados.sombras.length === 0) return null
   const nomeUnidade = (id: string) => {
@@ -498,17 +583,49 @@ function Avisos({ dados }: { dados: DadosEmpresas }) {
   )
 }
 
+/** Acrescenta a este computador um projeto que hoje roda só em outros. */
+function TrazerProjeto({
+  fora,
+  pode,
+  aoTrazer,
+}: {
+  fora: UnidadeRascunho[]
+  pode: boolean
+  aoTrazer: (u: UnidadeRascunho) => void
+}) {
+  const { t } = useT()
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="outline" disabled={!pode}>
+          <ImportIcon />
+          {t("empresas.op.trazerDeOutro")}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {fora.map((u) => (
+          <DropdownMenuItem key={u.id} onSelect={() => aoTrazer(u)}>
+            {u.nome || t("empresas.op.novaEmpresa")}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function ListaEmpresas({
   raizes,
   lista,
   atual,
   computador,
+  ativos,
   aoEscolher,
 }: {
   raizes: UnidadeRascunho[]
   lista: UnidadeRascunho[]
   atual: string
   computador: string
+  ativos: string[]
   aoEscolher: (id: string) => void
 }) {
   const { t, tn } = useT()
@@ -516,7 +633,11 @@ function ListaEmpresas({
     <div className="flex min-w-0 flex-col gap-1 rounded-3xl border bg-muted/30 p-1.5">
       {raizes.map((e) => {
         const projetos = lista.filter((p) => p.pai === e.id).length
-        const aqui = rodaEm(e, lista, computador)
+        const aqui = rodaNoComputador(e, computador, ativos)
+        // a bolinha verde só quando roda mesmo neste computador: o projeto sem computador ativo aparece, mas não roda
+        const naLista = computadoresAtivos(e, ativos)
+        const deVerdade = naLista == null || naLista.includes(computador)
+        const comPasta = rodaEm(e, lista, computador)
         return (
           <button
             key={e.id}
@@ -532,7 +653,7 @@ function ListaEmpresas({
               aria-hidden
               className={cn(
                 "size-2 shrink-0 rounded-full bg-border",
-                ligada(e, lista) && aqui && "bg-ok ring-[3px] ring-ok/20"
+                ligada(e, lista) && deVerdade && comPasta && "bg-ok ring-[3px] ring-ok/20"
               )}
             />
             <span className="min-w-0 flex-1">
@@ -540,7 +661,9 @@ function ListaEmpresas({
               <span className="block truncate text-xs text-muted-foreground">
                 {!aqui
                   ? t("empresas.op.naoRodaAqui")
-                  : projetos
+                  : !comPasta
+                    ? t("empresas.op.semPasta")
+                    : projetos
                     ? tn("empresas.op.projetosQtd", projetos)
                     : t("empresas.op.semProjetos")}
               </span>
@@ -636,7 +759,7 @@ function LinhaProjeto({
           </span>
           <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:block">
             {conta}
-            {aqui ? "" : ` · ${t("empresas.op.naoRodaAqui").toLowerCase()}`}
+            {aqui ? "" : ` · ${t("empresas.op.semPasta").toLowerCase()}`}
           </span>
         </button>
         <Switch
@@ -679,53 +802,187 @@ function LinhaProjeto({
   )
 }
 
-/** Contas e pasta: o mesmo bloco na empresa e no projeto. */
+/** Em quais computadores o projeto roda. O subprojeto segue o projeto; com a nuvem antiga, a escolha não aparece. */
+function RodaEm({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
+  const { t } = useT()
+  if (u.pai || u.computadores === undefined) return null
+  const escolha = u.computadores
+  const todos = escolha === null
+  const ids = e.computadores.map((c) => c.id)
+  const aviso = todos
+    ? null
+    : !escolha.length
+      ? t("empresas.op.erroComputador", { nome: u.nome.trim() || t("empresas.op.novaEmpresa") })
+      : !escolha.some((c) => ids.includes(c))
+        ? t("empresas.op.semComputadorAtivo")
+        : null
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <Rotulo>{t("empresas.op.rodaEm")}</Rotulo>
+      <div className="flex flex-wrap gap-1.5">
+        <Toggle
+          variant="outline"
+          size="sm"
+          className={CHIP}
+          disabled={!e.pode}
+          pressed={todos}
+          onPressedChange={() => e.escolherComputadores(u, todos ? [e.computador] : null)}
+        >
+          {t("empresas.op.todos")}
+        </Toggle>
+        {e.computadores.map((c) => (
+          <Toggle
+            key={c.id}
+            variant="outline"
+            size="sm"
+            className={CHIP}
+            disabled={!e.pode}
+            pressed={!todos && escolha.includes(c.id)}
+            onPressedChange={() => e.escolherComputadores(u, alternarComputador(escolha, c.id, ids))}
+          >
+            <LaptopIcon />
+            {c.nome}
+          </Toggle>
+        ))}
+      </div>
+      <p className={cn("text-xs text-muted-foreground", aviso && "text-atencao")}>
+        {aviso ?? t(todos ? "empresas.op.rodaEmDicaTodos" : "empresas.op.rodaEmDica")}
+      </p>
+    </div>
+  )
+}
+
+/** A escolha das contas: cada linha já diz o estado, onde a conta está agora e os limites dela. */
+function EscolhaContas({ u, e, contas }: { u: UnidadeRascunho; e: Edicao; contas: Conta[] }) {
+  const agora = useAgora(15_000)
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-1.5 xl:grid-cols-2">
+      {contas.map((c) => (
+        <LinhaConta key={c.id} c={c} u={u} e={e} agora={agora} />
+      ))}
+    </div>
+  )
+}
+
+function LinhaConta({ c, u, e, agora }: { c: Conta; u: UnidadeRascunho; e: Edicao; agora: Date }) {
+  const { t, tn, idioma } = useT()
+  const { config } = useEstado()
+  const { atualizadoEm } = useDados()
+  const marcada = u.contas.includes(c.id)
+  const outras = e.lista
+    .filter((x) => x.id !== u.id && x.contas.includes(c.id))
+    .map((x) => rotuloUnidade(x, e.lista))
+  const onde = ondeEsta(c.id, e.computadores, e.trilhas, e.lista)
+  const sai = marcada ? saemDaConta(u, e.lista, e.antes, c.id, e.computadores) : []
+  // um aviso por computador, mesmo com a conta na principal e numa trilha dele
+  const parados = [
+    ...new Map(
+      onde
+        .filter((o) => {
+          const pc = e.computadores.find((x) => x.id === o.computadorId)
+          return !!pc && estadoComputador(pc, agora, atualizadoEm) === "parado"
+        })
+        .map((o) => [o.computadorId, o])
+    ).values(),
+  ]
+  const textoOnde = onde.length
+    ? onde
+        .map((o) =>
+          o.unidade
+            ? t("empresas.op.contaEmUnidade", { unidade: o.unidade, computador: o.computador })
+            : t("empresas.op.contaEmUsoEm", { computador: o.computador })
+        )
+        .join(" · ")
+    : t("empresas.op.contaLivre")
+  const barra = (pct: number | null, janela: "five_hour" | "seven_day") => {
+    const reset = resetDe(c, janela)
+    return (
+      <BarraUso
+        pct={pct}
+        cor={c.cor}
+        aviso={config.aviso}
+        troca={config.modo === "limite" ? undefined : config.troca}
+        alerta={config.aviso}
+        rotulo={t(`janela.${janela}`)}
+        detalhe={reset ? t("visao.emUso.renova", { quando: fmtFuturo(reset, agora, idioma) }) : undefined}
+        compacta
+      />
+    )
+  }
+  return (
+    <div
+      className={cn(
+        "relative flex min-w-0 items-start gap-2.5 rounded-xl border bg-card/60 p-3 transition-colors",
+        e.pode && "hover:bg-muted/40",
+        marcada && "border-primary/60 bg-primary/5"
+      )}
+    >
+      {/* a linha inteira marca a conta: a área de clique da caixa cobre a linha, e o conteúdo não pega o clique */}
+      <Checkbox
+        aria-label={c.email}
+        className="static mt-0.5 after:absolute after:inset-0 after:rounded-xl"
+        disabled={!e.pode}
+        checked={marcada}
+        onCheckedChange={() => e.marcarConta(u, c.id)}
+      />
+      <div className="pointer-events-none flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
+          <NomeConta conta={c} className="text-sm font-medium" />
+          <SeloEstado estado={estadoConta(c, config, agora)} />
+        </div>
+        <p className="text-xs [overflow-wrap:anywhere] text-muted-foreground">
+          {textoOnde}
+          {outras.length ? ` · ${t("empresas.op.contaMarcadaEm", { projetos: outras.join(", ") })}` : ""}
+        </p>
+        {/* uma barra por linha: com duas colunas de contas, lado a lado o nome do limite saía cortado */}
+        <div className="flex min-w-0 flex-col gap-2">
+          {barra(p5(c, agora), "five_hour")}
+          {barra(p7(c, agora), "seven_day")}
+          <BarraFable conta={c} agora={agora} comRotulo />
+        </div>
+        {parados.map((o) => (
+          <p key={o.computadorId} className="text-xs text-atencao">
+            {t("empresas.op.contaPresa", { computador: o.computador })}
+          </p>
+        ))}
+        {sai.length ? (
+          <p className="text-xs text-atencao">
+            {tn("empresas.op.contaSaiAoSalvar", sai.length, { computadores: sai.join(", ") })}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** Computadores, contas e pasta: o mesmo bloco no projeto e no subprojeto (que segue os computadores do projeto). */
 function Campos({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
   const { t } = useT()
   const contas = e.contas.filter((c) => !c.saiEm || u.contas.includes(c.id))
-  const chip =
-    "h-auto min-h-7 max-w-full justify-start rounded-full px-3 py-1 font-normal text-muted-foreground whitespace-normal hover:text-foreground aria-pressed:border-primary aria-pressed:bg-primary/15 aria-pressed:text-foreground data-[state=on]:border-primary data-[state=on]:bg-primary/15"
   return (
     <>
+      <RodaEm u={u} e={e} />
       <div className="flex min-w-0 flex-col gap-2">
         <Rotulo>{t("empresas.op.contas")}</Rotulo>
-        <div className="flex flex-wrap gap-1.5">
-          {u.pai ? (
+        {u.pai ? (
+          <div className="flex flex-wrap gap-1.5">
             <Toggle
               variant="outline"
               size="sm"
-              className={chip}
+              className={CHIP}
               disabled={!e.pode}
               pressed={u.contas.length === 0}
               onPressedChange={() => e.mudar(u.id, { contas: [] })}
             >
               {t("empresas.op.contaDaEmpresa")}
             </Toggle>
-          ) : null}
-          {contas.map((c) => {
-            const marcada = u.contas.includes(c.id)
-            const outras = marcada
-              ? e.lista.filter((x) => x.id !== u.id && x.contas.includes(c.id)).map((x) => x.nome)
-              : []
-            return (
-              <Toggle
-                key={c.id}
-                variant="outline"
-                size="sm"
-                className={chip}
-                disabled={!e.pode}
-                pressed={marcada}
-                onPressedChange={() => e.marcarConta(u, c.id)}
-              >
-                <NomeConta conta={c} />
-                {outras.length ? <span className="text-xs text-muted-foreground">· {outras.join(", ")}</span> : null}
-              </Toggle>
-            )
-          })}
-          {contas.length === 0 ? (
-            <span className="text-sm text-muted-foreground">{t("empresas.op.semContas")}</span>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
+        {contas.length ? (
+          <EscolhaContas u={u} e={e} contas={contas} />
+        ) : (
+          <span className="text-sm text-muted-foreground">{t("empresas.op.semContas")}</span>
+        )}
         <LinhaTroca u={u} e={e} />
       </div>
       <Pastas u={u} e={e} />
@@ -766,6 +1023,10 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
   const achadas = pastasEm(u, e.computador)
   const linhas = achadas.length ? achadas : [{ pasta: { computador: e.computador, padrao: "" }, indice: -1 }]
   const idLista = `pastas-${u.id}-${e.computador}`
+  const raiz = u.pai ? e.lista.find((x) => x.id === u.pai) : u
+  // "em todos" só faz sentido com o projeto em mais de um computador (ou numa regra que já é assim)
+  const naLista = raiz ? computadoresAtivos(raiz, e.computadores.map((c) => c.id)) : null
+  const variosComputadores = naLista == null || naLista.length > 1
   const titulos = u.titulos
     .map((regra, indice) => ({ regra, indice }))
     .filter(({ regra }) => regra.computador === null || regra.computador === e.computador)
@@ -788,7 +1049,7 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
         <div key={i} className="flex min-w-0 flex-wrap items-center gap-2.5">
           <Input
             aria-label={t("empresas.op.pasta")}
-            placeholder={t("empresas.op.naoRodaAqui")}
+            placeholder={t("empresas.pastas.padraoDicaPasta")}
             maxLength={300}
             list={idLista}
             disabled={!e.pode}
@@ -796,14 +1057,16 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
             onChange={(ev) => trocar(indice, { padrao: ev.target.value })}
             className="min-w-0 flex-[1_1_180px]"
           />
-          <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              disabled={!e.pode}
-              checked={pasta.computador === null}
-              onCheckedChange={(v) => trocar(indice, { computador: v === true ? null : e.computador })}
-            />
-            {t("empresas.op.emTodos")}
-          </label>
+          {variosComputadores || pasta.computador === null ? (
+            <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
+              <Checkbox
+                disabled={!e.pode}
+                checked={pasta.computador === null}
+                onCheckedChange={(v) => trocar(indice, { computador: v === true ? null : e.computador })}
+              />
+              {t("empresas.op.emTodos")}
+            </label>
+          ) : null}
           {achadas.length > 1 ? (
             <Button
               size="icon"
