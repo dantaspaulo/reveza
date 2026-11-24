@@ -84,6 +84,30 @@ const INTERACOES = [
     },
   ],
   [
+    // 0.20.2: o menu da coluna Projeto, com os projetos e subprojetos marcados para a conta
+    "i-contas-alocar",
+    "/contas",
+    async (p) => {
+      await p
+        .getByRole("button", { name: L("Alocar", "Assign") })
+        .first()
+        .click()
+    },
+  ],
+  [
+    // 0.20.2: alocar dali grava e a coluna mostra o projeto novo, com o aviso de que deu certo
+    "i-contas-alocado",
+    "/contas",
+    async (p) => {
+      await p
+        .getByRole("button", { name: L("Alocar", "Assign") })
+        .first()
+        .click()
+      await p.getByRole("menuitemcheckbox", { name: "Consultoria" }).click()
+      await p.getByText(L("agora está em Consultoria", "is now in Consultoria")).waitFor()
+    },
+  ],
+  [
     "i-contas-conectar",
     "/contas",
     async (p) => {

@@ -11,7 +11,10 @@ import {
   modoAlternado,
   ondeEsta,
   pastasEm,
+  planoDeAlocar,
   planoDeGravar,
+  projetosDaConta,
+  projetosEmTodos,
   rascunhoDe,
   rodaEm,
   rodaNoComputador,
@@ -339,5 +342,104 @@ describe("onde a conta está e quem perde a conta", () => {
     const so = [pc("pc3", "Velho", "a", true)]
     const novo = [u("e", { modo: "ligado", contas: ["a"] })]
     expect(saemDaConta(novo[0]!, novo, [], "a", so)).toEqual([])
+  })
+})
+
+describe("o projeto de cada conta na tela Contas (0.20.2)", () => {
+  const pc = (id: string, nome: string, contaId: string | null, revogado = false) => ({
+    id,
+    nome,
+    revogado,
+    atribuicao: contaId ? { contaId, motivo: "", decididoEm: "" } : null,
+  })
+  const pcs = [pc("pc1", "Mac", "a"), pc("pc2", "VPS", "b")]
+
+  it("lista os projetos em que a conta está marcada e onde cada um roda; o subprojeto roda onde o projeto roda", () => {
+    const lista = [
+      u("e", { nome: "Alfa", cor: 2, modo: "ligado", contas: ["a"], computadores: ["pc1"] }),
+      u("p", { nome: "Site", pai: "e", cor: 2, modo: null, contas: ["a"] }),
+      u("f", { nome: "Beta", contas: ["b"], computadores: null }),
+      u("g", { nome: "Gama", modo: "sombra", contas: ["a", "b"], computadores: null }),
+    ]
+    expect(projetosDaConta("a", lista, ["pc1", "pc2"])).toEqual([
+      { id: "e", nome: "Alfa", cor: 2, modo: "ligado", computadores: ["pc1"] },
+      { id: "p", nome: "Alfa / Site", cor: 2, modo: "ligado", computadores: ["pc1"] },
+      { id: "g", nome: "Gama", cor: 0, modo: "sombra", computadores: null },
+    ])
+  })
+
+  it("o subprojeto sem modo próprio mostra o modo do projeto, também em teste", () => {
+    const lista = [u("e", { modo: "sombra" }), u("p", { pai: "e", modo: null, contas: ["a"] })]
+    expect(projetosDaConta("a", lista, ["pc1"]).map((x) => x.modo)).toEqual(["sombra"])
+  })
+
+  it("computador removido não conta; com a nuvem antiga, não diz onde roda", () => {
+    const lista = [u("e", { contas: ["a"], computadores: ["pc1", "pc3"] }), u("v", { contas: ["a"] })]
+    expect(projetosDaConta("a", lista, ["pc1"]).map((x) => x.computadores)).toEqual([["pc1"], undefined])
+  })
+
+  it("conta sem marca não está em projeto nenhum, mesmo quando um subprojeto usa as contas do projeto", () => {
+    const lista = [u("e", { contas: ["b"] }), u("p", { pai: "e" })]
+    expect(projetosDaConta("a", lista, ["pc1"])).toEqual([])
+    expect(projetosDaConta("b", lista, ["pc1"]).map((x) => x.id)).toEqual(["e"])
+  })
+
+  it("alocar põe a conta no projeto sem mexer nas outras contas dele; tirar deixa as outras", () => {
+    expect(planoDeAlocar([u("e", { contas: ["b"] })], "e", "a", true, pcs)).toEqual({
+      contas: ["a", "b"],
+      erro: null,
+      saem: [],
+    })
+    expect(planoDeAlocar([u("e", { contas: ["a", "b"] })], "e", "a", false, pcs)).toEqual({
+      contas: ["b"],
+      erro: null,
+      saem: [],
+    })
+  })
+
+  it("nada a gravar quando a conta já está como a pessoa quer ou o projeto não existe mais", () => {
+    expect(planoDeAlocar([u("e", { contas: ["a"] })], "e", "a", true, pcs)).toBeNull()
+    expect(planoDeAlocar([u("e", { contas: ["b"] })], "e", "a", false, pcs)).toBeNull()
+    expect(planoDeAlocar([u("e", { contas: [] })], "x", "a", true, pcs)).toBeNull()
+  })
+
+  it("tirar a última conta de um projeto ligado é recusado antes de gravar", () => {
+    const lista = [u("e", { nome: "Alfa", modo: "ligado", contas: ["a"] })]
+    expect(planoDeAlocar(lista, "e", "a", false, pcs)?.erro).toEqual({ id: "e", chave: "erroConta", nome: "Alfa" })
+  })
+
+  it("tirar a última conta do projeto também é recusado quando um subprojeto ligado usa as contas dele", () => {
+    const lista = [u("e", { nome: "Alfa", contas: ["a"] }), u("p", { nome: "Site", pai: "e", modo: "ligado" })]
+    expect(planoDeAlocar(lista, "e", "a", false, pcs)?.erro).toEqual({ id: "p", chave: "erroConta", nome: "Site" })
+  })
+
+  it("avisa os projetos que ainda rodam em todos os computadores, só quando há mais de um computador", () => {
+    const lista = [u("e", { computadores: null }), u("f", { computadores: ["pc1"] }), u("p", { pai: "e" }), u("v")]
+    expect(projetosEmTodos(lista, ["pc1", "pc2"]).map((x) => x.id)).toEqual(["e"])
+    expect(projetosEmTodos(lista, ["pc1"])).toEqual([])
+  })
+
+  it("alocar num projeto ligado avisa qual computador sai da conta; num desligado, não", () => {
+    expect(planoDeAlocar([u("e", { modo: "ligado", contas: ["c"] })], "e", "a", true, pcs)?.saem).toEqual(["Mac"])
+    expect(planoDeAlocar([u("e", { modo: "desligado", contas: ["c"] })], "e", "a", true, pcs)?.saem).toEqual([])
+  })
+
+  it("o subprojeto não se aloca pela tela Contas: a herança das contas do projeto se mexe na tela de Projetos", () => {
+    const lista = [u("e", { contas: ["b"] }), u("p", { pai: "e" }), u("q", { pai: "e", contas: ["b"] })]
+    expect(planoDeAlocar(lista, "p", "a", true, pcs)).toBeNull()
+    expect(planoDeAlocar(lista, "q", "b", false, pcs)).toBeNull()
+  })
+
+  it("alocar no projeto desligado cujo subprojeto ligado usa as contas dele avisa o computador que sai da conta", () => {
+    const herda = [u("e", { modo: "desligado", contas: ["c"] }), u("p", { pai: "e", modo: "ligado" })]
+    expect(planoDeAlocar(herda, "e", "a", true, pcs)?.saem).toEqual(["Mac"])
+    // o subprojeto com contas próprias não herda: a conta nova do projeto não chega nele
+    const proprio = [u("e", { modo: "desligado", contas: ["c"] }), u("p", { pai: "e", modo: "ligado", contas: ["c"] })]
+    expect(planoDeAlocar(proprio, "e", "a", true, pcs)?.saem).toEqual([])
+  })
+
+  it("a conta que já estava num projeto ligado não faz computador nenhum sair de novo", () => {
+    const lista = [u("e", { modo: "ligado", contas: ["c"] }), u("f", { modo: "ligado", contas: ["a"] })]
+    expect(planoDeAlocar(lista, "e", "a", true, pcs)?.saem).toEqual([])
   })
 })

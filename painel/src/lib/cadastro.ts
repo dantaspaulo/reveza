@@ -151,6 +151,97 @@ export function saemDaConta(
   return computadores.filter((c) => !c.revogado && c.atribuicao?.contaId === contaId).map((c) => c.nome)
 }
 
+/** 0.20.2: o modo que vale de verdade. O subprojeto sem modo próprio segue o projeto, também em teste. */
+export function modoReal(u: UnidadeRascunho, lista: UnidadeRascunho[]): ModoUnidade {
+  if (ligada(u, lista)) return "ligado"
+  const modo = u.pai && u.modo === null ? lista.find((x) => x.id === u.pai)?.modo : u.modo
+  return modo === "sombra" ? "sombra" : "desligado"
+}
+
+export interface ProjetoDaConta {
+  id: string
+  nome: string
+  cor: number
+  modo: ModoUnidade
+  /** Os computadores ativos onde roda; null em todos; undefined com a nuvem antiga, que não sabe dizer. */
+  computadores: string[] | null | undefined
+}
+
+/**
+ * 0.20.2 (tela Contas, pedido do Paulo em 24/11/2026): os projetos e subprojetos em que a conta está marcada, com o
+ * modo e onde cada um roda. O subprojeto roda onde o projeto roda. Só a marca conta: o subprojeto sem conta própria usa
+ * as do projeto, mas a conta aparece uma vez, no projeto.
+ */
+export function projetosDaConta(contaId: string, lista: UnidadeRascunho[], ativos: string[]): ProjetoDaConta[] {
+  return lista
+    .filter((u) => u.contas.includes(contaId))
+    .map((u) => {
+      const dono = u.pai ? lista.find((x) => x.id === u.pai) : u
+      return {
+        id: u.id,
+        nome: nomeUnidade(u, lista),
+        cor: u.cor,
+        modo: modoReal(u, lista),
+        computadores: !dono || dono.computadores === undefined ? undefined : computadoresAtivos(dono, ativos),
+      }
+    })
+}
+
+export interface Alocacao {
+  /** As contas do projeto depois de gravar. */
+  contas: string[]
+  /** O que a tela de Projetos recusaria ao salvar (tirar a última conta de um projeto ligado, por exemplo). */
+  erro: ErroCadastro | null
+  /** Os computadores que saem desta conta ao gravar: ela passa a ser só do projeto ligado. */
+  saem: string[]
+}
+
+/** As contas que rodam em algum projeto ligado, contando a herança: o subprojeto sem conta própria usa as do projeto. */
+function contasEmLigado(lista: UnidadeRascunho[]): Set<string> {
+  const contas = new Set<string>()
+  for (const u of lista) if (ligada(u, lista)) for (const c of contasDe(u, lista)) contas.add(c)
+  return contas
+}
+
+/**
+ * 0.20.2 (tela Contas): pôr ou tirar uma conta de um projeto, conferido como a tela de Projetos confere. null quando não
+ * há o que gravar: a conta já está como a pessoa quer, o projeto saiu do cadastro ou é um subprojeto. O subprojeto fica
+ * na tela de Projetos, porque lá se vê a herança: sem conta própria ele usa as do projeto, e uma marca nele trocaria
+ * todas as contas herdadas por uma só.
+ */
+export function planoDeAlocar(
+  lista: UnidadeRascunho[],
+  unidadeId: string,
+  contaId: string,
+  marcar: boolean,
+  computadores: PcDaConta[]
+): Alocacao | null {
+  const u = lista.find((x) => x.id === unidadeId)
+  if (!u || u.pai || u.contas.includes(contaId) === marcar) return null
+  const contas = marcar ? [...u.contas, contaId].sort() : u.contas.filter((c) => c !== contaId)
+  const nova = { ...u, contas }
+  const depois = lista.map((x) => (x.id === u.id ? nova : x))
+  // sai da conta o computador cuja principal passa a rodar num projeto ligado, também pelo subprojeto que herda dele
+  const antes = contasEmLigado(lista)
+  const agora = contasEmLigado(depois)
+  const saem = computadores
+    .filter((c) => {
+      const principal = c.atribuicao?.contaId
+      return !c.revogado && principal != null && agora.has(principal) && !antes.has(principal)
+    })
+    .map((c) => c.nome)
+  return { contas, erro: validar(depois, [nova]), saem }
+}
+
+/**
+ * 0.20.2 (tela Projetos): os projetos que ainda rodam em todos os computadores, inclusive nos que entrarem depois (o
+ * cadastro de antes da 0.20.1 nasceu assim). Com um computador só, não há o que avisar.
+ */
+export function projetosEmTodos(lista: UnidadeRascunho[], ativos: string[]): UnidadeRascunho[] {
+  if (ativos.length < 2) return []
+  return lista.filter((u) => !u.pai && u.computadores === null)
+}
+
 /** Em teste (sombra) nada muda nas sessões: conta como desligada, e o projeto em teste segue a empresa. */
 export function ligada(u: UnidadeRascunho, lista: UnidadeRascunho[]): boolean {
   if (!u.pai) return u.modo === "ligado"

@@ -8,6 +8,8 @@ import {
   BanIcon,
   BrainCircuitIcon,
   CalendarClockIcon,
+  FolderKanbanIcon,
+  FolderPlusIcon,
   KeyRoundIcon,
   LifeBuoyIcon,
   LockIcon,
@@ -41,8 +43,10 @@ import {
 } from "@/components/ui/dialog"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -64,7 +68,7 @@ import { Slider } from "@/components/ui/slider"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useAcao, useAgora, useDados, useEstado, usePermissao } from "@/dados/contexto"
+import { useAcao, useAgora, useConsulta, useDados, useEstado, usePermissao } from "@/dados/contexto"
 import {
   estadoComputador,
   estadoConta,
@@ -78,19 +82,55 @@ import {
   p7,
   resetDe,
 } from "@/dados/derivados"
-import type { CamposConta } from "@/dados/fonte"
+import { ErroPainel, type CamposConta } from "@/dados/fonte"
 import type { Conta, Instantaneo } from "@/dados/tipos"
 import { useT } from "@/i18n"
+import {
+  planoDeAlocar,
+  projetosDaConta,
+  rascunhoDe,
+  type ErroCadastro,
+  type ProjetoDaConta as InfoProjeto,
+  type UnidadeRascunho,
+} from "@/lib/cadastro"
 import { N_CORES, corConta, indiceCor } from "@/lib/cores"
+import { comDemo } from "@/lib/demo"
+import { nomeUnidade } from "@/lib/empresas"
 import { fmtFuturo, fmtHora, fmtPct, fmtRelativo } from "@/lib/formato"
 import { planoSemana } from "@/lib/plano"
+import { Link } from "@/lib/rota"
 import { cn } from "@/lib/utils"
 import { bloqueioDaConta, bloqueioUsar, computadoresParaUsar, podeUsarEmAlgum, type BloqueioUsar } from "@/lib/usar-agora"
 import { useDialogo } from "@/hooks/use-dialogo"
 
+/** Pôr ou tirar uma conta de um projeto, esperando a confirmação quando algum computador sai da conta. */
+interface PedidoAlocar {
+  conta: Conta
+  unidade: UnidadeRascunho
+  marcar: boolean
+  /** Os computadores que a pessoa viu saindo da conta, na confirmação. */
+  saem: string[]
+}
+
+type Traduzir = ReturnType<typeof useT>["t"]
+
+/**
+ * O que a tela de Projetos recusaria ao salvar, dito para quem está na tela Contas: tirar a última conta de um projeto
+ * ligado tem texto próprio, com o nome de quem ficaria sem conta (pode ser um subprojeto que usa as contas do projeto).
+ */
+const textoDoErro = (erro: ErroCadastro, lista: UnidadeRascunho[], t: Traduzir) => {
+  const u = lista.find((x) => x.id === erro.id)
+  const nome = u ? nomeUnidade(u, lista) : (erro.nome ?? "")
+  return erro.chave === "erroConta"
+    ? t("contas.projeto.semConta", { nome })
+    : t(`empresas.op.${erro.chave}`, { nome, pasta: erro.pasta ?? "", dono: erro.dono ?? "" })
+}
+
 export default function Contas() {
-  const { t } = useT()
+  const { t, tn } = useT()
   const estado = useEstado()
+  const { fonte } = useDados()
+  const acao = useAcao()
   const agora = useAgora(15_000)
   const { pode } = usePermissao()
   const editar = useDialogo<Conta>()
@@ -98,6 +138,67 @@ export default function Contas() {
   const usar = useDialogo<Conta>()
   const remover = useDialogo<Conta>()
   const contas = [...estado.contas].sort((a, b) => a.prioridade - b.prioridade || a.email.localeCompare(b.email))
+
+  // 0.20.2 (pedido do Paulo, 24/11/2026): o projeto de cada conta no lugar da prioridade, lido como na tela de Projetos
+  const cadastro = useConsulta((f) => f.empresas(), [])
+  const lista = React.useMemo(() => (cadastro.dados ? rascunhoDe(cadastro.dados) : null), [cadastro.dados])
+  // nuvem de antes dos projetos: a coluna fica só com as regras, sem o Alocar
+  const semProjetos = cadastro.erro instanceof ErroPainel && cadastro.erro.codigo === "indisponivel"
+  const falhou = !lista && cadastro.erro !== null && !cadastro.carregando
+  const [pedido, setPedido] = React.useState<PedidoAlocar | null>(null)
+  const [gravando, setGravando] = React.useState(false)
+  const nomeDe = (u: UnidadeRascunho) => nomeUnidade(u, lista ?? [])
+
+  const gravar = async ({ conta, unidade, marcar, saem }: PedidoAlocar) => {
+    setGravando(true)
+    // a recusa volta como texto, fora do aviso de erro da ação (que troca texto com "network" pela falha genérica)
+    const [ok, recusa] = await acao(async (): Promise<string | null> => {
+      // lê de novo antes de gravar: a marca que outra pessoa pôs nesse meio tempo não volta ao valor antigo
+      const atual = rascunhoDe(await fonte.empresas())
+      // o projeto foi apagado nesse meio tempo: nada a gravar, e a pessoa fica sabendo
+      if (!atual.some((x) => x.id === unidade.id)) return t("contas.projeto.mudou")
+      const plano = planoDeAlocar(atual, unidade.id, conta.id, marcar, estado.computadores)
+      // já está como a pessoa pediu (outra pessoa fez o mesmo): o aviso de sucesso diz a verdade
+      if (!plano) return null
+      if (plano.erro) return textoDoErro(plano.erro, atual, t)
+      // outro computador passou a usar a conta depois da confirmação: a pessoa confere de novo
+      if (plano.saem.some((pc) => !saem.includes(pc))) return t("contas.projeto.mudou")
+      await fonte.salvarUnidades([{ ref: unidade.id, id: unidade.id, campos: { contas: plano.contas } }])
+      return null
+    })
+    setGravando(false)
+    cadastro.recarregar()
+    if (!ok) return
+    if (recusa) toast.error(recusa)
+    else
+      toast.success(
+        t(marcar ? "contas.projeto.alocada" : "contas.projeto.tirada", { conta: conta.email, projeto: nomeDe(unidade) })
+      )
+  }
+  const alocar = (conta: Conta, unidade: UnidadeRascunho, marcar: boolean) => {
+    if (!lista) return
+    const plano = planoDeAlocar(lista, unidade.id, conta.id, marcar, estado.computadores)
+    if (!plano) return
+    if (plano.erro) {
+      toast.error(textoDoErro(plano.erro, lista, t))
+      return
+    }
+    const p = { conta, unidade, marcar, saem: plano.saem }
+    if (plano.saem.length) setPedido(p)
+    else void gravar(p)
+  }
+  const projetoDa = (c: Conta) =>
+    semProjetos ? null : (
+      <ProjetoDaConta
+        conta={c}
+        lista={lista}
+        falhou={falhou}
+        // até a releitura chegar, o menu mostraria as marcas de antes de gravar
+        ocupado={gravando || cadastro.carregando}
+        aoAlocar={(u, marcar) => alocar(c, u, marcar)}
+        aoRepetir={cadastro.recarregar}
+      />
+    )
 
   return (
     <Pagina
@@ -137,7 +238,7 @@ export default function Contas() {
                   <TableHead>{t("contas.colunas.estado")}</TableHead>
                   <TableHead className="w-44">{t("contas.colunas.cinco")}</TableHead>
                   <TableHead className="w-44">{t("contas.colunas.semana")}</TableHead>
-                  <TableHead>{t("contas.colunas.regras")}</TableHead>
+                  <TableHead>{t("contas.colunas.projeto")}</TableHead>
                   <TableHead className="w-40 pr-4 text-right">
                     <span className="sr-only">{t("contas.colunas.acoes")}</span>
                   </TableHead>
@@ -161,8 +262,11 @@ export default function Contas() {
                         <BarraFable conta={c} agora={agora} />
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <Regras conta={c} estado={estado} />
+                    <TableCell className="max-w-64">
+                      <div className="flex min-w-0 flex-col gap-2">
+                        {projetoDa(c)}
+                        <Regras conta={c} estado={estado} />
+                      </div>
                     </TableCell>
                     <TableCell className="pr-4 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -199,6 +303,12 @@ export default function Contas() {
                   <Janela conta={c} tipo="five_hour" estado={estado} agora={agora} comRotulo />
                   <Janela conta={c} tipo="seven_day" estado={estado} agora={agora} comRotulo />
                   <BarraFable conta={c} agora={agora} comRotulo />
+                  {semProjetos ? null : (
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">{t("contas.colunas.projeto")}</span>
+                      {projetoDa(c)}
+                    </div>
+                  )}
                   <Regras conta={c} estado={estado} />
                   <BotaoUsar conta={c} estado={estado} aoUsar={() => usar.abrir(c)} className="self-start" />
                 </CardContent>
@@ -217,6 +327,22 @@ export default function Contas() {
       <DialogoLogin key={`login-${login.chave}`} aberto={login.aberto} conta={login.valor} aoFechar={login.fechar} />
       <DialogoUsarAgora key={`usar-${usar.chave}`} conta={usar.valor ?? null} aberto={usar.aberto} aoFechar={usar.fechar} />
       <RemoverConta key={`remover-${remover.chave}`} conta={remover.valor ?? null} aberto={remover.aberto} aoFechar={remover.fechar} />
+      <Confirmar
+        aberto={pedido !== null}
+        aoFechar={() => setPedido(null)}
+        titulo={pedido ? t("contas.projeto.sair.titulo", { conta: pedido.conta.email, projeto: nomeDe(pedido.unidade) }) : ""}
+        texto={
+          pedido
+            ? tn("contas.projeto.sair.texto", pedido.saem.length, {
+                projeto: nomeDe(pedido.unidade),
+                computadores: pedido.saem.join(", "),
+              })
+            : ""
+        }
+        botao={t("contas.projeto.sair.botao")}
+        botaoSegurar={t("contas.projeto.sair.botaoSegurar")}
+        aoConfirmar={() => (pedido ? gravar(pedido) : undefined)}
+      />
     </Pagina>
   )
 }
@@ -322,6 +448,8 @@ function Janela({
   )
 }
 
+// Desde a 0.20.2 a coluna mostra o projeto, e aqui ficam só as regras fora do padrão: a prioridade (que a ordem da
+// lista já mostra) e o "qualquer hora" saíram. A prioridade continua em Editar.
 function Regras({ conta, estado }: { conta: Conta; estado: Instantaneo }) {
   const { t, idioma } = useT()
   const { curtos } = useDias()
@@ -339,17 +467,14 @@ function Regras({ conta, estado }: { conta: Conta; estado: Instantaneo }) {
   if (conta.tetoSemana != null)
     itens.push({ icone: Settings2Icon, texto: t("contas.teto", { pct: fmtPct(conta.tetoSemana, idioma) }) })
   if (conta.modelo) itens.push({ icone: BrainCircuitIcon, texto: t("contas.modeloRegra", { modelo: conta.modelo }) })
-  itens.push({
-    icone: CalendarClockIcon,
-    texto: conta.agenda.length
-      ? conta.agenda.map((f) => resumoFaixa(f, curtos, t("contas.agenda.ate"))).join("; ")
-      : t("contas.agendaSempre"),
-  })
+  if (conta.agenda.length)
+    itens.push({
+      icone: CalendarClockIcon,
+      texto: conta.agenda.map((f) => resumoFaixa(f, curtos, t("contas.agenda.ate"))).join("; "),
+    })
+  if (!itens.length) return null
   return (
     <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-      <li className="text-foreground">
-        {t("contas.colunas.prioridade")} {conta.prioridade}
-      </li>
       {itens.map((it, i) => (
         <li key={i} className="flex items-center gap-1.5">
           <it.icone className="size-3 shrink-0" aria-hidden />
@@ -357,6 +482,106 @@ function Regras({ conta, estado }: { conta: Conta; estado: Instantaneo }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * Em que projetos a conta está (com onde roda e o modo) e o Alocar, que marca ou desmarca a conta num projeto ali mesmo
+ * (0.20.2, pedido do Paulo de 24/11/2026). A lista vem da mesma leitura da tela de Projetos; null enquanto lê. O menu
+ * traz só os projetos: o subprojeto aparece na coluna quando tem a conta, mas se mexe na tela de Projetos, onde se vê a
+ * herança das contas do projeto. A conta que está saindo do Reveza não se aloca (como no resto do painel).
+ */
+export function ProjetoDaConta({
+  conta,
+  lista,
+  falhou,
+  ocupado = false,
+  aoAlocar,
+  aoRepetir,
+}: {
+  conta: Conta
+  lista: UnidadeRascunho[] | null
+  falhou: boolean
+  ocupado?: boolean
+  aoAlocar: (unidade: UnidadeRascunho, marcar: boolean) => void
+  aoRepetir?: () => void
+}) {
+  const { t } = useT()
+  const estado = useEstado()
+  const { pode } = usePermissao()
+  if (!lista)
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <span>{t(falhou ? "contas.projeto.falhou" : "contas.projeto.lendo")}</span>
+        {falhou && aoRepetir ? (
+          <Button size="xs" variant="ghost" onClick={aoRepetir}>
+            {t("app.tentarDeNovo")}
+          </Button>
+        ) : null}
+      </div>
+    )
+  const raizes = lista.filter((u) => !u.pai)
+  const ativos = estado.computadores.filter((c) => !c.revogado)
+  const projetos = projetosDaConta(conta.id, lista, ativos.map((c) => c.id))
+  const onde = (p: InfoProjeto) => {
+    if (p.computadores === undefined) return ""
+    if (p.computadores === null) return t("contas.projeto.todos")
+    const nomes = p.computadores.map((id) => ativos.find((c) => c.id === id)?.nome).filter(Boolean)
+    return nomes.length ? nomes.join(", ") : t("contas.projeto.semComputador")
+  }
+  return (
+    <div className="flex min-w-0 flex-col items-start gap-1.5">
+      {projetos.length ? (
+        <ul className="flex w-full min-w-0 flex-col gap-1 text-sm">
+          {projetos.map((p) => (
+            <li key={p.id} className="flex min-w-0 flex-col">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <FolderKanbanIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="truncate">{p.nome}</span>
+              </span>
+              <span className="truncate pl-5 text-xs text-muted-foreground">
+                {[onde(p), t(`empresas.projetos.modo.${p.modo}`)].filter(Boolean).join(" · ")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <span className="text-xs text-muted-foreground">{t("contas.projeto.nenhum")}</span>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={!pode || ocupado || Boolean(conta.saiEm)}
+            aria-label={t("contas.projeto.alocarConta", { conta: conta.email })}
+          >
+            <FolderPlusIcon />
+            {t("contas.projeto.alocar")}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-60 max-w-80">
+          <DropdownMenuLabel className="break-words">{t("contas.projeto.alocarEm", { conta: conta.email })}</DropdownMenuLabel>
+          {raizes.length ? (
+            raizes.map((u) => (
+              <DropdownMenuCheckboxItem
+                key={u.id}
+                checked={u.contas.includes(conta.id)}
+                onCheckedChange={(marcar) => aoAlocar(u, marcar === true)}
+              >
+                <span className="truncate">{u.nome}</span>
+              </DropdownMenuCheckboxItem>
+            ))
+          ) : (
+            <DropdownMenuItem disabled>{t("contas.projeto.semProjetos")}</DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href={comDemo("/projetos")}>{t("contas.projeto.abrir")}</Link>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 

@@ -10,6 +10,7 @@ export default secao({
         adicionarComputador: "Adicionar computador",
         semComputador: "Adicione um computador primeiro",
         novaEmpresa: "Novo projeto",
+        novaEmpresaEm: "Novo projeto em {computador}",
         semEmpresa: "Nenhum projeto",
         novoProjeto: "Novo subprojeto",
         novoProjetoEm: "Novo subprojeto em {empresa}",
@@ -70,7 +71,8 @@ export default secao({
         erroComputador: "Escolha ao menos um computador para {nome}",
         rodaEm: "Roda em",
         rodaEmDica: "Nos outros computadores, este projeto não aparece.",
-        rodaEmDicaTodos: "Vale em todos os computadores, inclusive nos que você ligar depois.",
+        rodaEmDicaTodos:
+          "Vale em todos os computadores, inclusive nos que você ligar depois. Toque nos computadores em que ele deve rodar.",
         trazerDeOutro: "Trazer de outro computador",
         semProjetoAqui: "Nenhum projeto neste computador",
         semProjetoAquiTexto: "Crie um projeto aqui ou traga um que já roda em outro computador.",
@@ -283,6 +285,12 @@ export default secao({
         revezamentoUnidades: "Revezamento por projeto e subprojeto",
         ligadas: { um: "{n} ligado", outros: "{n} ligados" },
         emTeste: { um: "{n} em teste", outros: "{n} em teste" },
+        emTodosTitulo: {
+          um: "{n} projeto roda em todos os computadores",
+          outros: "{n} projetos rodam em todos os computadores",
+        },
+        emTodosTexto:
+          "{projetos}. Vale também nos computadores que você ligar depois. Para separar por computador, abra o projeto e escolha em \"Roda em\" onde ele roda.",
         atrasTitulo: "Computadores com o Reveza antigo",
         atrasTexto:
           "{computadores} ainda não entendem subprojeto desligado dentro de projeto ligado. Até atualizarem, as sessões de {empresas} giram junto com todas as contas nesses computadores.",
@@ -303,6 +311,7 @@ export default secao({
         adicionarComputador: "Add computer",
         semComputador: "Add a computer first",
         novaEmpresa: "New project",
+        novaEmpresaEm: "New project on {computador}",
         semEmpresa: "No projects",
         novoProjeto: "New subproject",
         novoProjetoEm: "New subproject in {empresa}",
@@ -363,7 +372,8 @@ export default secao({
         erroComputador: "Choose at least one computer for {nome}",
         rodaEm: "Runs on",
         rodaEmDica: "On other computers, this project doesn't show up.",
-        rodaEmDicaTodos: "Applies to every computer, including the ones you connect later.",
+        rodaEmDicaTodos:
+          "Applies to every computer, including the ones you connect later. Tap the computers it should run on.",
         trazerDeOutro: "Bring from another computer",
         semProjetoAqui: "No projects on this computer",
         semProjetoAquiTexto: "Create a project here or bring one that already runs on another computer.",
@@ -572,6 +582,12 @@ export default secao({
         revezamentoUnidades: "Rotation by project and subproject",
         ligadas: { um: "{n} on", outros: "{n} on" },
         emTeste: { um: "{n} testing", outros: "{n} testing" },
+        emTodosTitulo: {
+          um: "{n} project runs on every computer",
+          outros: "{n} projects run on every computer",
+        },
+        emTodosTexto:
+          "{projetos}. It also applies to computers you connect later. To split by computer, open the project and choose under \"Runs on\" where it runs.",
         atrasTitulo: "Computers with an older Reveza",
         atrasTexto:
           "{computadores} don't understand a subproject that is off inside a project that is on yet. Until they update, sessions of {empresas} rotate with all accounts on those computers.",

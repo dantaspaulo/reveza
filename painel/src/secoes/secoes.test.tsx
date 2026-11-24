@@ -247,6 +247,7 @@ import { DadosFixos } from "@/dados/contexto"
 import { FonteSupabase } from "@/dados/supabase"
 import type { Instantaneo } from "@/dados/tipos"
 import { I18nProvider } from "@/i18n"
+import type { UnidadeRascunho } from "@/lib/cadastro"
 import { pintarPorWorkspace } from "@/lib/cores"
 import { SECOES, type IdSecao } from "./rotas"
 
@@ -758,5 +759,132 @@ describe("Contas: a conta saindo do Reveza e o ritmo da semana (0.13.0)", () => 
     } finally {
       linhas.tabelas.contas = antes
     }
+  })
+})
+
+describe("Contas e Projetos: o projeto de cada conta e o projeto novo num computador (0.20.2, pedido do Paulo, 24/11/2026)", () => {
+  const un = (id: string, campos: Partial<UnidadeRascunho>): UnidadeRascunho => ({
+    id,
+    novo: false,
+    nome: id,
+    pai: null,
+    cor: 0,
+    modo: "desligado",
+    contas: [],
+    pastas: [],
+    titulos: [],
+    ...campos,
+  })
+
+  it("Contas: a coluna Projeto fica no lugar da prioridade, e as regras de fábrica não aparecem", async () => {
+    const { default: Tela } = await TELAS.contas()
+    const { html, erros } = await desenhar(Tela, fonte, estado)
+    expect(erros).toEqual([])
+    expect(html).toMatch(/<th[^>]*>Projeto<\/th>/)
+    expect(html).not.toMatch(/Prioridade \d+/)
+    expect(html).not.toContain(">Regras<")
+    expect(html).not.toContain("Qualquer hora")
+    // o cadastro chega depois de desenhar: a coluna diz que está lendo, na tabela e no cartão do celular das 6 contas
+    expect(html.match(/Lendo os projetos/g)).toHaveLength(12)
+  })
+
+  it("Contas: cada projeto da conta, onde roda e o modo, com o Alocar; a conta de fora diz que não está em nenhum", async () => {
+    const { ProjetoDaConta } = await import("./contas")
+    const lista = [
+      un("e1", { nome: "Escritório A", modo: "ligado", contas: ["c1"], computadores: ["pc1"] }),
+      un("e2", { nome: "Site", pai: "e1", modo: null, contas: ["c1"] }),
+      un("e3", { nome: "Escritório B", contas: ["c5"], computadores: null }),
+    ]
+    const conta = (id: string) => estado.contas.find((c) => c.id === id)!
+    const Tres = () => (
+      <>
+        <ProjetoDaConta conta={conta("c1")} lista={lista} falhou={false} aoAlocar={() => {}} />
+        <ProjetoDaConta conta={conta("c2")} lista={lista} falhou={false} aoAlocar={() => {}} />
+        <ProjetoDaConta conta={conta("c5")} lista={lista} falhou={false} aoAlocar={() => {}} />
+      </>
+    )
+    const { html, erros } = await desenhar(Tres, fonte, estado)
+    expect(erros).toEqual([])
+    expect(html).toContain(">Escritório A<")
+    expect(html).toContain(">Escritório A / Site<")
+    // o subprojeto roda onde o projeto roda
+    expect(html.match(/Mac mini · Ligado/g)).toHaveLength(2)
+    expect(html).toContain("todos os computadores · Desligado")
+    expect(html.match(/Em nenhum projeto/g)).toHaveLength(1)
+    expect(html.match(/>Alocar</g)).toHaveLength(3)
+  })
+
+  it("Contas: sem conseguir ler os projetos, diz isso, oferece tentar de novo e não oferece o Alocar", async () => {
+    const { ProjetoDaConta } = await import("./contas")
+    const Uma = () => (
+      <ProjetoDaConta conta={estado.contas[0]!} lista={null} falhou aoAlocar={() => {}} aoRepetir={() => {}} />
+    )
+    const { html, erros } = await desenhar(Uma, fonte, estado)
+    expect(erros).toEqual([])
+    expect(html).toContain("Não consegui ler os projetos")
+    expect(html).toContain(">Tentar de novo<")
+    expect(html).not.toContain(">Alocar<")
+  })
+
+  it("Contas: o Alocar diz de qual conta é e fica travado na conta que está saindo do Reveza", async () => {
+    const { ProjetoDaConta } = await import("./contas")
+    const conta = estado.contas[0]!
+    const lista = [un("e1", { nome: "Escritório A" })]
+    const botao = (html: string) => html.match(/<button[^>]*aria-label="Alocar [^"]*"[^>]*>/)?.[0] ?? ""
+    const Normal = () => <ProjetoDaConta conta={conta} lista={lista} falhou={false} aoAlocar={() => {}} />
+    const normal = await desenhar(Normal, fonte, estado)
+    expect(normal.erros).toEqual([])
+    expect(botao(normal.html)).toContain(`aria-label="Alocar ${conta.email}"`)
+    expect(botao(normal.html)).not.toContain('disabled=""')
+    const saindo = { ...conta, saiEm: "2026-11-24T12:00:00.000Z" }
+    const Saindo = () => <ProjetoDaConta conta={saindo} lista={lista} falhou={false} aoAlocar={() => {}} />
+    expect(botao((await desenhar(Saindo, fonte, estado)).html)).toContain('disabled=""')
+  })
+
+  it("Projetos: o botão diz em qual computador o projeto novo nasce", async () => {
+    const { default: Tela } = await TELAS.empresas()
+    const { html, erros } = await desenhar(Tela, fonte, estado)
+    expect(erros).toEqual([])
+    expect(html).toContain("Novo projeto em Mac mini")
+  })
+
+  it("Projetos: \"Todos\" só aparece, marcado e em destaque, no projeto que já roda em todos os computadores", async () => {
+    const { RodaEm } = await import("./empresas")
+    type Edicao = import("./empresas").Edicao
+    // só o que o "Roda em" usa da edição
+    const e = {
+      computador: "pc1",
+      computadores: estado.computadores.filter((c) => !c.revogado),
+      pode: true,
+      escolherComputadores: () => {},
+    } as unknown as Edicao
+    const Antigo = () => <RodaEm u={un("e1", { nome: "Antigo", computadores: null })} e={e} />
+    const antigo = await desenhar(Antigo, fonte, estado)
+    expect(antigo.erros).toEqual([])
+    expect(antigo.html).toMatch(/aria-pressed="true"[^>]*>Todos<\/button>/)
+    expect(antigo.html).toContain("Toque nos computadores em que ele deve rodar.")
+    expect(antigo.html).toMatch(/<p class="[^"]*text-atencao[^"]*">Vale em todos os computadores/)
+    const Novo = () => <RodaEm u={un("e2", { nome: "Novo", novo: true, computadores: ["pc1"] })} e={e} />
+    const novo = await desenhar(Novo, fonte, estado)
+    expect(novo.erros).toEqual([])
+    expect(novo.html).not.toContain(">Todos</button>")
+    expect(novo.html).toContain(">Mac mini</button>")
+  })
+
+  it("Projetos: o aviso diz quais projetos rodam em todos os computadores, e some com um computador só", async () => {
+    const { AvisoEmTodos } = await import("./empresas")
+    const lista = [
+      un("e1", { nome: "Escritório A", computadores: null }),
+      un("e2", { nome: "Site", pai: "e1", modo: null }),
+      un("e3", { nome: "Escritório B", computadores: ["pc1"] }),
+    ]
+    const Dois = () => <AvisoEmTodos lista={lista} ativos={["pc1", "pc2"]} />
+    const dois = await desenhar(Dois, fonte, estado)
+    expect(dois.erros).toEqual([])
+    expect(dois.html).toContain("1 projeto roda em todos os computadores")
+    expect(dois.html).toContain("Escritório A. Vale também nos computadores que você ligar depois.")
+    expect(dois.html).not.toContain("Escritório B")
+    const Um = () => <AvisoEmTodos lista={lista} ativos={["pc1"]} />
+    expect((await desenhar(Um, fonte, estado)).html).toBe("")
   })
 })

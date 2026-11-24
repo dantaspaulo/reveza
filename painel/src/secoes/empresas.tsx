@@ -49,6 +49,7 @@ import {
   ondeEsta,
   pastasEm,
   planoDeGravar,
+  projetosEmTodos,
   rascunhoDe,
   rodaEm,
   rodaNoComputador,
@@ -81,7 +82,7 @@ function sugestoesDe(dados: DadosEmpresas, sessoes: SessaoUso[] | null, computad
 }
 
 /** O que os campos de um projeto ou subprojeto precisam para ler e mudar o rascunho. */
-interface Edicao {
+export interface Edicao {
   lista: UnidadeRascunho[]
   contas: Conta[]
   computador: string
@@ -164,6 +165,12 @@ export default function Empresas() {
     setFoto(null)
     setAguardando(false)
   }, [dados, aguardando])
+
+  // 0.20.2 (pedido do Paulo, 24/11/2026): o botão diz em qual computador o projeto novo nasce (o da aba)
+  const rotuloNovo =
+    computador && dados?.computadoresNaNuvem !== false
+      ? t("empresas.op.novaEmpresaEm", { computador: computador.nome })
+      : t("empresas.op.novaEmpresa")
 
   const indisponivel = cadastro.erro instanceof ErroPainel && cadastro.erro.codigo === "indisponivel"
   if (indisponivel)
@@ -334,15 +341,16 @@ export default function Empresas() {
       acoes={
         <div className="flex flex-wrap items-center gap-1.5">
           {edicao && deFora.length ? <TrazerProjeto fora={deFora} pode={pode} aoTrazer={trazer} /> : null}
-          <Button size="sm" disabled={!pode || !edicao} onClick={novaEmpresa}>
+          <Button size="sm" className="max-w-full" disabled={!pode || !edicao} onClick={novaEmpresa}>
             <PlusIcon />
-            {t("empresas.op.novaEmpresa")}
+            <span className="truncate">{rotuloNovo}</span>
           </Button>
         </div>
       }
     >
       <AvisoPermissao />
       {dados ? <Avisos dados={dados} /> : null}
+      {dados ? <AvisoEmTodos lista={base} ativos={ativos} /> : null}
 
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
@@ -398,9 +406,9 @@ export default function Empresas() {
             </EmptyHeader>
             <EmptyContent>
               <div className="flex flex-wrap justify-center gap-1.5">
-                <Button size="sm" disabled={!pode} onClick={novaEmpresa}>
+                <Button size="sm" className="max-w-full" disabled={!pode} onClick={novaEmpresa}>
                   <PlusIcon />
-                  {t("empresas.op.novaEmpresa")}
+                  <span className="truncate">{rotuloNovo}</span>
                 </Button>
                 {deFora.length ? <TrazerProjeto fora={deFora} pode={pode} aoTrazer={trazer} /> : null}
               </div>
@@ -521,6 +529,26 @@ function rotuloModo(u: UnidadeRascunho, lista: UnidadeRascunho[], t: Traduzir): 
 
 function Rotulo({ children }: { children: React.ReactNode }) {
   return <span className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">{children}</span>
+}
+
+/**
+ * Projeto salvo para rodar em todos os computadores (o que veio de antes da 0.20.1): vale também no computador que for
+ * ligado depois. O aviso diz quais são e como separar (0.20.2, pedido do Paulo de 24/11/2026). Com um computador só,
+ * "todos" é ele, e não há o que separar.
+ */
+export function AvisoEmTodos({ lista, ativos }: { lista: UnidadeRascunho[]; ativos: string[] }) {
+  const { t, tn } = useT()
+  const emTodos = projetosEmTodos(lista, ativos)
+  if (!emTodos.length) return null
+  return (
+    <Alert>
+      <InfoIcon />
+      <AlertTitle>{tn("empresas.projetos.emTodosTitulo", emTodos.length)}</AlertTitle>
+      <AlertDescription>
+        {t("empresas.projetos.emTodosTexto", { projetos: emTodos.map((u) => rotuloUnidade(u, lista)).join(", ") })}
+      </AlertDescription>
+    </Alert>
+  )
 }
 
 /** Só aparece quando há o que dizer: computador atrasado e o que o modo teste faria. */
@@ -803,7 +831,7 @@ function LinhaProjeto({
 }
 
 /** Em quais computadores o projeto roda. O subprojeto segue o projeto; com a nuvem antiga, a escolha não aparece. */
-function RodaEm({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
+export function RodaEm({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
   const { t } = useT()
   if (u.pai || u.computadores === undefined) return null
   const escolha = u.computadores
@@ -820,16 +848,20 @@ function RodaEm({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
     <div className="flex min-w-0 flex-col gap-2">
       <Rotulo>{t("empresas.op.rodaEm")}</Rotulo>
       <div className="flex flex-wrap gap-1.5">
-        <Toggle
-          variant="outline"
-          size="sm"
-          className={CHIP}
-          disabled={!e.pode}
-          pressed={todos}
-          onPressedChange={() => e.escolherComputadores(u, todos ? [e.computador] : null)}
-        >
-          {t("empresas.op.todos")}
-        </Toggle>
+        {/* 0.20.2 (pedido do Paulo, 24/11/2026): projeto roda por computador. "Todos" só aparece, marcado, no projeto
+            que já rodava em todos, para mostrar o que vale hoje; tocar nele deixa só este computador */}
+        {todos ? (
+          <Toggle
+            variant="outline"
+            size="sm"
+            className={CHIP}
+            disabled={!e.pode}
+            pressed
+            onPressedChange={() => e.escolherComputadores(u, [e.computador])}
+          >
+            {t("empresas.op.todos")}
+          </Toggle>
+        ) : null}
         {e.computadores.map((c) => (
           <Toggle
             key={c.id}
@@ -845,7 +877,7 @@ function RodaEm({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
           </Toggle>
         ))}
       </div>
-      <p className={cn("text-xs text-muted-foreground", aviso && "text-atencao")}>
+      <p className={cn("text-xs text-muted-foreground", (aviso || todos) && "text-atencao")}>
         {aviso ?? t(todos ? "empresas.op.rodaEmDicaTodos" : "empresas.op.rodaEmDica")}
       </p>
     </div>
