@@ -861,6 +861,75 @@ describe("trilhas no agente", () => {
     assert.equal(gravou, 1, "uma gravação, a do processo anotado");
   });
 
+  test("plano B versão 2: a renovação do ciclo no meio da pergunta de novo não apaga a trava que ela pediu", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    nuvemFalsa.recusarTrava = true;
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/);
+    nuvemFalsa.recusarTrava = false;
+    await m.agente.busca();
+    // a nuvem grava a lista da trava da pergunta de novo, e a resposta demora a voltar
+    const segurar = nuvemFalsa.segurarPrincipal.bind(nuvemFalsa);
+    let soltar: (() => void) | null = null;
+    let segurando = false;
+    nuvemFalsa.segurarPrincipal = async (empresas: string[]) => {
+      const r = await segurar(empresas);
+      if (empresas.includes(E1) && !segurando) {
+        segurando = true;
+        await new Promise<void>((ok) => (soltar = ok));
+      }
+      return r;
+    };
+    const pergunta = deNovo(cwd);
+    for (let i = 0; i < 200 && !soltar; i++) await new Promise((ok) => setImmediate(ok));
+    assert.ok(soltar, "a pergunta de novo pediu a trava");
+    // o ciclo de 5 s renova a trava enquanto a resposta não volta
+    const ciclo = m.agente.trilhas!.segurarPrincipal();
+    for (let i = 0; i < 20; i++) await new Promise((ok) => setImmediate(ok));
+    (soltar as unknown as () => void)();
+    assert.equal((await pergunta).certa, true);
+    await ciclo;
+    const ultima = fns("segurarPrincipal").at(-1)?.args as string[][];
+    assert.ok(ultima[0]!.includes(E1), `a última lista que chegou à nuvem segura o projeto: ${JSON.stringify(ultima)}`);
+  });
+
+  test("plano B versão 2: a chamada à nuvem que não volta segura a fila da trava por 20 s, não para sempre", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    nuvemFalsa.recusarTrava = true;
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/);
+    nuvemFalsa.recusarTrava = false;
+    await m.agente.busca();
+    assert.equal((await deNovo(cwd)).certa, true, "a sessão segura a conta em uso");
+    // a próxima chamada à nuvem nunca volta (a conexão ficou pendurada)
+    const segurar = nuvemFalsa.segurarPrincipal.bind(nuvemFalsa);
+    let chamadas = 0;
+    nuvemFalsa.segurarPrincipal = async (empresas: string[]) => {
+      if (chamadas++ === 0) return new Promise<never>(() => undefined);
+      return segurar(empresas);
+    };
+    const tr = m.agente.trilhas!;
+    void tr.segurarPrincipal();
+    const segunda = tr.segurarPrincipal();
+    for (let i = 0; i < 20; i++) await new Promise((ok) => setImmediate(ok));
+    assert.equal(chamadas, 1, "uma chamada por vez: a segunda espera a primeira");
+    await m.relogio.avancar(20_000);
+    const r = await Promise.race([segunda, new Promise((ok) => setTimeout(() => ok("presa"), 2_000))]);
+    assert.deepEqual(r, [E1], "passados 20 s, a segunda vai à nuvem e renova a trava");
+  });
+
   test("plano B versão 2 (regra 5): a pergunta de novo aproveita a busca na nuvem de menos de 10 s", async () => {
     await preparar();
     const cwd = await esperando();

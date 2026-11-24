@@ -50,6 +50,8 @@ const PEDIR_TRAVA_MS = 3_000;
 const TRAVA_CONFIRMADA_S = 150;
 /** A pergunta de novo da espera aproveita a busca na nuvem que terminou há menos que isto (plano B versão 2, regra 5). */
 const BUSCA_RECENTE_S = 10;
+/** A chamada à trava da conta em uso que não volta segura a próxima até isto (a fila das chamadas, regra 5). */
+const FILA_TRAVA_MS = 20_000;
 const TRAVA_PEDIDA_S = 120;
 /** O login que as sessões renovaram na trilha sobe ao cofre no máximo uma vez por este tempo. */
 export const SUBIR_TRILHA_S = 60;
@@ -205,6 +207,8 @@ export class Trilhas {
   private seguraNaNuvem = false;
   /** Quando terminou a última busca na nuvem (plano B versão 2, regra 5). */
   private buscaFimEm = 0;
+  /** A chamada à trava da conta em uso que está em voo: a próxima espera ela terminar. */
+  private filaTrava: Promise<unknown> = Promise.resolve();
 
   constructor(private d: DepsTrilhas) {}
 
@@ -385,12 +389,20 @@ export class Trilhas {
       t.pids = t.pids.filter((p) => p !== pid);
       if (this.principalServe(emp.id) && deNovo) {
         // plano B versão 2 (regras 1 e 5): na pergunta de novo, só a trava confirmada tira da espera, e só ela anota o
-        // processo (e grava). Recusada, ou sem resposta a tempo, nada muda: a próxima pergunta vem em 15 s
-        const seguras = await this.noPrazo(this.segurarPrincipal([emp.id]), PEDIR_TRAVA_MS);
-        if (seguras?.includes(emp.id)) {
-          if (pid !== null) this.anotarPrincipal(emp.id, pid);
-          return { ok: true, trilha: null, certa: true };
+        // processo (e grava). Recusada, ou sem resposta a tempo, nada muda: a próxima pergunta vem em 15 s. A unidade
+        // entra na trava pedida antes da chamada: a renovação do ciclo que rodar junto também a leva, e a nuvem, que
+        // guarda a última lista que chega, não perde a trava
+        const tinha = this.travaPedida.has(emp.id);
+        if (!tinha) this.travaPedida.set(emp.id, this.agora() + TRAVA_PEDIDA_S);
+        let certa = false;
+        try {
+          const seguras = await this.noPrazo(this.segurarPrincipal(), PEDIR_TRAVA_MS);
+          certa = !!seguras?.includes(emp.id);
+          if (certa && pid !== null) this.anotarPrincipal(emp.id, pid);
+        } finally {
+          if (!tinha) this.travaPedida.delete(emp.id);
         }
+        if (certa) return { ok: true, trilha: null, certa: true };
       } else if (this.principalServe(emp.id)) {
         // a sessão vai seguir este login: a nuvem precisa confirmar antes, para a principal não trocar com ela aberta
         if (pid !== null) this.anotarPrincipal(emp.id, pid);
@@ -578,14 +590,28 @@ export class Trilhas {
 
   /**
    * Renova na nuvem a trava da conta em uso e devolve as unidades que ela confirmou. Null: nada a pedir ou sem resposta
-   * (a trava antiga vale até vencer, e a busca seguinte tenta de novo). `mais`: unidades que pedem a trava antes de ter
-   * processo anotado (a pergunta de novo da espera).
+   * (a trava antiga vale até vencer, e a busca seguinte tenta de novo). Uma chamada por vez: a nuvem guarda a última
+   * lista que chega, e duas em voo, montadas em momentos diferentes, podiam se desfazer.
    */
-  async segurarPrincipal(mais: string[] = []): Promise<string[] | null> {
+  segurarPrincipal(): Promise<string[] | null> {
+    const antes = this.filaTrava;
+    // a chamada que não volta (conexão pendurada) segura a fila só até o prazo: depois, a próxima vai assim mesmo
+    const vez = new Promise<void>((ok) => {
+      const prazo = this.d.relogio.agendar(ok, FILA_TRAVA_MS);
+      void antes.then(() => {
+        prazo.cancelar();
+        ok();
+      });
+    }).then(() => this.segurarAgora());
+    this.filaTrava = vez.catch(() => undefined);
+    return vez;
+  }
+
+  private async segurarAgora(): Promise<string[] | null> {
     const agora = this.agora();
     for (const [id, ate] of this.travaPedida) if (ate <= agora) this.travaPedida.delete(id);
     const presas = this.naPrincipal();
-    const ids = [...new Set([...presas, ...this.travaPedida.keys(), ...mais])].slice(0, 50);
+    const ids = [...new Set([...presas, ...this.travaPedida.keys()])].slice(0, 50);
     const nuvem = this.d.nuvem();
     if (!nuvem || this.d.sombra) return null;
     if (!ids.length) {

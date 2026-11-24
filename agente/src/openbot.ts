@@ -137,18 +137,25 @@ export class OpenBotLocal implements OpenBot {
     }
   }
 
+  /**
+   * Os agentes do banco do OpenBot. Sem o banco, não há OpenBot aqui: lista vazia. A leitura que falha (banco trancado,
+   * consulta que não roda depois de uma atualização dele, saída fora do JSON) lança: a lista vazia diria "nenhum agente"
+   * e tiraria a pasta de um agente do projeto dele (plano B versão 2, regra 1).
+   */
   agentes(): AgenteOpenBot[] {
+    if (!fs.existsSync(this.locais.banco)) return [];
+    const saida = execFileSync(this.sqlite, ["-readonly", "-bail", "-json", "-cmd", ".timeout 2000", this.locais.banco, CONSULTA_AGENTES], {
+      encoding: "utf8",
+      timeout: 8000,
+      maxBuffer: 4 << 20,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
     try {
-      const saida = execFileSync(this.sqlite, ["-readonly", "-bail", "-json", "-cmd", ".timeout 2000", this.locais.banco, CONSULTA_AGENTES], {
-        encoding: "utf8",
-        timeout: 8000,
-        maxBuffer: 4 << 20,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      return agentesDaSaida(saida);
+      if (!Array.isArray(JSON.parse(saida || "[]"))) throw new Error("não é lista");
     } catch {
-      return [];
+      throw new Error("a leitura dos agentes do OpenBot não veio em JSON");
     }
+    return agentesDaSaida(saida);
   }
 
   async continuar(agente: string, texto: string, chave: string): Promise<number> {

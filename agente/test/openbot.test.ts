@@ -112,6 +112,32 @@ describe("OpenBot", () => {
       fs.rmSync(d, { recursive: true, force: true });
     }
   });
+
+  test("plano B versão 2 (regra 1): a leitura dos agentes que falha avisa com erro, em vez de dizer que não há agente", { skip: !fs.existsSync(SQLITE) || process.platform === "win32" }, () => {
+    const d = pasta();
+    const exec = { rodar: async () => ({ codigo: 0, saida: "", erro: "" }), iniciar: () => { throw new Error(); } };
+    try {
+      const banco = path.join(d, "openbot.db");
+      // sem o banco, não há OpenBot neste computador: a lista vazia é a resposta certa
+      assert.deepEqual(new OpenBotLocal({ banco, comando: "/x" }, exec).agentes(), []);
+      // o banco sem a tabela (o OpenBot mudou o esquema numa atualização): a consulta falha
+      execFileSync(SQLITE, [banco, "CREATE TABLE outra (x TEXT);"]);
+      assert.throws(() => new OpenBotLocal({ banco, comando: "/x" }, exec).agentes());
+      execFileSync(SQLITE, [banco, "CREATE TABLE projection_agents (agent_id TEXT, agent_json TEXT);"]);
+      assert.deepEqual(new OpenBotLocal({ banco, comando: "/x" }, exec).agentes(), [], "a tabela sem agentes: lista vazia de verdade");
+      execFileSync(SQLITE, [banco, `INSERT INTO projection_agents VALUES ('a1', '{"workspacePath":"/x/a1","name":"Um","title":"Projeto"}');`]);
+      assert.deepEqual(new OpenBotLocal({ banco, comando: "/x" }, exec).agentes(), [{ pasta: "/x/a1", nome: "Um", titulo: "Projeto" }]);
+      // um sqlite3 que responde fora do JSON (outra versão, uma mensagem no lugar da saída)
+      const torto = path.join(d, "sqlite3-torto");
+      fs.writeFileSync(torto, "#!/bin/sh\necho 'Error: database is locked'\n", { mode: 0o755 });
+      assert.throws(() => new OpenBotLocal({ banco, comando: "/x" }, exec, process.execPath, torto).agentes());
+      const parado = path.join(d, "sqlite3-parado");
+      fs.writeFileSync(parado, "#!/bin/sh\nexit 5\n", { mode: 0o755 });
+      assert.throws(() => new OpenBotLocal({ banco, comando: "/x" }, exec, process.execPath, parado).agentes());
+    } finally {
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("as conversas do OpenBot carregam o mod? (0.16.4)", () => {
