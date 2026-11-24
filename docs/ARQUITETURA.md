@@ -250,8 +250,13 @@ desfaz os passos anteriores, e o projeto novo acha a empresa nova pelo `ref` pro
   mais, sem ter renovado (reset no futuro ou desconhecido). A conta em uso esgotada não serve à sessão nova de projeto
   (`Trilhas.principalServe`, na primeira pergunta, na de novo e na retomada): a sessão espera. Quem já segura a conta em
   uso segue segurando (`naPrincipal` usa `ativaServe`, sem o teste), porque trocar levaria a sessão aberta junto. `reveza
-  trocar` (sem nuvem ou com `--local`) recusa a conta esgotada. A troca pela API e a trilha nova sem conta abaixo de 100
-  ficam para a 0.21.1.
+  trocar` (sem nuvem ou com `--local`) recusa a conta esgotada. A troca pela API, a trilha nova sem conta abaixo de 100
+  e a trilha que já tem uma conta esgotada (ela é devolvida sem o teste) ficam para a 0.21.1.
+- **Quem segura a conta em uso (revisão da 0.21.0):** o processo fica em `pidsPrincipal` só quando a resposta desta
+  pergunta o pôs lá (a principal com a trava). A mesma pergunta pode chegar de novo (a resposta que passa dos 20 s da
+  ponte se perde e o lançador repete): a resposta seguinte que abre na trilha, espera ou abre sem trava o solta
+  (`Trilhas.pedir`, por `largarPrincipal`). O comando que não conversa vai com `--sem-conversa` e sem o processo:
+  `Trilhas.semConversa` responde pela trilha que já tem conta que vale, ou pela principal, sem busca, trava nem gravação.
 - **Retomada (`Trilhas.retomada`):** a regra vale pela pasta, mesmo para a sessão que parou no login da principal. Ela
   volta na trilha, na principal se a conta em uso é da unidade (o processo entra na trava) ou espera na fila, e a fila
   mantém a trilha pedida. Depois de religar, sem as regras lidas, a retomada espera.

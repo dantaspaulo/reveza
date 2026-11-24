@@ -46,7 +46,9 @@ teste, o CHANGELOG ou a release.
   três listas (`COMANDOS_SEM_CONVERSA`, `COMANDOS_DE_CONTA`, `COMANDOS_COM_CONVERSA`), e o teste de classificação lê o
   `claude --help`. As chamadas a `agente_segurar_principal` vão uma por vez, porque a nuvem guarda a última lista. A
   conta esgotada (`decisao.esgotada`, o mesmo teste do `painel_trocar_agora`) não recebe sessão nova, mas quem já a
-  segura segue segurando.
+  segura segue segurando. O processo só fica na trava da conta em uso quando a resposta daquela pergunta o pôs lá
+  (`largarPrincipal`, em `Trilhas.pedir`: a mesma sessão pode perguntar duas vezes), e o comando que não conversa vai
+  com `--sem-conversa` (`Trilhas.semConversa`: sem busca, trava nem gravação).
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

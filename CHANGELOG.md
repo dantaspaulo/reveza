@@ -10,7 +10,8 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 ## 0.21.0 · 24/11/2026
 
 Melhoria para quem separa as contas por projeto: a conversa de um projeto sem conta livre espera a conta dele em vez de
-falhar, e a conta esgotada não recebe conversa nova. Mudam o agente e o lançador; a nuvem e o painel só sobem de número.
+falhar, e a conta em uso do computador, quando esgotada, não recebe conversa nova de projeto. Mudam o agente e o
+lançador; a nuvem e o painel só sobem de número.
 
 ### O que muda para quem usa projetos
 
@@ -21,11 +22,13 @@ falhar, e a conta esgotada não recebe conversa nova. Mudam o agente e o lançad
 - **Só uma resposta certa tira da espera:** a pasta de login do projeto, ou a confirmação de que a conta em uso no
   computador é do projeto e ficou presa a ele. Erro, agente sem responder ou resposta sem certeza não abrem a conversa em
   outra conta: a espera continua.
-- **A conta esgotada fica de fora.** Esgotada é a conta com uma janela que decide a troca (a de 5 horas ou uma das
-  semanais que decidem) em 100% e ainda sem renovar, o mesmo critério do Trocar agora do painel. A conversa nova de
-  projeto não abre nela, e `reveza trocar` (sem nuvem ou com `--local`) recusa trocar para ela. Quem já está numa conta
-  que encheu fica até a troca: nada derruba conversa aberta.
-- **Comando que não conversa não segura conta:** `--version`, `doctor`, `mcp`, `config` e afins rodam sem esperar.
+- **A conta em uso esgotada fica de fora.** Esgotada é a conta com uma janela que decide a troca (a de 5 horas ou uma
+  das semanais que decidem) em 100% e ainda sem renovar, o mesmo critério do Trocar agora do painel. Quando é a conta
+  em uso do computador, a conversa nova de projeto não abre nela e espera, e `reveza trocar` (sem nuvem ou com
+  `--local`) recusa trocar para qualquer conta esgotada. Quem já está numa conta que encheu fica até a troca: nada
+  derruba conversa aberta. A conta da própria trilha do projeto ainda não passa por esse teste (fica para a 0.21.1).
+- **Comando que não conversa não segura conta:** `--version`, `doctor`, `mcp`, `config` e afins rodam sem esperar: o
+  agente responde pelo que já sabe, sem pedir conta à nuvem nem marcar a trilha como pedida.
   `auth` e `setup-token` abertos numa pasta de projeto usam o login normal do computador, não a pasta de login do
   projeto. `agents`, `attach`, `respawn`, `ultrareview` e `gateway` contam como conversa.
 - **O lançador novo entra sem atrapalhar quem espera:** a instalação grava o arquivo novo ao lado e troca de uma vez, e
@@ -38,11 +41,13 @@ falhar, e a conta esgotada não recebe conversa nova. Mudam o agente e o lançad
 - A falha ao ler os agentes do OpenBot não vira mais uma lista vazia: o agente mantém a última lista e tenta de novo em
   30 segundos.
 - O roteiro de testes do agente para quando o filtro não acha nenhum teste compilado, em vez de passar sem rodar nada.
+- A conversa que perguntou duas vezes (a primeira resposta passou do prazo) e abriu na trilha não segura mais a conta
+  em uso do computador pela vida toda.
 
 ### Fica para a 0.21.1
 
-- A troca pela API e a escolha da conta de uma trilha nova também vão recusar a conta esgotada (uma mudança na nuvem,
-  com o cuidado do projeto sem transbordo).
+- A troca pela API, a escolha da conta de uma trilha nova e a trilha que já tem conta também vão recusar a conta
+  esgotada (uma mudança na nuvem, com o cuidado do projeto sem transbordo).
 - A espera do lançador no Windows.
 
 ## 0.20.2 · 24/11/2026
