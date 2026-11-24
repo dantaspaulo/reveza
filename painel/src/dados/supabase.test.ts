@@ -50,6 +50,13 @@ describe("FonteSupabase (partes puras)", () => {
     }
   })
 
+  it("as recusas de troca da nuvem mostram o motivo específico", () => {
+    expect(codigoDoErro("conta esgotada: espere a janela renovar")).toBe("conta_esgotada")
+    expect(codigoDoErro("a conta é só de empresas separadas ou está na trilha de uma empresa")).toBe("conta_reservada")
+    expect(codigoDoErro("uma sessão de empresa ou projeto está rodando na conta em uso: feche essa sessão antes de trocar"))
+      .toBe("conta_segurada")
+  })
+
   it("chaves de configuração e padrões iguais aos do banco", () => {
     expect(Object.values(CHAVES_CONFIG).sort()).toEqual(
       [
