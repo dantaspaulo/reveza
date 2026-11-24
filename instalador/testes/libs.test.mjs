@@ -212,6 +212,9 @@ test("arquivos locais: configuração mescla no estado, instalação não guarda
   } finally { limpar(); }
 });
 
+/** O shell dos testes do lançador: REVEZA_TESTE_SH=/bin/dash roda os mesmos casos no dash (o /bin/sh do Linux). */
+const SH_DO_TESTE = process.env.REVEZA_TESTE_SH || "/bin/sh";
+
 test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com ela pede a trilha; não pergunta duas vezes nem abre a si mesmo", { skip: process.platform === "win32" }, () => {
   const { d, limpar } = pasta();
   try {
@@ -226,7 +229,7 @@ test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com e
     const arq = criarLancadorClaude(path.join(d, "lancador"), cli, process.execPath);
     assert.ok(statSync(arq).mode & 0o100);
     const env = { PATH: `${path.join(d, "lancador")}:${bin}:/usr/bin:/bin`, HOME: d };
-    const rodar = (extra = {}) => spawnSync("/bin/sh", [arq, "-p", "oi"], { cwd: d, env: { ...env, ...extra }, encoding: "utf8" });
+    const rodar = (extra = {}) => spawnSync(SH_DO_TESTE, [arq, "-p", "oi"], { cwd: d, env: { ...env, ...extra }, encoding: "utf8", timeout: 20_000 });
 
     let r = rodar();
     assert.equal(r.status, 0, r.stderr);
@@ -255,9 +258,10 @@ test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com e
     assert.equal(r.status, 78);
     assert.equal(r.stdout, "", "o assistente não abriu");
     assert.match(r.stderr, /^reveza: Alfa: a conta está em uso\n$/);
-    // o comando que não abre conversa não fica preso à conta da empresa
+    // o comando que não abre conversa não fica preso à conta da empresa (com a espera desligada e um teto, a volta do
+    // defeito falha aqui na hora, em vez de prender a bateria 12 min)
     for (const args of [["--version"], ["auth", "status"], ["doctor"]]) {
-      r = spawnSync("/bin/sh", [arq, ...args], { cwd: d, env, encoding: "utf8" });
+      r = spawnSync(SH_DO_TESTE, [arq, ...args], { cwd: d, env: { ...env, REVEZA_ESPERA_S: "0" }, encoding: "utf8", timeout: 20_000 });
       assert.equal(r.status, 0, r.stderr);
       assert.equal(r.stdout.trim(), `dir= trilha= args=${args.join(" ")}`);
     }
@@ -271,13 +275,13 @@ test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com e
  * também tenta ler a entrada, para provar que a pergunta não come a primeira mensagem do SDK. REVEZA_TESTE_SH troca o
  * shell (o /bin/sh do Linux é o dash: REVEZA_TESTE_SH=/bin/dash roda os mesmos casos nele, também no macOS).
  */
-const SH_DO_TESTE = process.env.REVEZA_TESTE_SH || "/bin/sh";
 function montarEspera(d, roteiro) {
   const bin = path.join(d, "bin-real");
   mkdirSync(bin);
   writeFileSync(path.join(bin, "claude"), '#!/bin/sh\nentrada=$(cat)\necho "dir=${CLAUDE_SECURESTORAGE_CONFIG_DIR:-} trilha=${REVEZA_TRILHA:-} args=$* entrada=$entrada"\n', { mode: 0o755 });
   const sonos = path.join(d, "sonos.txt");
-  writeFileSync(path.join(bin, "sleep"), `#!/bin/sh\necho $$ >> '${sonos}'\nexec /bin/sleep "$@"\n`, { mode: 0o755 });
+  const tempos = path.join(d, "tempos.txt");
+  writeFileSync(path.join(bin, "sleep"), `#!/bin/sh\necho $$ >> '${sonos}'\necho "$*" >> '${tempos}'\nexec /bin/sleep "$@"\n`, { mode: 0o755 });
   const perguntas = path.join(d, "perguntas.txt");
   const entradas = path.join(d, "entradas.txt");
   const cli = path.join(d, "cli.mjs");
@@ -310,7 +314,7 @@ function montarEspera(d, roteiro) {
     return { ...r, ms: Date.now() - t0 };
   };
   const linhas = (f) => (existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean) : []);
-  return { arq, cli, env, rodar, perguntas: () => linhas(perguntas), entradas: () => linhas(entradas), sonos: () => linhas(sonos), e1: path.join(d, "trilhas", "e1") };
+  return { arq, cli, env, rodar, perguntas: () => linhas(perguntas), entradas: () => linhas(entradas), sonos: () => linhas(sonos), tempos: () => linhas(tempos), e1: path.join(d, "trilhas", "e1") };
 }
 
 /** Roda o lançador solto, para mexer no arquivo dele enquanto espera; devolve o fim com a saída. */
@@ -485,6 +489,103 @@ test("plano B versão 2 (regra 4): comando que não conversa pergunta sem o proc
     assert.equal(r.status, 78, r.stderr);
     assert.match(l.perguntas().at(-1), /--pid \d+$/);
   } finally { limpar(); }
+});
+
+test("plano B versão 2 (regra 5): número com zero à esquerda vale em decimal, e o passo fica entre 1 e 60 s sem passar do prazo", { skip: process.platform === "win32" }, async () => {
+  {
+    // 08 é octal inválido no $(( )): a conta derrubava o lançador
+    const { d, limpar } = pasta();
+    try {
+      const l = montarEspera(d, ["bloqueio", "trilha"]);
+      const r = l.rodar({ REVEZA_ESPERA_S: "08", REVEZA_ESPERA_PASSO_S: "01" });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stdout.trim(), `dir=${l.e1} trilha=e1 args=-p oi entrada=`);
+      assert.match(r.stderr, /por até 1 min/);
+      assert.deepEqual(l.tempos(), ["1"]);
+    } finally { limpar(); }
+  }
+  {
+    // passo 00 virava sleep 0 e a espera perguntava sem pausa; o último sono é o que falta até o prazo
+    const { d, limpar } = pasta();
+    try {
+      const l = montarEspera(d, ["bloqueio"]);
+      const r = l.rodar({ REVEZA_ESPERA_S: "2", REVEZA_ESPERA_PASSO_S: "00" });
+      assert.equal(r.status, 78, r.stderr);
+      assert.ok(l.perguntas().length <= 3, `perguntou ${l.perguntas().length} vezes em 2 s`);
+      assert.ok(l.tempos().length >= 1 && l.tempos().every((s) => Number(s) >= 1 && Number(s) <= 2), `sonos: ${l.tempos().join(",")}`);
+      assert.ok(r.ms < 6000, `${r.ms} ms`);
+    } finally { limpar(); }
+  }
+  {
+    // passo acima de 60 vira 60: com 300, a espera de 12 min passaria dos 15 min do OpenBot
+    const { d, limpar } = pasta();
+    try {
+      const l = montarEspera(d, ["bloqueio", "trilha"]);
+      const fim = rodarSolto(l, d, { REVEZA_ESPERA_S: "100", REVEZA_ESPERA_PASSO_S: "300" });
+      await esperarSono(l);
+      assert.deepEqual(l.tempos(), ["60"]);
+      process.kill(Number(l.sonos()[0]), "SIGTERM");
+      const r = await fim;
+      assert.equal(r.code, 0, r.err);
+      assert.equal(r.out.trim(), `dir=${l.e1} trilha=e1 args=-p oi entrada=`);
+    } finally { limpar(); }
+  }
+  {
+    // mais de 5 dígitos não é um prazo: vale o padrão de 12 min
+    const { d, limpar } = pasta();
+    try {
+      const l = montarEspera(d, ["bloqueio", "trilha"]);
+      const r = l.rodar({ REVEZA_ESPERA_S: "0000001234567", REVEZA_ESPERA_PASSO_S: "1" });
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stderr, /por até 12 min/);
+    } finally { limpar(); }
+  }
+});
+
+test("plano B versão 2 (regra 5): o lançador que acha a si mesmo para antes de perguntar e de esperar", { skip: process.platform === "win32" }, () => {
+  for (const jeito of ["REVEZA_CLAUDE_REAL", "atalho no PATH"]) {
+    const { d, limpar } = pasta();
+    try {
+      const l = montarEspera(d, ["bloqueio"]);
+      let extra = { REVEZA_CLAUDE_REAL: l.arq };
+      if (jeito !== "REVEZA_CLAUDE_REAL") {
+        const outra = path.join(d, "outra-pasta");
+        mkdirSync(outra);
+        symlinkSync(l.arq, path.join(outra, "claude"));
+        extra = { PATH: `${path.join(d, "lancador")}:${outra}:${l.env.PATH.split(":").slice(1).join(":")}` };
+      }
+      const r = l.rodar({ ...extra, REVEZA_ESPERA_S: "30" });
+      assert.equal(r.status, 127, `${jeito}: ${r.stderr}`);
+      assert.match(r.stderr, /o próprio lançador/, jeito);
+      assert.equal(l.perguntas().length, 0, `${jeito}: não perguntou`);
+      assert.ok(r.ms < 5000, `${jeito}: não esperou (${r.ms} ms)`);
+    } finally { limpar(); }
+  }
+});
+
+test("plano B versão 2 (regra 5): agente sem responder na primeira pergunta, tenta mais 2 vezes e abre na conta em uso com aviso", { skip: process.platform === "win32" }, () => {
+  const casos = [
+    { roteiro: ["sem-resposta"], args: ["-p", "oi"], perguntas: 3, saida: "principal", aviso: true },
+    { roteiro: ["sem-resposta", "trilha"], args: ["-p", "oi"], perguntas: 2, saida: "trilha", aviso: false },
+    { roteiro: ["sem-resposta", "bloqueio", "trilha"], args: ["-p", "oi"], perguntas: 3, saida: "trilha", aviso: false },
+    // o comando que não conversa abre na conta em uso de qualquer jeito: não tenta de novo
+    { roteiro: ["sem-resposta"], args: ["--version"], perguntas: 1, saida: "principal", aviso: false },
+  ];
+  for (const c of casos) {
+    const { d, limpar } = pasta();
+    try {
+      const l = montarEspera(d, c.roteiro);
+      const nome = `${c.roteiro.join(",")} ${c.args.join(" ")}`;
+      const t0 = Date.now();
+      const r = spawnSync(SH_DO_TESTE, [l.arq, ...c.args], { cwd: d, env: { ...l.env, REVEZA_ESPERA_S: "30" }, encoding: "utf8", timeout: 20_000 });
+      assert.equal(r.status, 0, `${nome}: ${r.stderr}`);
+      const dir = c.saida === "trilha" ? `dir=${l.e1} trilha=e1` : "dir= trilha=";
+      assert.equal(r.stdout.trim(), `${dir} args=${c.args.join(" ")} entrada=`, nome);
+      assert.equal(l.perguntas().length, c.perguntas, nome);
+      assert.equal(/o agente do Reveza não respondeu/.test(r.stderr), c.aviso, `${nome}: ${r.stderr}`);
+      assert.ok(Date.now() - t0 < (c.perguntas === 3 && c.saida === "principal" ? 8000 : 15_000), nome);
+    } finally { limpar(); }
+  }
 });
 
 /** O Claude Code de verdade deste computador (não o lançador), ou null. */

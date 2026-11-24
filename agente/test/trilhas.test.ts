@@ -831,6 +831,49 @@ describe("trilhas no agente", () => {
     assert.equal(fns("segurarPrincipal").length, 0);
   });
 
+  test("plano B versão 2 (regra 5): com a trava recusada, a pergunta de novo não anota o processo nem grava", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    nuvemFalsa.recusarTrava = true;
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "a nuvem recusou a trava: a sessão espera");
+    await m.relogio.dormir(15_000);
+    const gravar = m.agente.salvar.bind(m.agente);
+    let gravou = 0;
+    m.agente.salvar = () => {
+      gravou++;
+      gravar();
+    };
+    const r = await deNovo(cwd);
+    assert.equal(r.certa, undefined);
+    assert.match(r.bloqueio ?? "", /Empresa Um/);
+    assert.deepEqual(fns("segurarPrincipal").at(-1)?.args, [[E1]], "a nuvem é perguntada pela trava");
+    assert.equal(gravou, 0, "a cada 15 s: anotar e tirar o processo regravaria o estado à toa");
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal ?? [], []);
+    nuvemFalsa.recusarTrava = false;
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true });
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, [process.pid], "confirmada a trava, a sessão segura a conta");
+    assert.equal(gravou, 1, "uma gravação, a do processo anotado");
+  });
+
+  test("plano B versão 2 (regra 5): a pergunta de novo aproveita a busca na nuvem de menos de 10 s", async () => {
+    await preparar();
+    const cwd = await esperando();
+    await m.relogio.dormir(11_000);
+    await m.agente.busca();
+    const n = fns("trilhas").length;
+    assert.match((await deNovo(cwd)).bloqueio ?? "", /Empresa Um/);
+    assert.equal(fns("trilhas").length, n, "a busca de agora há pouco vale: não pergunta à nuvem a cada 15 s");
+    await m.relogio.dormir(11_000);
+    assert.match((await deNovo(cwd)).bloqueio ?? "", /Empresa Um/);
+    assert.equal(fns("trilhas").length, n + 1, "passados 10 s, busca de novo");
+  });
+
   test("sessão que já fechou não segura a conta em uso", async () => {
     await preparar();
     const a = await comPrincipal();

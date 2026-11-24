@@ -48,6 +48,8 @@ const PEDIR_LEITURA_MS = 4_000;
 const PEDIR_TRAVA_MS = 3_000;
 /** A nuvem segura a conta por 3 min a cada aviso: a confirmação vale um pouco menos aqui. */
 const TRAVA_CONFIRMADA_S = 150;
+/** A pergunta de novo da espera aproveita a busca na nuvem que terminou há menos que isto (plano B versão 2, regra 5). */
+const BUSCA_RECENTE_S = 10;
 const TRAVA_PEDIDA_S = 120;
 /** O login que as sessões renovaram na trilha sobe ao cofre no máximo uma vez por este tempo. */
 export const SUBIR_TRILHA_S = 60;
@@ -201,6 +203,8 @@ export class Trilhas {
   private confirmadas = new Map<string, { ate: number; conta: string | null }>();
   /** Este agente pediu à nuvem para segurar a conta em uso e ainda não soltou (plano B versão 2, regra 4). */
   private seguraNaNuvem = false;
+  /** Quando terminou a última busca na nuvem (plano B versão 2, regra 5). */
+  private buscaFimEm = 0;
 
   constructor(private d: DepsTrilhas) {}
 
@@ -353,16 +357,21 @@ export class Trilhas {
     if (!t.conta) {
       // a busca em voo pode ter lido as trilhas antes deste pedido: sem conta depois dela, uma segunda já o leva
       const havia = this.emVoo !== null;
+      // plano B versão 2 (regra 5): a pergunta de novo vem a cada 15 s com a trilha já pedida, e a busca em voo ou a de
+      // menos de 10 s já levou o pedido à nuvem
+      const recente = deNovo && !havia && this.agora() - this.buscaFimEm < BUSCA_RECENTE_S;
       let fim: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        (async () => {
-          await this.busca().catch(() => undefined);
-          if (havia && !t.conta) await this.busca().catch(() => undefined);
-        })(),
-        new Promise<void>((ok) => {
-          fim = setTimeout(ok, Math.max(0, TRILHA_ESPERA_MS - (Date.now() - inicio)));
-        }),
-      ]);
+      if (!recente) {
+        await Promise.race([
+          (async () => {
+            await this.busca().catch(() => undefined);
+            if (havia && !deNovo && !t.conta) await this.busca().catch(() => undefined);
+          })(),
+          new Promise<void>((ok) => {
+            fim = setTimeout(ok, Math.max(0, TRILHA_ESPERA_MS - (Date.now() - inicio)));
+          }),
+        ]);
+      }
       if (fim) clearTimeout(fim);
       // a nuvem pode devolver a conta antiga, que saiu da lista e ainda não soltou: sessão nova não entra nela
       if (estrita && t.conta && !(await this.contaAindaServe(emp, t.conta, PEDIR_TRAVA_MS))) {
@@ -374,15 +383,23 @@ export class Trilhas {
     if (!t.conta && estrita) {
       // sem outra conta para a principal, a conta dela fica lá: a sessão abre nesse login, que já é o certo
       t.pids = t.pids.filter((p) => p !== pid);
-      if (this.principalServe(emp.id)) {
+      if (this.principalServe(emp.id) && deNovo) {
+        // plano B versão 2 (regras 1 e 5): na pergunta de novo, só a trava confirmada tira da espera, e só ela anota o
+        // processo (e grava). Recusada, ou sem resposta a tempo, nada muda: a próxima pergunta vem em 15 s
+        const seguras = await this.noPrazo(this.segurarPrincipal([emp.id]), PEDIR_TRAVA_MS);
+        if (seguras?.includes(emp.id)) {
+          if (pid !== null) this.anotarPrincipal(emp.id, pid);
+          return { ok: true, trilha: null, certa: true };
+        }
+      } else if (this.principalServe(emp.id)) {
         // a sessão vai seguir este login: a nuvem precisa confirmar antes, para a principal não trocar com ela aberta
         if (pid !== null) this.anotarPrincipal(emp.id, pid);
         const seguras = await this.noPrazo(this.segurarPrincipal(), PEDIR_TRAVA_MS);
-        // a nuvem confirmou a trava: a conta em uso não troca com a sessão aberta, e a espera pode sair por aqui
-        if (seguras?.includes(emp.id)) return deNovo ? { ok: true, trilha: null, certa: true } : { ok: true, trilha: null };
-        // nuvem fora (null) no primeiro pedido: nenhuma troca chega aqui. Na pergunta de novo, só a trava confirmada tira
-        // da espera (regra 1). Disse que não, ou não respondeu a tempo: não dá para garantir a conta
-        if (seguras === null && !deNovo) return { ok: true, trilha: null };
+        // a nuvem confirmou a trava: a conta em uso não troca com a sessão aberta
+        if (seguras?.includes(emp.id)) return { ok: true, trilha: null };
+        // nuvem fora (null) no primeiro pedido: nenhuma troca chega aqui. Disse que não, ou não respondeu a tempo: não dá
+        // para garantir a conta
+        if (seguras === null) return { ok: true, trilha: null };
         t.pidsPrincipal = (t.pidsPrincipal ?? []).filter((p) => p !== pid);
         this.d.salvar();
       }
@@ -561,13 +578,14 @@ export class Trilhas {
 
   /**
    * Renova na nuvem a trava da conta em uso e devolve as unidades que ela confirmou. Null: nada a pedir ou sem resposta
-   * (a trava antiga vale até vencer, e a busca seguinte tenta de novo).
+   * (a trava antiga vale até vencer, e a busca seguinte tenta de novo). `mais`: unidades que pedem a trava antes de ter
+   * processo anotado (a pergunta de novo da espera).
    */
-  async segurarPrincipal(): Promise<string[] | null> {
+  async segurarPrincipal(mais: string[] = []): Promise<string[] | null> {
     const agora = this.agora();
     for (const [id, ate] of this.travaPedida) if (ate <= agora) this.travaPedida.delete(id);
     const presas = this.naPrincipal();
-    const ids = [...new Set([...presas, ...this.travaPedida.keys()])].slice(0, 50);
+    const ids = [...new Set([...presas, ...this.travaPedida.keys(), ...mais])].slice(0, 50);
     const nuvem = this.d.nuvem();
     if (!nuvem || this.d.sombra) return null;
     if (!ids.length) {
@@ -665,6 +683,7 @@ export class Trilhas {
     if (!this.emVoo) {
       this.emVoo = this.buscaDentro().finally(() => {
         this.emVoo = null;
+        this.buscaFimEm = this.agora();
       });
     }
     return this.emVoo;
