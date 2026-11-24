@@ -55,6 +55,10 @@ describe("FonteSupabase (partes puras)", () => {
     expect(codigoDoErro("a conta é só de empresas separadas ou está na trilha de uma empresa")).toBe("conta_reservada")
     expect(codigoDoErro("uma sessão de empresa ou projeto está rodando na conta em uso: feche essa sessão antes de trocar"))
       .toBe("conta_segurada")
+    // A 0046 reaplicável troca os termos das mensagens; estes são os textos da nuvem depois dela.
+    expect(codigoDoErro("a conta é só de projetos separados ou está na trilha de um projeto")).toBe("conta_reservada")
+    expect(codigoDoErro("uma sessão de projeto está rodando na conta em uso: feche essa sessão antes de trocar"))
+      .toBe("conta_segurada")
   })
 
   it("chaves de configuração e padrões iguais aos do banco", () => {
