@@ -269,6 +269,32 @@ desfaz os passos anteriores, e o projeto novo acha a empresa nova pelo `ref` pro
 - **Alcance:** a separação vale para o que abre pelo lançador `~/.reveza/lancador/claude`. Programa que chama o assistente
   por outro caminho não passa por ela.
 
+## 6e. Projeto por computador (0.20.1)
+
+A tela Empresas virou Projetos (rota `/projetos`; `/empresas` continua abrindo), e o nível de dentro virou subprojeto. No
+banco e no código o nome segue `empresa`: renomear tabela em produção seria risco sem ganho para quem usa.
+
+- **Onde roda (`empresas.em_todos_computadores` e `empresa_computadores`, 0045):** verdadeiro vale em todos, como antes;
+  falso vale só nos computadores da tabela. O subprojeto segue o projeto (`rvz_roda_em` olha a raiz). A 0045 preenche uma
+  vez só: o projeto que tinha todas as pastas presas a computadores passa a rodar nesses, e os outros ficam em todos.
+  Rodar de novo não desfaz a escolha de ninguém.
+- **Filtro na nuvem (0046):** `rvz_classificar`, `agente_empresas`, `rvz_trilha_de`, `rvz_lembrar_divisao` e
+  `rvz_nome_trilha` ignoram o projeto que não roda no computador. O agente antigo já recebe a lista filtrada.
+- **Trilha:** `rvz_decidir_trilha` só abre trilha nova onde o projeto roda. A que já existe segue até as sessões fecharem.
+- **Principal:** `rvz_de_outro_computador(conta, pc)` diz se a conta é de um projeto ligado e estrito que não roda ali.
+  Em `decidir`, sem candidata comum, a principal vai para uma conta de um projeto daqui; sem nenhuma, fica e sai o alerta
+  `principal_de_outro`, uma vez por hora por computador. Não há troca cruzada direta: o agente pega a posse da conta nova
+  antes de soltar a antiga, então dois computadores, cada um querendo a conta do outro, ficariam tentando para sempre.
+- **Cadastro:** `painel_unidade` aceita `computadores` só no projeto (null: todos; lista: só nesses; lista vazia é
+  recusada). Computador novo na lista precisa existir e não estar revogado; o que já estava e foi removido não impede
+  salvar. O portão de versão olha só os computadores em que o projeto roda.
+- **Painel:** cada aba de computador lista os projetos que rodam nele (`rodaNoComputador`); projeto sem nenhum computador
+  ativo aparece em todas, para não sumir. A escolha só vai à nuvem quando muda, para não desfazer a de outra pessoa. A
+  lista de contas mostra o estado, os limites e onde cada conta está (`ondeEsta`), e avisa quem sai dela ao salvar
+  (`saemDaConta`). Com a nuvem sem a 0045, a tela esconde a escolha e não manda o campo.
+- **Limite:** a regra de pasta que vale em todos os computadores ainda colide com a de outro projeto, mesmo em
+  computadores diferentes. Prenda a regra ao computador.
+
 ## 7. Nuvem: tabelas (todas com RLS ligado)
 
 | Tabela | Quem lê | Quem escreve |
@@ -286,6 +312,7 @@ desfaz os passos anteriores, e o projeto novo acha a empresa nova pelo `ref` pro
 | `empresas(id, nome, cor, transbordo, transbordo_contas, separar, pai, modo, herdar_transbordo)` (0.17.0; `separar` na 0.18.0; projeto, modo e transbordo herdado na 0.19.0) | membro | admin, pela função |
 | `conta_empresas(conta_id, empresa_id)` as empresas que cada conta atende; sem linha, a conta atende todas | membro | admin, pela função |
 | `pastas_empresa(id, tipo, padrao, empresa_id)` tipo `pasta` (caminho ou nome) ou `titulo` (agente do OpenBot) | membro | admin, pela função |
+| `empresa_computadores(empresa_id, computador_id)` (0.20.1) os computadores do projeto com `empresas.em_todos_computadores` falso | membro | admin, pela função |
 | `agentes_openbot(computador_id, pasta, nome, titulo, visto_em)` | membro | computador, pela função |
 | `atribuicao_trilhas(computador_id, empresa_id, conta_id, motivo, versao, decidido_em, pedida_em)` (0.18.0) | membro | só as funções das trilhas |
 | `trilhas_sombra(computador_id, empresa_id, conta_id, em_uso, motivo, sessoes, trocas, versao, decidido_em, visto_em)` (0.19.0) | membro | só `rvz_rodar_sombra` |

@@ -33,6 +33,10 @@ teste, o CHANGELOG ou a release.
   troca à mão, API, preferida, remover e saída agendada); quem não salvou pelo cadastro novo segue como na 0.19. A
   trava precisa sobreviver a computador que dorme, agente que religa, processo com número reaproveitado e nuvem lenta;
   `painel_unidades` grava tudo ou nada. Trilha dividida só troca para conta que sirva a todas as unidades anotadas nela.
+- **projeto por computador** (0.20.1): a 0045 e a 0046. Toda função que entrega regra, classifica pasta, abre trilha ou
+  decide a principal olha `rvz_roda_em`, para valer também no agente antigo; o projeto antigo segue em todos; a
+  trilha aberta segue até as sessões fecharem; nada de troca cruzada direta entre dois computadores (a posse trava); o
+  painel só manda `computadores` quando mudou.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

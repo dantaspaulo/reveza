@@ -7,6 +7,37 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.20.1 · 24/11/2026
+
+Correção: a empresa cadastrada valia em todos os computadores. Agora ela se chama **projeto** e vale só nos computadores
+que você escolher. Precisa da nuvem na 0.20.1.
+
+### O que muda no painel
+
+- **Empresas virou Projetos**, e o nível de dentro virou **subprojeto**. O endereço antigo continua abrindo a tela.
+- **Cada computador mostra só os projetos dele.** O projeto novo nasce no computador em que você está. Em **Roda em** você
+  escolhe outros computadores ou todos, e **Trazer de outro computador** coloca aqui um projeto que já existe.
+- **A lista de contas mostra o que importa para escolher:** se a conta está livre ou em uso, em qual computador e
+  projeto, e os limites de 5 horas, da semana e do Fable, com a hora em que voltam.
+- **Antes de salvar, a conta avisa quem sai dela.** Uma conta fica em um login por vez: ao marcá-la num projeto ligado, o
+  computador que está nela passa para outra, se houver uma livre.
+- **As recusas do cadastro dizem o motivo** (escolher um computador, um subprojeto que usa a conta do projeto), em vez de
+  pedir para tentar de novo.
+
+### O que muda no funcionamento
+
+- **O projeto só vale onde roda.** Em outro computador ele não pega sessão, não manda as regras de pasta e não pede conta.
+  O filtro é na nuvem, então um computador que ainda não atualizou já recebe certo.
+- **O que já existe segue igual:** o projeto antigo vale em todos os computadores. A exceção é quem tinha todas as pastas
+  presas a computadores: ele passa a rodar nesses computadores.
+- **Conta de um projeto de outro computador:** o computador que está nela passa para uma conta livre. Sem nenhuma, vai
+  para uma conta de um projeto dele; sem essa também, fica onde está e o painel avisa uma vez por hora.
+- **Só os computadores do projeto contam para ligar:** um computador antigo que não roda o projeto não impede mais. Levar
+  para um computador antigo um projeto que tem subprojeto ligado também pede para atualizar antes.
+- **Menos desgaste do disco:** o registro de uso era a maior parte do que o agente escrevia. Agora vai ao disco a cada 10
+  minutos, e `reveza uso` diz a hora da última gravação. Depois de o agente reiniciar, o uso só vai à nuvem quando a
+  primeira leitura das conversas termina, para o painel não mostrar um número menor por alguns minutos.
+
 ## 0.20.0 · 23/11/2026
 
 Empresas virou um cadastro. A ordem é a do trabalho: o **computador**, a **empresa**, os **projetos** dentro dela e a
