@@ -404,12 +404,18 @@ async function cmdStatus(amb: Ambiente, a: Args, soContas: boolean): Promise<num
  * Plano B (0.21.0): com a saída 3, o lançador espera e pergunta de novo com `--de-novo` (o agente não regrava o estado a
  * cada pergunta). Sem resposta da ponte, ou resposta que não é 200, sai 4: o lançador que espera segue esperando, em vez
  * de abrir na principal uma sessão que já se sabe ser de projeto. O lançador antigo só olha a saída 3 e abre como antes.
+ *
+ * Plano B versão 2 (regra 1): na pergunta de novo, só resposta positiva e explícita tira a sessão da espera. A trilha
+ * conferida sai 0 com as duas linhas; a principal sai 5, e só quando o agente manda a marca de certeza (o agente antigo
+ * nunca a manda). Tudo o mais (principal sem certeza, trilha que não confere, resposta estranha) sai 4, "não sei".
  */
 async function cmdTrilha(amb: Ambiente, a: Args): Promise<number> {
   const cwd = typeof a.flags.cwd === "string" ? a.flags.cwd : process.cwd();
   const pid = typeof a.flags.pid === "string" && /^\d{1,10}$/.test(a.flags.pid) ? Number(a.flags.pid) : null;
-  if (!path.isAbsolute(cwd)) return 0;
-  const corpo = a.flags["de-novo"] === true ? { cwd, pid, deNovo: true } : { cwd, pid };
+  const deNovo = a.flags["de-novo"] === true;
+  const naoSei = deNovo ? 4 : 0;
+  if (!path.isAbsolute(cwd)) return naoSei;
+  const corpo = deNovo ? { cwd, pid, deNovo: true } : { cwd, pid };
   const r = await pedirPonte(portaDe(amb, a), "POST", "/api/trilha", corpo, chaveDaPonte(amb.c.ponteChave, false), 20_000);
   if (!r || r.status !== 200) return 4;
   const c = r.corpo as {
@@ -417,6 +423,7 @@ async function cmdTrilha(amb: Ambiente, a: Args): Promise<number> {
     trilha?: { pasta?: unknown; empresa?: unknown } | null;
     aviso?: unknown;
     bloqueio?: unknown;
+    certa?: unknown;
   } | null;
   if (c?.ok && typeof c.bloqueio === "string" && c.bloqueio.trim()) {
     amb.saida(c.bloqueio.replace(/\s+/g, " ").trim().slice(0, 300));
@@ -424,12 +431,14 @@ async function cmdTrilha(amb: Ambiente, a: Args): Promise<number> {
   }
   if (typeof c?.aviso === "string") amb.erro(`reveza: ${c.aviso.slice(0, 300)}`);
   const tr = c?.trilha;
-  if (!c?.ok || !tr || typeof tr.pasta !== "string" || typeof tr.empresa !== "string") return 0;
+  if (!c?.ok) return naoSei;
+  if (!tr) return deNovo ? (c.certa === true ? 5 : 4) : 0;
+  if (typeof tr.pasta !== "string" || typeof tr.empresa !== "string") return naoSei;
   // só uma pasta de trilha deste computador e uma empresa no formato da nuvem viram ambiente do assistente
   const base = path.resolve(amb.c.trilhas);
   const pasta = path.resolve(tr.pasta);
-  if (path.dirname(pasta) !== base || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tr.empresa)) return 0;
-  if (path.basename(pasta) !== tr.empresa) return 0;
+  if (path.dirname(pasta) !== base || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tr.empresa)) return naoSei;
+  if (path.basename(pasta) !== tr.empresa) return naoSei;
   amb.saida(pasta);
   amb.saida(tr.empresa);
   return 0;

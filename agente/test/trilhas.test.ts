@@ -347,6 +347,140 @@ describe("trilhas no agente", () => {
     assert.ok(noDisco?.pids.includes(process.pid), "a sessão que abriu precisa estar no disco: numa queda, a trilha não solta a conta dela");
   });
 
+  // plano B versão 2 (regra 1): a espera só sai pela principal quando o agente sabe que é ela
+  const deNovo = async (cwd: string) =>
+    (await m.agente.alvoPonte().trilha!({ cwd, pid: process.pid, deNovo: true })).corpo as {
+      ok: boolean;
+      trilha: { empresa: string } | null;
+      bloqueio?: string;
+      aviso?: string;
+      certa?: boolean;
+    };
+
+  /** Projeto E1 só nas contas dele, sem conta livre: o primeiro pedido manda o lançador esperar. */
+  async function esperando(): Promise<string> {
+    await comPrincipal();
+    const { cwd } = await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "começa esperando a conta do projeto");
+    return cwd;
+  }
+
+  test("plano B versão 2: o projeto desligado durante a espera, a pergunta de novo diz com certeza que é a principal", async () => {
+    await preparar();
+    const cwd = await esperando();
+    banco.empresas = [];
+    banco.regras = [];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true });
+    assert.deepEqual(await pedir(cwd), { ok: true, trilha: null }, "o primeiro pedido segue sem a marca, como o lançador antigo espera");
+  });
+
+  test("plano B versão 2: o projeto que passou a usar outras contas durante a espera também sai com certeza", async () => {
+    await preparar();
+    const cwd = await esperando();
+    banco.empresas = [{ id: E1, nome: "Empresa Um" }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    const r = await deNovo(cwd);
+    assert.equal(r.trilha, null);
+    assert.equal(r.certa, true);
+    assert.match(r.aviso ?? "", /Empresa Um/, "o painel fica sabendo que abriu na conta em uso");
+  });
+
+  test("plano B versão 2: sem ler a nuvem há mais de 2 min, a pergunta de novo não tem certeza e o lançador segue esperando", async () => {
+    await preparar();
+    const cwd = await esperando();
+    banco.empresas = [];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    assert.equal((await deNovo(cwd)).certa, true, "a leitura com o projeto desligado chegou");
+    nuvemFalsa.empresas = async () => {
+      throw new Error("a nuvem não responde");
+    };
+    await m.relogio.dormir((2 * EMPRESAS_LER_S + 1) * 1000);
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null });
+  });
+
+  test("plano B versão 2: depois de religar, com as regras só do disco, a pergunta de novo não tem certeza", async () => {
+    await preparar();
+    const cwd = await esperando();
+    banco.empresas = [];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    assert.equal((await deNovo(cwd)).certa, true);
+    // religa sem nuvem que responda: as regras guardadas no disco valem, mas não dão certeza
+    const tr = m.agente.trilhas! as unknown as { lidasEm: number; empresas: unknown[]; regras: unknown[]; guardadasLidas: boolean };
+    tr.lidasEm = 0;
+    tr.empresas = [];
+    tr.regras = [];
+    tr.guardadasLidas = false;
+    nuvemFalsa.empresas = async () => {
+      throw new Error("a nuvem não responde");
+    };
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null });
+  });
+
+  test("plano B versão 2: a principal que serve ao projeto só tira da espera com a trava confirmada pela nuvem", async () => {
+    await preparar();
+    const a = await comPrincipal();
+    const { cwd } = await comEmpresa();
+    const idNuvem = m.agente.estado.contas[a]!.contaId!;
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [] }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/);
+    // o painel marca a conta em uso para o projeto, mas a nuvem não responde à trava
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true, contas: [idNuvem] }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    const segurar = nuvemFalsa.segurarPrincipal.bind(nuvemFalsa);
+    nuvemFalsa.segurarPrincipal = async () => {
+      throw new Error("a nuvem não responde");
+    };
+    const r = await deNovo(cwd);
+    assert.equal(r.certa, undefined, "sem a trava confirmada, a conta em uso pode trocar com a sessão aberta");
+    assert.equal(r.trilha, null);
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal ?? [], [], "quem segue esperando não segura a conta em uso");
+    nuvemFalsa.segurarPrincipal = segurar;
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true });
+    assert.deepEqual(m.agente.estado.trilhas![E1]!.pidsPrincipal, [process.pid], "a sessão que sai da espera nesse login segura a conta");
+  });
+
+  test("plano B versão 2: a leitura dos agentes do OpenBot que falha não tira a pasta do agente do projeto, nem dá certeza", async () => {
+    banco = new BancoFalso();
+    nuvemFalsa = new NuvemFalsa(banco, "pc-1");
+    const ob = new OpenBotFalso();
+    m = await montar({ nuvem: nuvemFalsa, openbot: ob });
+    banco.agora = () => m.relogio.agora();
+    const pastaAgente = path.join(m.c.home, "OpenBot", "Agents", "agent-1");
+    const cwd = path.join(pastaAgente, "trabalho");
+    fs.mkdirSync(cwd, { recursive: true });
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Projeto Exemplo" }];
+    await comPrincipal();
+    await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true }];
+    banco.regras = [{ tipo: "titulo", padrao: "Exemplo", empresa: E1 }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "a pasta do agente é do projeto pelo título dele");
+    // o banco do OpenBot para de responder (trancado, ou o OpenBot atualizando)
+    const ler = ob.agentes.bind(ob);
+    ob.agentes = () => {
+      throw new Error("banco do OpenBot trancado");
+    };
+    await m.relogio.dormir(301_000);
+    assert.match((await deNovo(cwd)).bloqueio ?? "", /Empresa Um/, "a última lista lida segue valendo");
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "também no primeiro pedido: a sessão não abre na conta em uso");
+    banco.empresas = [];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null }, "com a lista sem ler, o projeto desligado não dá certeza");
+    ob.agentes = ler;
+    await m.relogio.dormir(31_000);
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true }, "a lista volta a ser lida logo, sem esperar 5 min");
+  });
+
   test("empresa só nas contas dela, com a conta livre: abre normal na trilha", async () => {
     await preparar();
     await comPrincipal();

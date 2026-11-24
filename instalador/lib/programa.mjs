@@ -250,7 +250,8 @@ function aspasSh(s) {
  *
  * Plano B (0.21.0): antes dos 78, espera a conta do projeto. Pergunta de novo (`--de-novo`) a cada REVEZA_ESPERA_PASSO_S
  * (15 s) até REVEZA_ESPERA_S (720 s, pelo relógio: cada pergunta leva até 20 s), abaixo dos 15 min sem sinal em que o
- * OpenBot fecha a conversa. O agente sem responder (saída 4) não abre a sessão na principal: segue esperando.
+ * OpenBot fecha a conversa. O agente sem responder (saída 4) não abre a sessão na principal: segue esperando. Versão 2
+ * (regra 1): só sai da espera a trilha com as duas linhas (saída 0) ou a principal com a certeza do agente (saída 5).
  * REVEZA_ESPERA_S=0 volta ao comportamento antigo. Toda pergunta roda com </dev/null (quem chama pelo SDK deixa a
  * primeira mensagem na entrada), e o sleep da espera roda com wait, para Ctrl+C e sinal de encerrar saírem na hora.
  */
@@ -311,11 +312,19 @@ export function lancadorClaude(dir, cli, node = process.execPath) {
     '          sono=""',
     `          nova=$(${aspasSh(node)} ${aspasSh(cli)} trilha --cwd "$aqui" --pid "$$" --de-novo </dev/null 2>/dev/null)`,
     "          rc=$?",
-    // 3: segue sem conta; 4: o agente não respondeu (reinício, atualização), e a pasta já se sabe que é de projeto
-    '          if [ "$rc" = 3 ]; then [ -n "$nova" ] && saida=$nova; continue; fi',
-    '          [ "$rc" = 4 ] && continue',
-    "          saida=$nova",
-    "          break",
+    // plano B versão 2 (regra 1): só resposta positiva e explícita tira da espera. 0 com as duas linhas: a trilha; 5: a
+    // principal, com a certeza do agente. 3: segue sem conta; 4: o agente não sabe ou não respondeu (reinício,
+    // atualização); 0 sem as linhas (o cli antigo), erro ou programa que sumiu: também segue, porque a pasta já se sabe
+    // que é de projeto
+    '          case "$rc" in',
+    "            0)",
+    '              p1=$(printf "%s\\n" "$nova" | sed -n 1p)',
+    '              p2=$(printf "%s\\n" "$nova" | sed -n 2p)',
+    '              if [ -n "$p1" ] && [ -n "$p2" ]; then saida=$nova; break; fi',
+    "              ;;",
+    '            5) saida=""; break ;;',
+    '            3) [ -n "$nova" ] && saida=$nova ;;',
+    "          esac",
     "        done",
     "        trap - INT TERM HUP",
     "        ;;",

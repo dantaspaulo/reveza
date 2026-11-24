@@ -4,11 +4,13 @@ import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
+import * as path from "node:path";
 import { executarCli, lerArgs, type Ambiente } from "../src/cli.js";
 import { CredenciaisFalsas } from "../src/credenciais/falsa.js";
 import { GuardaFalsa } from "../src/cofre/guarda.js";
 import { ApiFalsa, CliFalsa, ExecutorFalso, pastaTemporaria, RelogioFalso } from "./falsos.js";
 
+const E1 = "11111111-2222-4333-8444-555555555555";
 let tmp: ReturnType<typeof pastaTemporaria> | undefined;
 let servidor: http.Server | undefined;
 afterEach(async () => {
@@ -90,6 +92,37 @@ describe("reveza trilha", () => {
     const p = await ponte(200, { ok: true, trilha: null });
     const amb = ambiente(p.porta);
     assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321"], amb), 0);
+    assert.deepEqual(amb.saidas, []);
+  });
+
+  // plano B versão 2 (regra 1): dentro da espera, só resposta positiva e explícita tira a sessão de lá
+  test("pergunta de novo: a principal com a certeza do agente sai 5; o primeiro pedido segue saindo 0", async () => {
+    const p = await ponte(200, { ok: true, trilha: null, certa: true });
+    const amb = ambiente(p.porta);
+    assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321", "--de-novo"], amb), 5);
+    assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321"], amb), 0);
+    assert.deepEqual(amb.saidas, []);
+  });
+
+  test("pergunta de novo sem a certeza do agente (o agente antigo nunca a manda): sai 4, nunca 0", async () => {
+    const p = await ponte(200, { ok: true, trilha: null, aviso: "Alfa: nenhuma conta livre para o projeto agora" });
+    const amb = ambiente(p.porta);
+    assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321", "--de-novo"], amb), 4);
+    assert.deepEqual(amb.saidas, []);
+  });
+
+  test("pergunta de novo com a trilha deste computador sai 0 com as duas linhas; trilha fora do lugar, 4", async () => {
+    const corpo: Record<string, unknown> = { ok: true, trilha: null };
+    const p = await ponte(200, corpo);
+    const amb = ambiente(p.porta);
+    const pasta = path.join(path.resolve(amb.c.trilhas), E1);
+    corpo.trilha = { pasta, empresa: E1 };
+    assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321", "--de-novo"], amb), 0);
+    assert.deepEqual(amb.saidas, [pasta, E1]);
+    amb.saidas.length = 0;
+    corpo.trilha = { pasta: path.join(tmp!.dir, "outro-lugar", E1), empresa: E1 };
+    assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321", "--de-novo"], amb), 4);
+    assert.equal(await executarCli(["trilha", "--cwd", tmp!.dir, "--pid", "4321"], amb), 0, "o primeiro pedido abre na principal, como antes");
     assert.deepEqual(amb.saidas, []);
   });
 });

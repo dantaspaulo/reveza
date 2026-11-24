@@ -266,7 +266,8 @@ test("lançador do assistente (0.18.0): sem a marca só abre o de verdade; com e
 
 /**
  * O lançador do plano B (0.21.0), com uma linha de comando de mentira que segue um roteiro de respostas: "bloqueio"
- * (saída 3), "sem-resposta" (4, a ponte não respondeu), "principal" (0 sem trilha) e "trilha" (0 com a trilha e1). Ela
+ * (saída 3), "sem-resposta" (4, a ponte não respondeu), "principal" (0 sem trilha, o que o cli antigo responde),
+ * "certeza" (5, a principal com certeza do agente), "erro" (1), "sumiu" (127) e "trilha" (0 com a trilha e1). Ela
  * também tenta ler a entrada, para provar que a pergunta não come a primeira mensagem do SDK. REVEZA_TESTE_SH troca o
  * shell (o /bin/sh do Linux é o dash: REVEZA_TESTE_SH=/bin/dash roda os mesmos casos nele, também no macOS).
  */
@@ -290,7 +291,10 @@ function montarEspera(d, roteiro) {
     "const passo = roteiro[Math.min(n - 1, roteiro.length - 1)];",
     `if (passo === "trilha") { console.log(${JSON.stringify(path.join(d, "trilhas", "e1"))}); console.log("e1"); process.exit(0); }`,
     'if (passo === "principal") process.exit(0);',
+    'if (passo === "certeza") process.exit(5);',
     'if (passo === "sem-resposta") process.exit(4);',
+    'if (passo === "erro") process.exit(1);',
+    'if (passo === "sumiu") process.exit(127);',
     'console.log("Alfa: a conta deste projeto não está livre agora.");',
     "process.exit(3);",
     "",
@@ -333,7 +337,12 @@ test("plano B: no fim do prazo sai 78 sem abrir; com o agente fora no meio, segu
     { roteiro: ["bloqueio"], espera: "1", status: 78, saida: "" },
     { roteiro: ["bloqueio", "sem-resposta"], espera: "1", status: 78, saida: "" },
     { roteiro: ["bloqueio", "sem-resposta", "sem-resposta", "trilha"], espera: "30", status: 0, saida: "trilha" },
-    { roteiro: ["bloqueio", "principal"], espera: "30", status: 0, saida: "principal" },
+    // plano B versão 2 (regra 1): dentro da espera só sai com resposta positiva e explícita
+    { roteiro: ["bloqueio", "certeza"], espera: "30", status: 0, saida: "principal" },
+    { roteiro: ["bloqueio", "principal"], espera: "1", status: 78, saida: "" },
+    { roteiro: ["bloqueio", "erro"], espera: "1", status: 78, saida: "" },
+    { roteiro: ["bloqueio", "sumiu"], espera: "1", status: 78, saida: "" },
+    { roteiro: ["bloqueio", "erro", "sumiu", "principal", "trilha"], espera: "30", status: 0, saida: "trilha" },
   ];
   for (const c of casos) {
     const { d, limpar } = pasta();

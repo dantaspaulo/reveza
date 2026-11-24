@@ -212,6 +212,8 @@ export class Agente {
   private agentesTentadoEm = -Infinity;
   private agentesLidosEm = -Infinity;
   private agentesLista: AgenteOpenBot[] = [];
+  /** A última leitura dos agentes do OpenBot falhou: vale a lista anterior. */
+  private agentesFalhou = false;
   private pastasDosAgentes: string[] = [];
   private openbotUltima = 0;
   private pastasEm = 0;
@@ -363,6 +365,7 @@ export class Agente {
         sombra: d.sombra,
         pastaDe: (cwd) => this.pastas.de(cwd),
         agentes: () => this.agentesNaNuvem(),
+        agentesFalhou: () => this.agentesFalhou,
         vivo: processoVivo,
         inicioDoProcesso,
         renovar: async (pasta) => void (await this.d.cli.renovar(pasta, 0)),
@@ -2747,12 +2750,16 @@ export class Agente {
     const ob = this.d.openbot;
     if (!ob?.agentes) return [];
     const t = this.d.relogio.agora();
-    if (t - this.agentesLidosEm < 300) return this.agentesLista;
+    // a leitura que falhou tenta de novo em 30 s, não em 5 min: até lá, a espera do lançador fica sem certeza
+    if (t - this.agentesLidosEm < (this.agentesFalhou ? 30 : 300)) return this.agentesLista;
     this.agentesLidosEm = t;
     try {
       this.agentesLista = ob.agentes();
+      this.agentesFalhou = false;
     } catch {
-      this.agentesLista = [];
+      // plano B versão 2 (regra 1): a lista vazia tirava a pasta de um agente do projeto dele (a regra pelo título) e a
+      // sessão abria na conta compartilhada. A última lista lida segue valendo até a próxima leitura dar certo.
+      this.agentesFalhou = true;
     }
     const pastas = this.agentesLista.map((a) => a.pasta).sort();
     // a mesma lista (mesma referência) não limpa as respostas que o contador guardou

@@ -148,6 +148,8 @@ export interface DepsTrilhas {
   pastaDe: (cwd: string) => string;
   /** Os agentes do OpenBot deste computador, com a pasta relativa à pessoal. */
   agentes: () => AgentePasta[];
+  /** A última leitura dos agentes do OpenBot falhou (vale a lista anterior, que pode estar velha). */
+  agentesFalhou?: () => boolean;
   /** O processo ainda roda? */
   vivo: (pid: number) => boolean;
   /** Renova o login de uma pasta pelo assistente (conta que chega do cofre com o token vencido). */
@@ -167,9 +169,13 @@ export type DestinoRetomada =
   | { espera: true; empresa?: string }
   | { trilha?: { pasta: string; empresa: string }; principalDe?: string };
 
-/** O que a ponte devolve ao lançador. `vencida`: a regra veio da última leitura, a nuvem não responde (fail-static). */
+/**
+ * O que a ponte devolve ao lançador. `vencida`: a regra veio da última leitura, a nuvem não responde (fail-static).
+ * `certa` (plano B versão 2, só na pergunta de novo): a sessão que esperava pode abrir na principal, porque o agente sabe
+ * que é ela; sem a marca, o lançador segue esperando.
+ */
 export type RespostaTrilha =
-  | { ok: true; trilha: null; aviso?: string; bloqueio?: string }
+  | { ok: true; trilha: null; aviso?: string; bloqueio?: string; certa?: true }
   | { ok: true; trilha: { empresa: string; nome: string; pasta: string }; vencida?: true };
 
 export class Trilhas {
@@ -272,6 +278,23 @@ export class Trilhas {
     return this.lidasEm > 0 && this.agora() - this.lidasEm > EMPRESAS_VENCIDAS_S;
   }
 
+  /**
+   * Plano B versão 2 (regra 1): a sessão que espera a conta do projeto só sai pela principal quando o agente sabe que
+   * é ela. As regras vieram da nuvem há pouco (não só do disco, depois de religar) e a lista dos agentes do OpenBot foi
+   * lida sem erro (a regra pelo título depende dela). Sem isso, o lançador segue esperando: abrir na conta
+   * compartilhada a sessão de um projeto que só usa as contas dele é o erro que a separação existe para evitar.
+   */
+  private certeza(): boolean {
+    return !!this.d.nuvem() && this.lidasEm > 0 && this.agora() - this.lidasEm <= 2 * EMPRESAS_LER_S && !this.d.agentesFalhou?.();
+  }
+
+  /** A resposta "abre na principal"; na pergunta de novo, com a marca de certeza quando o agente a tem. */
+  private naPrincipalCom(deNovo: boolean, aviso?: string): RespostaTrilha {
+    const certa = deNovo && this.certeza();
+    if (aviso) return certa ? { ok: true, trilha: null, aviso, certa: true } : { ok: true, trilha: null, aviso };
+    return certa ? { ok: true, trilha: null, certa: true } : { ok: true, trilha: null };
+  }
+
   /** A empresa separada da pasta em que a sessão abre, ou null. */
   empresaDe(cwd: string): EmpresaSeparada | null {
     const agentes = this.d.agentes();
@@ -291,11 +314,16 @@ export class Trilhas {
    * `deNovo` (plano B, 0.21.0): a pergunta que o lançador repete a cada 15 s enquanto espera a conta do projeto. Ela não
    * regrava o estado antes da busca (só a hora do pedido mudou, e o ciclo do agente grava); grava só quando a sessão
    * abre na trilha, para o processo dela estar no disco numa queda.
+   *
+   * Plano B versão 2 (regra 1): a resposta sem trilha da pergunta de novo só tira a sessão da espera com a marca
+   * `certa` (veja `certeza`). Por isso ela não sai pelo atalho do começo: o projeto desligado durante a espera também
+   * desliga a separação, e o atalho responderia sem ler as regras.
    */
   async pedir(cwd: string, pid: number | null, opcoes: { deNovo?: boolean } = {}): Promise<RespostaTrilha> {
     this.carregarGuardadas();
+    const deNovo = opcoes.deNovo === true;
     const conhecida = this.empresas.some((e) => e.estrita);
-    if (!this.d.nuvem() || (!this.ligadas && !conhecida && !Object.values(this.trilhas).some((t) => t.conta))) {
+    if (!this.d.nuvem() || (!deNovo && !this.ligadas && !conhecida && !Object.values(this.trilhas).some((t) => t.conta))) {
       return { ok: true, trilha: null };
     }
     // a ponte espera 20 s: tudo aqui fecha antes, para a sessão ser recusada em vez de abrir em outra conta sem resposta
@@ -306,7 +334,7 @@ export class Trilhas {
       this.d.log.erro(`ler os projetos separados: ${(e as Error).message}`);
     }
     const emp = this.empresaDe(cwd);
-    if (!emp) return { ok: true, trilha: null };
+    if (!emp) return this.naPrincipalCom(deNovo);
     // no modo sombra o agente só registra: a regra das contas não impede sessão nenhuma de abrir
     const estrita = emp.estrita === true && !this.d.sombra;
     const t = this.trilha(emp.id, emp.nome);
@@ -319,7 +347,7 @@ export class Trilhas {
       novo = true;
     }
     t.pedidaEm = this.agora();
-    if (!opcoes.deNovo) this.d.salvar();
+    if (!deNovo) this.d.salvar();
     if (!t.conta) {
       // a busca em voo pode ter lido as trilhas antes deste pedido: sem conta depois dela, uma segunda já o leva
       const havia = this.emVoo !== null;
@@ -348,8 +376,11 @@ export class Trilhas {
         // a sessão vai seguir este login: a nuvem precisa confirmar antes, para a principal não trocar com ela aberta
         if (pid !== null) this.anotarPrincipal(emp.id, pid);
         const seguras = await this.noPrazo(this.segurarPrincipal(), PEDIR_TRAVA_MS);
-        // nuvem fora (null): nenhuma troca chega aqui. Disse que não, ou não respondeu a tempo: não dá para garantir a conta
-        if (seguras === null || seguras?.includes(emp.id)) return { ok: true, trilha: null };
+        // a nuvem confirmou a trava: a conta em uso não troca com a sessão aberta, e a espera pode sair por aqui
+        if (seguras?.includes(emp.id)) return deNovo ? { ok: true, trilha: null, certa: true } : { ok: true, trilha: null };
+        // nuvem fora (null) no primeiro pedido: nenhuma troca chega aqui. Na pergunta de novo, só a trava confirmada tira
+        // da espera (regra 1). Disse que não, ou não respondeu a tempo: não dá para garantir a conta
+        if (seguras === null && !deNovo) return { ok: true, trilha: null };
         t.pidsPrincipal = (t.pidsPrincipal ?? []).filter((p) => p !== pid);
         this.d.salvar();
       }
@@ -366,10 +397,11 @@ export class Trilhas {
         this.avisadoSemConta.set(emp.id, this.agora() + TRILHA_PEDIDA_S);
         this.d.trocador.evento("aviso", aviso, { empresa: emp.id });
       }
-      return { ok: true, trilha: null, aviso };
+      // na pergunta de novo, o projeto deixou de usar só as contas dele durante a espera
+      return this.naPrincipalCom(deNovo, aviso);
     }
     // a sessão abre na trilha: o processo dela vai ao disco, senão numa queda a trilha soltaria a conta com ela aberta
-    if (opcoes.deNovo && novo) this.d.salvar();
+    if (deNovo && novo) this.d.salvar();
     if (this.vencidas()) {
       if ((this.avisadoVencida.get(emp.id) ?? 0) <= this.agora()) {
         this.avisadoVencida.set(emp.id, this.agora() + EMPRESAS_VENCIDAS_S);
