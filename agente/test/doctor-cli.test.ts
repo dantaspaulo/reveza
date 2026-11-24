@@ -175,6 +175,8 @@ describe("linha de comando", () => {
     const txt = ambiente();
     await executarCli(["uso"], txt);
     assert.match(txt.saidas[0]!, /US\$ 20\.00/);
+    // 0.20.1: o registro vai ao disco a cada 10 min; a pessoa vê de quando é o número
+    assert.match(txt.saidas.join("\n"), /Registro gravado em \d{4}-\d{2}-\d{2} às \d{2}:\d{2}: o agente grava a cada 10 min/);
   });
 
   test("status com o agente parado mostra o último estado salvo", async () => {

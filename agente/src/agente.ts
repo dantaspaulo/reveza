@@ -792,7 +792,7 @@ export class Agente {
     this.semContaAvisada.delete(f.sessao);
     this.trocador.evento(
       "aviso",
-      `A sessão ${f.sessao.slice(0, 8)} esperou a conta da empresa além do prazo e não será reaberta sozinha. Retome à mão se ainda precisar.`,
+      `A sessão ${f.sessao.slice(0, 8)} esperou a conta do projeto além do prazo e não será reaberta sozinha. Retome à mão se ainda precisar.`,
       { sessao: f.sessao },
     );
     return true;
@@ -1097,7 +1097,7 @@ export class Agente {
     if ("espera" in destino) {
       if (!this.semContaAvisada.has(sessao)) {
         this.semContaAvisada.add(sessao);
-        this.d.log.info(`sessão ${sessao.slice(0, 8)}: a conta da empresa dela não está livre; fica na fila`);
+        this.d.log.info(`sessão ${sessao.slice(0, 8)}: a conta do projeto dela não está livre; fica na fila`);
       }
       this.confirmarTravaERetomar(sessao, destino.empresa);
       return destino.empresa ? { semConta: true, empresa: destino.empresa } : { semConta: true };
@@ -1629,8 +1629,8 @@ export class Agente {
     // Uma sessão de empresa ou projeto roda neste login e só pode ficar nas contas dela: o computador ficou fora, a trava
     // venceu e a nuvem mandou outra. A conta fica até a sessão fechar; depois a atribuição nova entra sozinha.
     if (!semLogin && this.trilhas?.segurandoPrincipal() && !this.trilhas.serveAsPresas(a.conta_id)) {
-      if (await this.manterAtivaDuranteEspera()) return { ok: false, erro: "uma sessão de empresa ou projeto está rodando na conta em uso" };
-      this.d.log.info("[troca] a conta em uso foi para outro computador: a sessão da empresa segue para a conta atribuída");
+      if (await this.manterAtivaDuranteEspera()) return { ok: false, erro: "uma sessão de projeto está rodando na conta em uso" };
+      this.d.log.info("[troca] a conta em uso foi para outro computador: a sessão do projeto segue para a conta atribuída");
     }
     if (!semLogin && (await this.esperarMemoriaParaTrocar(a.motivo || ""))) {
       if (await this.manterAtivaDuranteEspera()) return { ok: false, erro: "a troca espera sobrar memória neste computador" };
@@ -2573,7 +2573,7 @@ export class Agente {
             this.trilhas?.manterPedida(r.empresa);
             this.salvar();
           }
-          return recusa(409, "a conta desta empresa ou projeto não está livre agora; a sessão volta sozinha quando ela soltar");
+          return recusa(409, "a conta deste projeto não está livre agora; a sessão volta sozinha quando ela soltar");
         }
         if ("vivo" in r) {
           return recusa(
@@ -2680,7 +2680,9 @@ export class Agente {
       const nuvem = this.d.nuvem;
       if (!nuvem || this.online === false) return;
       const contaNuvem = (id: string) => this.estado.contas[id]?.contaId ?? null;
-      for (let i = 0; i < 20; i++) {
+      // 0.20.1: depois de ligar, o registro do disco pode estar até REGISTRO_GRAVAR_S atrás, e a nuvem grava o valor de
+      // cada hora por cima do que tinha: até a primeira varredura inteira, nada vai (o uso cairia no painel por um ciclo)
+      for (let i = 0; i < 20 && this.contador.completo; i++) {
         const lote = this.contador.paraNuvem(contaNuvem);
         if (!lote.linhas.length && !lote.sessoes.length) break;
         const r = await nuvem.relatarTokens(lote.linhas, lote.sessoes);
@@ -2908,7 +2910,7 @@ export class Agente {
         }
         if (this.d.sombra) return { status: 409, corpo: { ok: false, erro: "modo sombra: o agente não troca" } };
         if (id !== this.estado.ativa && this.trilhas?.segurandoPrincipal()) {
-          return { status: 409, corpo: { ok: false, erro: "uma sessão de empresa ou projeto está rodando na conta em uso: feche essa sessão antes de trocar" } };
+          return { status: 409, corpo: { ok: false, erro: "uma sessão de projeto está rodando na conta em uso: feche essa sessão antes de trocar" } };
         }
         // Nem o --local pega a conta que está com outro computador (atribuída a ele ou na posse dele): os dois renovariam
         // o mesmo login, e a renovação de um apaga o do outro (09/11/2026: a VPS pegou assim a conta do AIR, que ficou

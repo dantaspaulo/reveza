@@ -416,7 +416,7 @@ export class Trocador {
     const alvo = contas[destino];
     if (!alvo) return { ok: false, erro: "conta desconhecida" };
     // o login vivo dela está na trilha de uma empresa: as duas renovariam o mesmo login
-    if (this.trilhaDe(destino)) return { ok: false, erro: "a conta está na trilha de uma empresa separada" };
+    if (this.trilhaDe(destino)) return { ok: false, erro: "a conta está na trilha de um projeto separado" };
     let atual = await this.cred.ler(PRINCIPAL);
     // A principal não tem login de conta nenhuma (vazia, só os logins MCP, ou um login morto de ninguém conhecido).
     let semConta = !hashToken(atual);
@@ -654,7 +654,7 @@ export class Trocador {
       if (!alvo) return { ok: false, erro: "conta desconhecida" };
       if (destino === this.estado.ativa) return { ok: false, erro: "a conta está em uso na principal" };
       const outra = this.trilhaDe(destino);
-      if (outra && outra.empresa !== t.empresa) return { ok: false, erro: "a conta está na trilha de outra empresa" };
+      if (outra && outra.empresa !== t.empresa) return { ok: false, erro: "a conta está na trilha de outro projeto" };
       if (t.conta === destino) return { ok: true, de: null };
       if (this.sombra) {
         this.log.faria(`pôr ${alvo.email} na trilha de ${t.nome} (${motivo})`);
@@ -691,7 +691,7 @@ export class Trocador {
         "troca",
         de
           ? `${t.nome}: troquei de ${this.estado.contas[de]!.email}${pct(de)} para ${alvo.email}${pct(destino)}. Motivo: ${motivo}.`
-          : `${t.nome}: ${alvo.email}${pct(destino)} entrou na trilha da empresa. Motivo: ${motivo}.`,
+          : `${t.nome}: ${alvo.email}${pct(destino)} entrou na trilha do projeto. Motivo: ${motivo}.`,
         { de, para: destino, motivo, empresa: t.empresa },
       );
       this.salvar();
@@ -763,7 +763,7 @@ export class Trocador {
       t.trocadaEm = agora;
       t.linha.push([agora, ""]);
       t.linha.splice(0, Math.max(0, t.linha.length - 500));
-      this.evento("info", `${t.nome}: ${this.estado.contas[id]?.email ?? "a conta"} saiu da trilha da empresa (${motivo}).`, { conta: id, empresa: t.empresa });
+      this.evento("info", `${t.nome}: ${this.estado.contas[id]?.email ?? "a conta"} saiu da trilha do projeto (${motivo}).`, { conta: id, empresa: t.empresa });
       this.salvar();
       return id;
     });
@@ -863,7 +863,7 @@ export class Trocador {
         return;
       }
       if (trilha) {
-        c.erro = "token da trilha vencido; as sessões da empresa renovam na próxima chamada";
+        c.erro = "token da trilha vencido; as sessões do projeto renovam na próxima chamada";
         return;
       }
       const r = await this.renovarSeguro(id);

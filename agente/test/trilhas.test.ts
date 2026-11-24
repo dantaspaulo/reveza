@@ -418,7 +418,7 @@ describe("trilhas no agente", () => {
     const c = await semear("C");
     const r = await m.agente.aplicarAtribuicao({ ...m.agente.ultimaAtribuicao!, conta_id: c, versao: 99 });
     assert.equal(r.ok, false);
-    assert.match(r.erro ?? "", /sessão de empresa ou projeto/);
+    assert.match(r.erro ?? "", /sessão de projeto/);
     assert.equal(m.agente.estado.ativa, ativa);
   });
 
@@ -601,7 +601,7 @@ describe("trilhas no agente", () => {
     contaEstacionada(m, "C");
     const troca = await m.agente.alvoPonte().trocar!({ email: "c@exemplo.com", local: true });
     assert.equal(troca.status, 409);
-    assert.match(String((troca.corpo as { erro?: string }).erro), /sessão de empresa ou projeto/);
+    assert.match(String((troca.corpo as { erro?: string }).erro), /sessão de projeto/);
   });
 
   test("sessão que já fechou não segura a conta em uso", async () => {

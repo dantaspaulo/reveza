@@ -208,7 +208,7 @@ export class Trilhas {
   trilha(empresa: string, nome?: string): TrilhaLocal {
     const t = (this.trilhas[empresa] ??= {
       empresa,
-      nome: nome ?? "empresa",
+      nome: nome ?? "projeto",
       pasta: path.join(this.d.pastaTrilhas, empresa),
       conta: null,
       versao: 0,
@@ -299,7 +299,7 @@ export class Trilhas {
     try {
       await this.noPrazo(this.lerEmpresas(this.lidasEm === 0), PEDIR_LEITURA_MS);
     } catch (e) {
-      this.d.log.erro(`ler as empresas separadas: ${(e as Error).message}`);
+      this.d.log.erro(`ler os projetos separados: ${(e as Error).message}`);
     }
     const emp = this.empresaDe(cwd);
     if (!emp) return { ok: true, trilha: null };
@@ -353,7 +353,7 @@ export class Trilhas {
     if (!t.conta) {
       // decisão de 21/11 (DECISAO.md): sem conta para a empresa agora, a sessão abre na principal e o painel avisa;
       // travar o lançador pararia o trabalho por uma falta que a nuvem costuma resolver em minutos
-      const aviso = `${emp.nome}: nenhuma conta livre para a empresa agora; a sessão abriu na conta em uso deste computador (veja no painel as contas marcadas para ela e o transbordo).`;
+      const aviso = `${emp.nome}: nenhuma conta livre para o projeto agora; a sessão abriu na conta em uso deste computador (veja no painel as contas marcadas para ele e o transbordo).`;
       // o processo fica na principal até o fim: não segura a conta que a trilha receber depois
       t.pids = t.pids.filter((p) => p !== pid);
       if ((this.avisadoSemConta.get(emp.id) ?? 0) <= this.agora()) {
@@ -375,7 +375,7 @@ export class Trilhas {
   }
 
   private bloquear(emp: EmpresaSeparada): RespostaTrilha {
-    const bloqueio = `${emp.nome}: a conta desta empresa ou projeto não está livre agora. A sessão não abre em outra conta; tente de novo em instantes.`;
+    const bloqueio = `${emp.nome}: a conta deste projeto não está livre agora. A sessão não abre em outra conta; tente de novo em instantes.`;
     if ((this.avisadoSemConta.get(emp.id) ?? 0) <= this.agora()) {
       this.avisadoSemConta.set(emp.id, this.agora() + TRILHA_PEDIDA_S);
       this.d.trocador.evento("aviso", bloqueio, { empresa: emp.id });
@@ -395,7 +395,7 @@ export class Trilhas {
     try {
       await this.noPrazo(this.lerEmpresas(true), prazo);
     } catch (e) {
-      this.d.log.erro(`ler as empresas separadas: ${(e as Error).message}`);
+      this.d.log.erro(`ler os projetos separados: ${(e as Error).message}`);
     }
     const nova = this.empresas.find((e) => e.id === emp.id);
     // sumiu da lista (desligada ou agora representada por outra): não dá para dizer que a conta ainda é dela
@@ -552,7 +552,7 @@ export class Trilhas {
       }
       return r.unidades;
     } catch (e) {
-      this.d.log.erro(`segurar a conta em uso para a sessão da empresa: ${(e as Error).message}`);
+      this.d.log.erro(`segurar a conta em uso para a sessão do projeto: ${(e as Error).message}`);
       return null;
     }
   }
@@ -727,7 +727,7 @@ export class Trilhas {
       id = await posse.materializar(x.conta_id, x.email, r.cofre, this.d.renovar);
       if (!id) {
         await nuvem.soltarPosse(x.conta_id).catch(() => undefined);
-        this.d.trocador.evento("erro", `${t.nome}: o login da conta escolhida para a empresa não abriu do cofre; entre de novo nela pelo painel.`, { empresa: t.empresa });
+        this.d.trocador.evento("erro", `${t.nome}: o login da conta escolhida para o projeto não abriu do cofre; entre de novo nela pelo painel.`, { empresa: t.empresa });
         this.falhas.set(chave, this.agora() + 60);
         return;
       }

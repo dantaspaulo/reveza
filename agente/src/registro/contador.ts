@@ -161,11 +161,14 @@ export class Contador {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.e.pendentesHoras = [...this.pendH];
     this.e.pendentesSessoes = [...this.pendS];
-    // se refaz sozinho (os ids seguram a repetição): sem esperar o disco
-    gravarJson(path.join(this.dir, "estado.json"), this.e, 0o600, { duravel: false });
+    // se refaz sozinho (os ids seguram a repetição): sem esperar o disco. Só a volta que desce os ids ao vistos.txt
+    // espera: numa queda de energia, o sistema podia guardar o acréscimo e perder a troca de nome da fotografia nova,
+    // e as respostas do meio sumiriam da conta para sempre
+    const desce = this.e.vistosRecentes.length > LIMITE_RECENTES;
+    gravarJson(path.join(this.dir, "estado.json"), this.e, 0o600, { duravel: desce });
     this.gravadoEm = this.agora();
     // só depois de o total estar no disco: um id no vistos.txt sem a conta gravada faria a resposta sumir numa queda
-    if (this.e.vistosRecentes.length > LIMITE_RECENTES) {
+    if (desce) {
       fs.appendFileSync(path.join(this.dir, "vistos.txt"), this.e.vistosRecentes.join("\n") + "\n", { mode: 0o600 });
       this.e.vistosRecentes = [];
     }

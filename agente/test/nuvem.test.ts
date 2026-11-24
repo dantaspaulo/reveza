@@ -667,6 +667,36 @@ describe("relatos", () => {
     assert.equal(banco.sessoes.get("s1")!.respostas, 1);
   });
 
+  test("0.20.1: antes da primeira varredura inteira desde que ligou, o uso não vai (o registro do disco pode estar atrás)", async () => {
+    await preparar();
+    await ativaEm(m, "A", 50);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const dir = `${m.c.projetos}/-x-proj`;
+    fs.mkdirSync(dir, { recursive: true });
+    const linha = {
+      type: "assistant",
+      sessionId: "s1",
+      cwd: "/x/proj",
+      timestamp: new Date((m.relogio.agora() + 10) * 1000).toISOString(),
+      message: { id: "m1", model: "claude-opus-5-5", usage: { input_tokens: 5, output_tokens: 7 } },
+    };
+    fs.writeFileSync(`${dir}/s1.jsonl`, JSON.stringify(linha) + "\n");
+    // a nuvem fora: a hora fica pendente, como no registro do disco de antes de uma queda
+    m.agente.online = false;
+    await m.agente.registro();
+    assert.equal(banco.tokens.size, 0);
+    // reiniciou: a nuvem voltou e há conversa nova, mas a primeira varredura ainda não terminou (orçamento estourado)
+    fs.appendFileSync(`${dir}/s1.jsonl`, JSON.stringify({ ...linha, message: { ...linha.message, id: "m2" } }) + "\n");
+    m.agente.online = true;
+    m.agente.contador.completo = false;
+    await m.agente.registro(-1);
+    assert.equal(banco.tokens.size, 0, "a hora pela metade passaria por cima do valor maior que a nuvem já tinha");
+    await m.agente.registro();
+    assert.equal(banco.tokens.size, 1);
+    assert.equal(banco.sessoes.get("s1")!.respostas, 2);
+  });
+
   test("0.17.0: a pasta vai inteira (a raiz do git, relativa à pessoal) e os agentes do OpenBot vão quando mudam ou a cada hora", async () => {
     const ob = new OpenBotFalso();
     await preparar({ openbot: ob });

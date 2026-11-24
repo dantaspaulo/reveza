@@ -29,7 +29,7 @@ import { NuvemRpc } from "./nuvem/rpc.js";
 import { guardarIdentidade, lerIdentidade, rpcSupabase } from "./nuvem/supabase.js";
 import type { Nuvem } from "./nuvem/tipos.js";
 import { chaveDaPonte, pedirPonte } from "./ponte.js";
-import { Contador } from "./registro/contador.js";
+import { Contador, REGISTRO_GRAVAR_S } from "./registro/contador.js";
 import * as servico from "./servico.js";
 import { executorReal, type Executor } from "./util/executor.js";
 import { gravarJson, lerJson } from "./util/arquivos.js";
@@ -737,6 +737,24 @@ async function cmdUso(amb: Ambiente, a: Args): Promise<number> {
         `${resultado.totais.respostas} responses, ${resultado.sessoes} sessions, ${resultado.agentes} agents.`,
     ),
   );
+  // 0.20.1: o agente grava o registro no ritmo (REGISTRO_GRAVAR_S); a pessoa vê de quando é o número
+  let gravado: number | null = null;
+  try {
+    gravado = Math.floor(fs.statSync(path.join(amb.c.registro, "estado.json")).mtimeMs / 1000);
+  } catch {
+    // sem registro gravado ainda
+  }
+  if (gravado !== null) {
+    const d = new Date(gravado * 1000);
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    const min = Math.round(REGISTRO_GRAVAR_S / 60);
+    amb.saida(
+      t(
+        `Registro gravado em ${dia(gravado)} às ${hm}: o agente grava a cada ${min} min, então o painel pode estar à frente.`,
+        `Log saved on ${dia(gravado)} at ${hm}: the agent saves every ${min} min, so the dashboard may be ahead.`,
+      ),
+    );
+  }
   amb.saida(t("Estimativa: na assinatura não se paga por token.\n", "Estimate: on a subscription you do not pay per token.\n"));
   const tabela = (titulo: string, itens: typeof porDia, n = 10) => {
     if (!itens.length) return;
