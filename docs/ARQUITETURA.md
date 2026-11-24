@@ -231,10 +231,27 @@ desfaz os passos anteriores, e o projeto novo acha a empresa nova pelo `ref` pro
 - **Pasta por computador (`pastas_empresa.computador_id`, 0043):** null vale em todos. A chave passa a ser tipo, padrão
   e computador. A regra de um computador ganha, no empate, da que vale em todos. `painel_unidade` recusa a pasta que já é
   de outra unidade no mesmo computador, ou quando um dos lados vale em todos.
-- **Sem conta livre:** `Trilhas.pedir` devolve `bloqueio` para a unidade estrita, `reveza trilha` escreve o motivo e sai
-  3, e o lançador não abre a conversa (saída 78); comando que não conversa (`--version`, `auth`, `doctor` e afins) segue.
-  No modo sombra nada é barrado. Sem a primeira leitura da nuvem, a pasta não tem empresa conhecida e o assistente abre
-  normal.
+- **Sem conta livre:** `Trilhas.pedir` devolve `bloqueio` para a unidade estrita e `reveza trilha` escreve o motivo e
+  sai 3. Até a 0.20.2 o lançador não abria a conversa (saída 78). Desde a 0.21.0 (plano B) ele espera a conta do projeto:
+  pergunta de novo (`reveza trilha --de-novo`) a cada 15 s por até 720 s e só então sai 78; `REVEZA_ESPERA_S=0` volta ao
+  antigo. Na pergunta de novo, só resposta positiva e explícita tira da espera: a trilha conferida (saída 0, duas linhas)
+  ou a conta em uso com a trava confirmada pela nuvem (saída 5, quando o agente manda `certa`); sem resposta, erro ou
+  principal sem certeza saem 4 e a espera segue. A trava pedida na pergunta de novo entra em `travaPedida` antes da
+  chamada, e as chamadas a `agente_segurar_principal` vão uma por vez (a que não volta segura a próxima até 20 s), porque a
+  nuvem guarda a última lista que chega. A pergunta usa a pasta física (`realpath`), o instalador troca o lançador por
+  rename (quem espera não lê um arquivo pela metade), e o comando que não conversa (`COMANDOS_SEM_CONVERSA`: `--version`,
+  `doctor`, `mcp`, `config` e afins) pergunta sem o processo e nunca espera; `auth` e `setup-token`
+  (`COMANDOS_DE_CONTA`) nem perguntam e abrem fora da trilha (quem já nasceu numa trilha segue nela, como todo comando,
+  pela marca `REVEZA_TRILHA` no ambiente). Um teste confere que todo comando do `claude --help`
+  está em uma das três listas. Na primeira pergunta, o agente que não responde leva mais 2 tentativas; seguindo assim, a
+  sessão abre na conta em uso, com aviso, como antes. No modo sombra nada é barrado. Sem a primeira leitura da nuvem, a
+  pasta não tem empresa conhecida e o assistente abre normal.
+- **Conta esgotada (0.21.0):** `decisao.esgotada` é o teste do `painel_trocar_agora`: uma janela que decide em 100% ou
+  mais, sem ter renovado (reset no futuro ou desconhecido). A conta em uso esgotada não serve à sessão nova de projeto
+  (`Trilhas.principalServe`, na primeira pergunta, na de novo e na retomada): a sessão espera. Quem já segura a conta em
+  uso segue segurando (`naPrincipal` usa `ativaServe`, sem o teste), porque trocar levaria a sessão aberta junto. `reveza
+  trocar` (sem nuvem ou com `--local`) recusa a conta esgotada. A troca pela API e a trilha nova sem conta abaixo de 100
+  ficam para a 0.21.1.
 - **Retomada (`Trilhas.retomada`):** a regra vale pela pasta, mesmo para a sessão que parou no login da principal. Ela
   volta na trilha, na principal se a conta em uso é da unidade (o processo entra na trava) ou espera na fila, e a fila
   mantém a trilha pedida. Depois de religar, sem as regras lidas, a retomada espera.
@@ -413,7 +430,9 @@ de onde parou, lembra que o que dependia de alguém continua esperando e pede s�
 metade. Falha do comando (OpenBot fora do ar, agente sem scripts locais) vira um evento de erro, sem repetir sozinha.
 
 **Rotas das trilhas (0.18.0).** `POST /api/trilha { cwd, pid }` (o lançador, pela linha de comando): `cwd` absoluto
-de até 4096 caracteres, `pid` inteiro; devolve a trilha da empresa da pasta (ou nada, com aviso). `POST
+de até 4096 caracteres, `pid` inteiro; devolve a trilha da empresa da pasta (ou nada, com aviso). Com `deNovo: true`
+(0.21.0, a pergunta do lançador que espera), o agente não regrava o estado a cada pergunta e só manda `certa: true` com
+a trava da conta em uso confirmada pela nuvem. `POST
 /api/trilha/ativa { trilha, sessao }` (o mod, no lugar de `GET /api/ativa`, quando a sessão nasceu com
 `REVEZA_TRILHA`): a conta da trilha e a versão dela; trilha desconhecida dá 404. Medida e limite com `trilha` no corpo
 vão para a conta da trilha e nunca mexem na principal. Mesma prova da chave local das outras rotas.

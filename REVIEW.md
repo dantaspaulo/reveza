@@ -40,6 +40,13 @@ teste, o CHANGELOG ou a release.
 - **Alocar na tela Contas** (0.20.2): `planoDeAlocar` em `painel/src/lib/cadastro.ts`. Só projeto (o subprojeto herda
   as contas do projeto e fica na tela Projetos); relê o cadastro antes de gravar e manda só `contas`; a mesma recusa da
   tela Projetos; o aviso de quem sai da conta conta a herança do subprojeto ligado; conta saindo (`sai_em`) não se aloca.
+- **espera do lançador e conta esgotada** (0.21.0): `lancadorClaude` em `instalador/lib/programa.mjs`, `cmdTrilha` em
+  `agente/src/cli.ts` e `Trilhas.pedir`. Na pergunta de novo, só a trilha conferida (saída 0) ou a certeza do agente
+  (saída 5) tiram da espera; erro, agente fora e "não sei" seguem esperando. Comando novo do assistente entra em uma das
+  três listas (`COMANDOS_SEM_CONVERSA`, `COMANDOS_DE_CONTA`, `COMANDOS_COM_CONVERSA`), e o teste de classificação lê o
+  `claude --help`. As chamadas a `agente_segurar_principal` vão uma por vez, porque a nuvem guarda a última lista. A
+  conta esgotada (`decisao.esgotada`, o mesmo teste do `painel_trocar_agora`) não recebe sessão nova, mas quem já a
+  segura segue segurando.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

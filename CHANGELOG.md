@@ -7,6 +7,44 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.21.0 · 24/11/2026
+
+Melhoria para quem separa as contas por projeto: a conversa de um projeto sem conta livre espera a conta dele em vez de
+falhar, e a conta esgotada não recebe conversa nova. Mudam o agente e o lançador; a nuvem e o painel só sobem de número.
+
+### O que muda para quem usa projetos
+
+- **A conversa espera a conta do projeto.** Antes, com o projeto ligado e nenhuma conta dele livre, o lançador recusava a
+  conversa na hora (saída 78). Agora ele espera até 12 minutos, perguntando ao agente a cada 15 segundos, e abre assim
+  que uma conta do projeto fica livre. Passado o prazo, sai 78 com o motivo, como antes. `REVEZA_ESPERA_S=0` volta ao
+  jeito antigo.
+- **Só uma resposta certa tira da espera:** a pasta de login do projeto, ou a confirmação de que a conta em uso no
+  computador é do projeto e ficou presa a ele. Erro, agente sem responder ou resposta sem certeza não abrem a conversa em
+  outra conta: a espera continua.
+- **A conta esgotada fica de fora.** Esgotada é a conta com uma janela que decide a troca (a de 5 horas ou uma das
+  semanais que decidem) em 100% e ainda sem renovar, o mesmo critério do Trocar agora do painel. A conversa nova de
+  projeto não abre nela, e `reveza trocar` (sem nuvem ou com `--local`) recusa trocar para ela. Quem já está numa conta
+  que encheu fica até a troca: nada derruba conversa aberta.
+- **Comando que não conversa não segura conta:** `--version`, `doctor`, `mcp`, `config` e afins rodam sem esperar.
+  `auth` e `setup-token` abertos numa pasta de projeto usam o login normal do computador, não a pasta de login do
+  projeto. `agents`, `attach`, `respawn`, `ultrareview` e `gateway` contam como conversa.
+- **O lançador novo entra sem atrapalhar quem espera:** a instalação grava o arquivo novo ao lado e troca de uma vez, e
+  a pergunta usa a pasta real (sem atalhos), para a mesma pasta não valer como duas.
+
+### Correções que vieram junto
+
+- O agente não recebia o número do processo do lançador desde a 0.18.0, e a trava da conta em uso não sabia de qual
+  conversa era. Só afetava projeto ligado.
+- A falha ao ler os agentes do OpenBot não vira mais uma lista vazia: o agente mantém a última lista e tenta de novo em
+  30 segundos.
+- O roteiro de testes do agente para quando o filtro não acha nenhum teste compilado, em vez de passar sem rodar nada.
+
+### Fica para a 0.21.1
+
+- A troca pela API e a escolha da conta de uma trilha nova também vão recusar a conta esgotada (uma mudança na nuvem,
+  com o cuidado do projeto sem transbordo).
+- A espera do lançador no Windows.
+
 ## 0.20.2 · 24/11/2026
 
 Correção no painel: a tela Contas mostra em qual projeto cada conta está, e o projeto novo nasce num computador, nunca
