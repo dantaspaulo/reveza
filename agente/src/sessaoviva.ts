@@ -85,10 +85,17 @@ export function processoVivo(pid: number): boolean {
   }
 }
 
-/** A hora em que o processo começou, como o sistema a escreve; null se ele não existe ou o `ps` falhou. */
-export function inicioDoProcesso(pid: number): string | null {
+/** A hora em que o processo começou, como o sistema a escreve; null se ele não existe ou a leitura falhou. */
+export function inicioDoProcesso(pid: number, windows = process.platform === "win32"): string | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
   try {
-    const s = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] });
+    const s = windows
+      ? execFileSync(
+          "powershell",
+          ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToFileTimeUtc()`],
+          { encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] },
+        )
+      : execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] });
     return s.trim() || null;
   } catch {
     return null;

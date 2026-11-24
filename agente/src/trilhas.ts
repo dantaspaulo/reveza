@@ -488,8 +488,10 @@ export class Trilhas {
       if (!t.pidsPrincipal?.length) continue;
       t.pidsPrincipal = t.pidsPrincipal.filter((p) => {
         const salvo = t.iniciosPrincipal?.[String(p)];
-        const atual = salvo ? inicio(p) : null;
-        return !salvo || !atual || atual === salvo;
+        // processo morto sai logo depois, em naPrincipal: não vale abrir uma leitura para ele
+        if (!salvo || !this.d.vivo(p)) return true;
+        const atual = inicio(p);
+        return !atual || atual === salvo;
       });
     }
   }
