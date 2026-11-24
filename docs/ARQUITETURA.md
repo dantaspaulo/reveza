@@ -665,7 +665,10 @@ botão e procurou o que levasse o painel junto).
 Menu lateral, nada empilhado numa tela só:
 1. **Visão geral**: conta em uso por computador, ritmo, previsão, faixas de alerta.
 2. **Contas**: lista, cor, prioridade, reserva, agenda, teto semanal, conectar (gera o pedido ao computador), entrar
-   de novo, pausar, usar agora e remover. O remover (0.13.0, migração 0032) deixa a conta pausada por 10 minutos
+   de novo, pausar, usar agora e remover. Desde a 0.20.2 a coluna **Projeto** (no lugar da prioridade, que segue em
+   Editar e na ordem da lista) mostra os projetos de cada conta e o **Alocar**, que marca ou tira a conta de um projeto
+   pela mesma `painel_unidades` da tela Projetos, só com `contas` (o subprojeto fica na tela Projetos, que mostra a
+   herança). O remover (0.13.0, migração 0032) deixa a conta pausada por 10 minutos
    (`sai_em`) com o botão **Desfazer**; só depois o `vigiar` grava a marca em `contas_removidas` e apaga a conta, e cada
    computador apaga a cópia do login. A conta que, no ritmo da semana, acaba antes de renovar ganha o selo **Gastando
    rápido**. As barras de uso ficam âmbar dos 15 pontos antes do aviso até ele e vermelhas do aviso para cima.

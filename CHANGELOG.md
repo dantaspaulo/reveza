@@ -7,6 +7,26 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.20.2 · 24/11/2026
+
+Correção no painel: a tela Contas mostra em qual projeto cada conta está, e o projeto novo nasce num computador, nunca
+em todos. Só o painel muda: a nuvem e o agente sobem de número, sem mudança no funcionamento.
+
+### O que muda no painel
+
+- **Contas ganhou a coluna Projeto, no lugar da prioridade.** Cada conta mostra os projetos em que está, onde cada um
+  roda e se está ligado, desligado ou em teste. O botão **Alocar** põe ou tira a conta de um projeto ali mesmo, com a
+  mesma conferência da tela Projetos: não deixa um projeto ligado sem conta e, quando um computador vai sair da conta,
+  pergunta antes. Subprojeto continua na tela Projetos, onde se vê quais contas ele herda do projeto. A conta que está
+  saindo do Reveza não se aloca.
+- **A prioridade saiu da tabela** (a ordem da lista já é a da prioridade) e continua em **Editar regras**. A coluna mostra
+  só as regras fora do padrão: sem créditos, reserva, pausada, teto da semana, modelo e agenda.
+- **Projeto novo, por computador:** o botão diz onde ele nasce ("Novo projeto em Notebook", pelo computador da aba).
+  **Roda em** não oferece mais "Todos": cada projeto roda nos computadores que você marcar. O projeto antigo, que roda em
+  todos, mostra "Todos" marcado e em destaque; tocar nele ou num computador deixa o projeto só onde você escolher.
+- **Aviso dos projetos que rodam em todos os computadores**, com os nomes e como separar. Aparece só com mais de um
+  computador.
+
 ## 0.20.1 · 24/11/2026
 
 Correção: a empresa cadastrada valia em todos os computadores. Agora ela se chama **projeto** e vale só nos computadores

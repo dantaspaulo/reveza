@@ -37,6 +37,9 @@ teste, o CHANGELOG ou a release.
   decide a principal olha `rvz_roda_em`, para valer também no agente antigo; o projeto antigo segue em todos; a
   trilha aberta segue até as sessões fecharem; nada de troca cruzada direta entre dois computadores (a posse trava); o
   painel só manda `computadores` quando mudou.
+- **Alocar na tela Contas** (0.20.2): `planoDeAlocar` em `painel/src/lib/cadastro.ts`. Só projeto (o subprojeto herda
+  as contas do projeto e fica na tela Projetos); relê o cadastro antes de gravar e manda só `contas`; a mesma recusa da
+  tela Projetos; o aviso de quem sai da conta conta a herança do subprojeto ligado; conta saindo (`sai_em`) não se aloca.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.
