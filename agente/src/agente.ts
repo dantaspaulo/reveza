@@ -20,7 +20,7 @@ import { expiraEm, hashToken, temRenovacao } from "./credenciais/blob.js";
 import { PRINCIPAL } from "./credenciais/tipos.js";
 import { CredenciaisSombra } from "./credenciais/sombra.js";
 import type { Credenciais } from "./credenciais/tipos.js";
-import { agendarRodizio, candidata, decidir, gatilhoDeTroca, pctEfetivo, sorteioReal } from "./decisao.js";
+import { agendarRodizio, candidata, decidir, esgotada, gatilhoDeTroca, pctEfetivo, sorteioReal } from "./decisao.js";
 import { gatilhoValido, lembrarCritica, marcarCritica, sessaoCritica, sessaoValida, situacaoCriticas } from "./criticas.js";
 import { carregarEstadoDoAgente, salvarCopiaBoa, salvarEstado, type ContaLocal, type EstadoLocal, type ItemFila, type Modo, type Recuperacao, type UltimaAtualizacaoAssistente } from "./estado.js";
 import { idiomaAtual, t, t as t_ } from "./i18n.js";
@@ -2916,6 +2916,10 @@ export class Agente {
           return { status: 409, corpo: { ok: false, erro: "com a nuvem ligada, quem decide a conta é o painel (Trocar agora); use --local para forçar" } };
         }
         if (this.d.sombra) return { status: 409, corpo: { ok: false, erro: "modo sombra: o agente não troca" } };
+        // 0.21.0: a conta esgotada fica em espera; nem o pedido à mão a põe em uso (o mesmo do Trocar agora do painel)
+        if (id !== this.estado.ativa && esgotada(this.estado.contas[id]!, this.d.relogio.agora())) {
+          return { status: 409, corpo: { ok: false, erro: "conta esgotada: espere a janela renovar" } };
+        }
         if (id !== this.estado.ativa && this.trilhas?.segurandoPrincipal()) {
           return { status: 409, corpo: { ok: false, erro: "uma sessão de projeto está rodando na conta em uso: feche essa sessão antes de trocar" } };
         }

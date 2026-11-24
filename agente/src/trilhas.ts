@@ -22,6 +22,7 @@ import { POSSE_S } from "./config.js";
 import { hashToken } from "./credenciais/blob.js";
 import type { Credenciais } from "./credenciais/tipos.js";
 import type { ClaudeJson } from "./claudejson.js";
+import { esgotada } from "./decisao.js";
 import type { EstadoLocal, TrilhaLocal } from "./estado.js";
 import type { EmpresaSeparada, Nuvem, RegraEmpresa, TrilhaNuvem } from "./nuvem/tipos.js";
 import type { PosseCofre } from "./posse.js";
@@ -497,9 +498,19 @@ export class Trilhas {
    * atrasa um pouco em relação à decisão dela.
    */
   private principalServe(id: string): boolean {
-    if (!this.ativaServe(id)) return false;
+    if (!this.ativaServe(id) || this.ativaEsgotada()) return false;
     const atribuida = this.d.atribuida?.();
     return !atribuida || (this.contasDaUnidade(id) ?? []).includes(atribuida);
+  }
+
+  /**
+   * A conta em uso está esgotada (0.21.0): não recebe sessão nova de projeto, que espera. Fica fora do `ativaServe` de
+   * propósito: quem já está nela segue segurando, porque trocar levaria a sessão aberta junto.
+   */
+  private ativaEsgotada(): boolean {
+    const e = this.d.estado();
+    const c = e.ativa ? e.contas[e.ativa] : undefined;
+    return !!c && esgotada(c, this.agora());
   }
 
   /** A conta serve a todas as unidades com sessão presa no login da principal. */

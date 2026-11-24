@@ -23,6 +23,17 @@ export function pctEfetivo(conta: ContaLocal, t: number): number | null {
   return valores.length ? Math.max(...valores) : null;
 }
 
+/**
+ * Conta esgotada (0.21.0): uma janela que decide em 100% ou mais e que ainda não renovou (sem saber quando renova, segue
+ * esgotada). É o teste do Trocar agora do painel (`painel_trocar_agora`, 0039). A semana de um modelo só não decide, e
+ * sem leitura não é esgotada: a falta de leitura tem regra própria.
+ */
+export function esgotada(conta: ContaLocal, t: number): boolean {
+  return (conta.janelas ?? []).some(
+    (j) => janelaDaConta(j.tipo) && j.pct !== null && j.pct !== undefined && Number(j.pct) >= 100 && (!j.resetEm || j.resetEm > t),
+  );
+}
+
 export function leituraValida(conta: ContaLocal, t: number): boolean {
   if (!conta.lidoEm) return false;
   if (t - conta.lidoEm <= LEITURA_VALIDA_S) return true;
