@@ -173,10 +173,10 @@ test("a troca à mão não tira a conta da sessão, pelo painel nem pela API", a
   await b.sql("insert into public.cofre (conta_id, cifrado, nonce, versao) values ($1, decode(repeat('00', 17), 'hex'), decode(repeat('00', 12), 'hex'), 1) on conflict do nothing", [c]);
   const r = await b.rpc(admin, "painel_trocar_agora", { p_computador: pc.pc, p_conta: c });
   assert.equal(r.ok, false);
-  assert.match(r.erro, /sessão de empresa ou projeto/);
+  assert.match(r.erro, /sessão de projeto/);
   const j = await b.rpc("servico", "api_trocar", { p_user: admin.id, p_computador: pc.pc, p_conta: c });
   assert.equal(j.ok, false);
-  assert.match(j.erro, /sessão de empresa ou projeto/);
+  assert.match(j.erro, /sessão de projeto/);
   assert.equal(await b.atribuida(pc), a);
 });
 

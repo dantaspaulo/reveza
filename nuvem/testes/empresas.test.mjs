@@ -100,7 +100,7 @@ test("marcas da conta: a lista inteira vale; vazia volta a atender todas; empres
   await b.rpc(admin, "painel_conta_empresas", { p_conta: c1, p_lista: [z] });
   assert.deepEqual((await b.sql("select empresa_id from public.conta_empresas")).map((l) => l.empresa_id), [z]);
   await assert.rejects(b.rpc(admin, "painel_conta_empresas", { p_conta: c1, p_lista: ["00000000-0000-0000-0000-000000000009"] }),
-    /empresa desconhecida/);
+    /projeto desconhecido/);
   await b.rpc(admin, "painel_pasta_empresa", { p_tipo: "pasta", p_padrao: "~/Code/zeta/", p_empresa: z });
   const [{ padrao }] = await b.sql("select padrao from public.pastas_empresa");
   assert.equal(padrao, "~/Code/zeta", "a barra do fim sai");

@@ -75,7 +75,7 @@ test("separar: a principal sai da conta que ficou só da empresa e não a pega d
   await mudar(b, admin, x, { separar: true });
   assert.equal(await b.atribuida(pc), c);
   const [ev] = await b.sql("select dados from public.eventos where tipo = 'troca' order by id desc limit 1");
-  assert.equal(ev.dados.motivo, "a conta em uso agora é só de empresas separadas");
+  assert.equal(ev.dados.motivo, "a conta em uso agora é só de projetos separados");
   const cand = (await b.sql("select conta_id from public.rvz_candidatas($1)", [pc.pc])).map((l) => l.conta_id);
   assert.ok(!cand.includes(a), "a principal não escolhe a conta só da empresa separada");
   assert.ok(cand.includes(d), "a conta marcada também para uma empresa não separada segue na principal");
@@ -128,7 +128,7 @@ test("a trilha pega a conta da empresa, troca no gatilho, vai ao transbordo e vo
   r = await pedir(b, pc, [x]);
   assert.equal(r.trilhas[0].conta_id, a);
   // a 0041 redefine a função com o texto que serve também a projeto
-  assert.equal(r.trilhas[0].motivo, "voltou para uma conta da empresa ou do projeto");
+  assert.equal(r.trilhas[0].motivo, "voltou para uma conta do projeto");
   const [ev] = await b.sql("select dados from public.eventos where tipo = 'troca' and dados ->> 'empresa' is not null order by id desc limit 1");
   assert.equal(ev.dados.empresa, x);
   assert.equal(ev.dados.de, e);

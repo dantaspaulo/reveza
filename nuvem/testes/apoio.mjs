@@ -13,10 +13,14 @@ const JSONB = new Set(["p_valor", "p_campos", "p_corpo", "p_destino", "p_janelas
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 const migracoes = path.join(aqui, "..", "migracoes");
 
-export async function banco() {
+const arquivosDeMigracao = () =>
+  readdirSync(migracoes).filter((a) => a.endsWith(".sql") && !a.endsWith(".supabase.sql")).sort();
+
+// `ate`: para na migração com esse número, para o teste pôr dados de antes e rodar o resto com migrarDe.
+export async function banco({ ate = null } = {}) {
   const db = new PGlite();
   await db.exec(readFileSync(path.join(aqui, "supabase-falso.sql"), "utf8"));
-  for (const arq of readdirSync(migracoes).filter((a) => a.endsWith(".sql") && !a.endsWith(".supabase.sql")).sort()) {
+  for (const arq of arquivosDeMigracao().filter((a) => ate === null || a.slice(0, 4) <= ate)) {
     await db.exec(readFileSync(path.join(migracoes, arq), "utf8"));
   }
   return new Banco(db);
@@ -25,6 +29,13 @@ export async function banco() {
 class Banco {
   constructor(db) {
     this.db = db;
+  }
+
+  // Roda as migrações a partir deste número, sobre os dados que já estão no banco.
+  async migrarDe(inicio) {
+    for (const arq of arquivosDeMigracao().filter((a) => a.slice(0, 4) >= inicio)) {
+      await this.db.exec(readFileSync(path.join(migracoes, arq), "utf8"));
+    }
   }
 
   async sql(texto, params = []) {

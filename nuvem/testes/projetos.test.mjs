@@ -80,8 +80,8 @@ test("nome do projeto é único dentro da empresa; projeto não tem projeto e n�
   const r = await b.rpc(admin, "painel_empresa", { p_id: null, p_campos: { nome: "site", pai: x } });
   assert.equal(r.ok, false);
   assert.match(r.erro, /projeto com esse nome/);
-  await assert.rejects(b.rpc(admin, "painel_empresa", { p_id: null, p_campos: { nome: "Sub", pai: p } }), /empresa do projeto desconhecida/);
-  await assert.rejects(mudar(b, admin, p, { pai: y }), /não muda de empresa/);
+  await assert.rejects(b.rpc(admin, "painel_empresa", { p_id: null, p_campos: { nome: "Sub", pai: p } }), /projeto do subprojeto desconhecido/);
+  await assert.rejects(mudar(b, admin, p, { pai: y }), /não muda de projeto/);
   // uma empresa pode ter o nome de um projeto de outra
   await criar(b, admin, "Site");
 });
@@ -357,7 +357,7 @@ test("o painel guarda o modo e o separar juntos (o agente 0.18.0 lê o separar)"
   assert.deepEqual(await ler(p), { separar: false, modo: null, efetivo: "desligado" });
   await mudar(b, admin, x, { modo: "sombra" });
   assert.equal((await ler(p)).efetivo, "sombra", "o projeto sem modo segue a empresa");
-  await assert.rejects(mudar(b, admin, x, { modo: null }), /a empresa precisa de um modo/);
+  await assert.rejects(mudar(b, admin, x, { modo: null }), /o projeto precisa de um modo/);
   await assert.rejects(mudar(b, admin, x, { modo: "talvez" }), /modo inválido/);
 });
 
