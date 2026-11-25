@@ -329,6 +329,7 @@ export default secao({
         },
         textoNenhum: "Ainda não pega nenhum agente neste computador",
         avisoNenhumaTitulo: "Nenhuma conta sobra para o que está fora dos projetos ligados",
+        avisoNenhumaSemUso: "Nenhuma conta fica livre para conversas fora dos projetos. Deixe ao menos uma conta fora dos projetos ligados se precisar dessas conversas.",
         avisoNenhumaTexto: {
           um: "{n} agente ou pasta (do OpenBot e das sessões dos últimos 30 dias) fica fora dos projetos ligados, e toda conta está marcada num projeto ligado. Quando a conta em uso encher, o Reveza não terá para onde trocar. Deixe ao menos uma conta fora dos projetos ligados ou ponha esse agente num projeto.",
           outros:
@@ -666,6 +667,7 @@ export default secao({
         },
         textoNenhum: "Matches no agent on this computer yet",
         avisoNenhumaTitulo: "No account is left for work outside the projects that are on",
+        avisoNenhumaSemUso: "No account is free for conversations outside the projects. Leave at least one account outside active projects if you need those conversations.",
         avisoNenhumaTexto: {
           um: "{n} agent or folder (from OpenBot and from sessions in the last 30 days) is outside the projects that are on, and every account is ticked in a project that is on. When the account in use fills up, Reveza will have nowhere to switch. Leave at least one account outside the projects that are on, or put this agent in a project.",
           outros:

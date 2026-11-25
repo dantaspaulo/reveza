@@ -6,6 +6,7 @@ import {
   CHAVES_CONFIG,
   CONFIG_PADRAO,
   codigoDoErro,
+  idsComLogin,
   estadoDoCanal,
   faseDaLigacao,
   modoAssistente,
@@ -17,6 +18,12 @@ import {
 } from "./supabase"
 
 describe("FonteSupabase (partes puras)", () => {
+  it("distingue cofre vazio de leitura indisponível e não aceita lista incompleta", () => {
+    expect(idsComLogin([], false)).toEqual(new Set())
+    expect(idsComLogin([{ conta_id: "c1" }], false)).toEqual(new Set(["c1"]))
+    expect(idsComLogin(null, true)).toBeNull()
+    expect(idsComLogin([{ conta_id: "c1" }, {}], false)).toBeNull()
+  })
   it("o canal de tempo real conta se está ligado ou caiu; os outros estados não mudam nada", () => {
     expect(estadoDoCanal("SUBSCRIBED")).toBe("ligado")
     expect(estadoDoCanal("CHANNEL_ERROR")).toBe("caiu")

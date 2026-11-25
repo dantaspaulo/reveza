@@ -42,6 +42,7 @@ import type { AgenteOpenBot, Computador, Conta, DadosEmpresas, SessaoUso, Trilha
 import { useT } from "@/i18n"
 import {
   adicionarTexto,
+  agentesRecentes,
   agentesDoTexto,
   alternarAgente,
   avisoContas,
@@ -96,14 +97,14 @@ const CHIP =
  * de um agente vem com o nome dele.
  */
 function sugestoesDe(
-  dados: DadosEmpresas,
   sessoes: SessaoUso[] | null,
-  computador: string
+  computador: string,
+  agentes: AgenteOpenBot[]
 ): { pasta: string; rotulo?: string }[] {
   const nomes = new Map<string, string>()
-  for (const a of dados.agentes) if (a.computadorId === computador && a.pasta && a.nome) nomes.set(a.pasta, a.nome)
+  for (const a of agentes) if (a.computadorId === computador && a.pasta && a.nome) nomes.set(a.pasta, a.nome)
   const todas = [
-    ...dados.agentes.filter((a) => a.computadorId === computador).map((a) => a.pasta),
+    ...agentes.filter((a) => a.computadorId === computador).map((a) => a.pasta),
     ...(sessoes ?? []).filter((s) => s.computadorId === computador).map((s) => s.pasta),
   ]
   return [...new Set(todas.filter(Boolean))]
@@ -113,10 +114,10 @@ function sugestoesDe(
 }
 
 /** As pastas em uso nos computadores ativos (agentes do OpenBot e sessões recentes): a base do aviso de conta livre. */
-function usadosDe(dados: DadosEmpresas, sessoes: SessaoUso[] | null, ativos: string[]): Usado[] {
+function usadosDe(agentes: AgenteOpenBot[], sessoes: SessaoUso[] | null, ativos: string[]): Usado[] {
   const ativo = new Set(ativos)
   return [
-    ...dados.agentes.map((a) => ({ pasta: a.pasta, projeto: "", computadorId: a.computadorId })),
+    ...agentes.map((a) => ({ pasta: a.pasta, projeto: "", computadorId: a.computadorId })),
     ...(sessoes ?? []).map((s) => ({ pasta: s.pasta, projeto: s.projeto, computadorId: s.computadorId })),
   ].filter((x) => ativo.has(x.computadorId))
 }
@@ -198,11 +199,11 @@ export default function Empresas() {
   const mudanca = alteradas(referencia, lista).length > 0 && !aguardando
 
   // 0.21.1: onde cada pasta cai pelo rascunho e o aviso de conta livre, que muda na hora, antes de salvar
-  const agentes = dados?.agentes
-  const classificar = React.useMemo(() => classificadorDoRascunho(lista, agentes ?? []), [lista, agentes])
+  const agentes = React.useMemo(() => agentesRecentes(dados?.agentes ?? []), [dados?.agentes])
+  const classificar = React.useMemo(() => classificadorDoRascunho(lista, agentes), [lista, agentes])
   const usados = React.useMemo(
-    () => (dados ? usadosDe(dados, sessoes.dados, ativos) : []),
-    [dados, sessoes.dados, ativos]
+    () => usadosDe(agentes, sessoes.dados, ativos),
+    [agentes, sessoes.dados, ativos]
   )
   const agora = useAgora(60_000)
   const aviso = React.useMemo(
@@ -371,8 +372,8 @@ export default function Empresas() {
           computadores,
           trilhas: dados.trilhas,
           antes: referencia,
-          sugestoes: sugestoesDe(dados, sessoes.dados, computador.id),
-          agentes: dados.agentes,
+          sugestoes: sugestoesDe(sessoes.dados, computador.id, agentes),
+          agentes,
           classificar,
           pode,
           mudar,
@@ -1121,8 +1122,8 @@ function LinhaTroca({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
 }
 
 /**
- * A pasta neste computador. Sem nenhuma, uma linha vazia: digitar já cria a regra. 0.21.1: a pasta de um agente da
- * lista aparece marcada na lista de agentes, e não aqui.
+ * A pasta neste computador. Sem nenhuma, uma linha vazia: digitar já cria a regra. A pasta continua aqui durante a
+ * edição mesmo quando coincide com a de um agente, para a pessoa não perder o campo enquanto digita.
  */
 function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
   const { t } = useT()
@@ -1151,8 +1152,8 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
           <option key={p.pasta} value={p.pasta} label={p.rotulo} />
         ))}
       </datalist>
-      {linhas.map(({ pasta, indice }, i) => (
-        <div key={i} className="flex min-w-0 flex-wrap items-center gap-2.5">
+      {linhas.map(({ pasta, indice }) => (
+        <div key={indice < 0 ? u.pastas.length : indice} className="flex min-w-0 flex-wrap items-center gap-2.5">
           <Input
             aria-label={t("empresas.op.pasta")}
             placeholder={t("empresas.pastas.padraoDicaPasta")}
@@ -1311,15 +1312,12 @@ function LinhaDoAgente({ l, u, e }: { l: LinhaAgente; u: UnidadeRascunho; e: Edi
   const { t } = useT()
   // entra por outra regra (pasta mais larga, nome ou texto) ou está preso a outro projeto em todos os computadores:
   // a caixa mostra o estado, mas não muda aqui
-  const travado = l.regraEmTodos || (!l.marcado && (l.porRegra !== null || l.bloqueio !== null))
+  const travado = l.regraEmTodos || (!l.marcado && (l.foraDoComputador || l.porRegra !== null || l.bloqueio !== null))
   const marcada = l.marcado || l.porRegra !== null
-  const [situacao, atencao] = l.naoEntra
-      ? [
-          l.foraDoComputador
-            ? t("empresas.agentes.foraDoComputador")
-            : t("empresas.agentes.caiEm", { onde: l.ondeNome ?? t("empresas.agentes.semProjeto") }),
-          true,
-        ]
+  const [situacao, atencao] = l.foraDoComputador
+    ? [t("empresas.agentes.foraDoComputador"), true]
+    : l.naoEntra
+      ? [t("empresas.agentes.caiEm", { onde: l.ondeNome ?? t("empresas.agentes.semProjeto") }), true]
       : l.regraEmTodos
         ? [t("empresas.agentes.regraEmTodos"), false]
         : l.bloqueio
@@ -1366,7 +1364,9 @@ export function AvisoContasLivres({ aviso }: { aviso: AvisoContas }) {
       <TriangleAlertIcon />
       <AlertTitle>{t(nenhuma ? "empresas.agentes.avisoNenhumaTitulo" : "empresas.agentes.avisoSemFolgaTitulo")}</AlertTitle>
       <AlertDescription>
-        {tn(nenhuma ? "empresas.agentes.avisoNenhumaTexto" : "empresas.agentes.avisoSemFolgaTexto", aviso.fora)}
+        {nenhuma && aviso.fora === 0
+          ? t("empresas.agentes.avisoNenhumaSemUso")
+          : tn(nenhuma ? "empresas.agentes.avisoNenhumaTexto" : "empresas.agentes.avisoSemFolgaTexto", aviso.fora)}
       </AlertDescription>
     </Alert>
   )

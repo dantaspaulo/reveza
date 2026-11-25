@@ -79,12 +79,16 @@ export interface Conta {
   lidoEm: string | null
   fonte: "sessao" | "api" | null
   loginExpiraEm: string | null
+  /** Há login guardado; null ou ausente quando a leitura não permitiu confirmar. */
+  cofreDisponivel?: boolean | null
   posse: Posse | null
   /**
    * A conta não roda o modelo das sessões destes computadores (sem créditos de uso), até a hora marcada (0028): nesse
    * tempo ela não é escolhida para eles. Nuvem de antes da 0.9.0: lista vazia.
    */
   semModelo: { computadorId: string; modelo: string; ate: string }[]
+  /** A leitura das restrições de modelo veio completa. */
+  semModeloConhecido?: boolean
 }
 
 export interface ItemDiagnostico {

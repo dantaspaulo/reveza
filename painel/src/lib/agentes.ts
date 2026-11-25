@@ -39,6 +39,19 @@ const mesmaPasta = (a: string, b: string) => {
   return !!x && x === normalizarPasta(b)
 }
 
+export function agentesRecentes(agentes: AgenteOpenBot[]): AgenteOpenBot[] {
+  const ultimos = new Map<string, number>()
+  for (const a of agentes) {
+    const t = Date.parse(a.vistoEm)
+    if (Number.isFinite(t)) ultimos.set(a.computadorId, Math.max(ultimos.get(a.computadorId) ?? -Infinity, t))
+  }
+  return agentes.filter((a) => {
+    const t = Date.parse(a.vistoEm)
+    const ultimo = ultimos.get(a.computadorId)
+    return !Number.isFinite(t) || ultimo === undefined || ultimo - t <= 2 * 60 * 60_000
+  })
+}
+
 /** Uma regra de caminho (não de nome de pasta) que é a própria pasta do agente. */
 const ehDoAgente = (p: PastaRascunho, pasta: string) => ehCaminho(p.padrao) && mesmaPasta(p.padrao, pasta)
 
@@ -161,6 +174,8 @@ export function alternarAgente(
   if (u.pastas.some((p) => p.computador === null && ehDoAgente(p, agente.pasta))) return null
   const aqui = (p: PastaRascunho) => (p.computador === null || p.computador === computador) && ehDoAgente(p, agente.pasta)
   if (u.pastas.some(aqui)) return lista.map((x) => (x.id === u.id ? { ...x, pastas: x.pastas.filter((p) => !aqui(p)) } : x))
+  const raiz = u.pai ? lista.find((x) => x.id === u.pai) : u
+  if (raiz && Array.isArray(raiz.computadores) && !raiz.computadores.includes(computador)) return null
   if (lista.some((x) => x.id !== u.id && x.pastas.some((p) => p.computador === null && ehDoAgente(p, agente.pasta))))
     return null
   const sai = (p: PastaRascunho) => p.computador === computador && ehDoAgente(p, agente.pasta)
@@ -170,17 +185,13 @@ export function alternarAgente(
   })
 }
 
-/** As pastas da unidade neste computador, menos as de um agente da lista só deste computador (essas aparecem marcadas). */
+/** As pastas seguem editáveis mesmo quando passam a coincidir com a de um agente. */
 export function pastasManuais(
   u: UnidadeRascunho,
   computador: string,
-  agentes: AgenteOpenBot[]
+  _agentes: AgenteOpenBot[]
 ): { pasta: PastaRascunho; indice: number }[] {
-  const doComputador = new Set(agentesDoComputador(agentes, computador).map((a) => normalizarPasta(a.pasta)))
-  return pastasEm(u, computador).filter(
-    ({ pasta }) =>
-      !(pasta.computador === computador && ehCaminho(pasta.padrao) && doComputador.has(normalizarPasta(pasta.padrao)))
-  )
+  return pastasEm(u, computador)
 }
 
 /** A busca da lista: nome, título e onde o agente cai, sem ligar para maiúsculas. */
@@ -242,7 +253,7 @@ export interface AvisoContas {
   livres: number
 }
 
-const NAO_RODA: ReadonlySet<EstadoConta> = new Set<EstadoConta>(["saindo", "precisa_login", "pausada", "esgotada"])
+const NAO_RODA: ReadonlySet<EstadoConta> = new Set<EstadoConta>(["saindo", "precisa_login", "pausada", "esgotada", "aviso"])
 
 interface CondicoesDoAviso {
   agora: Date
@@ -295,12 +306,14 @@ export function avisoContas(
       foraPorComputador.set(x.computadorId, (foraPorComputador.get(x.computadorId) ?? 0) + 1)
     }
   }
-  if (!fora) return null
   const reservadas = contasEmLigado(lista)
   const livres = contas.filter((c) => !c.saiEm && !reservadas.has(c.id))
-  if (!livres.length) return { tipo: "nenhuma", fora, livres: 0 }
+  if (!livres.length && (fora > 0 || condicoes.computadores.length > 0)) return { tipo: "nenhuma", fora, livres: 0 }
+  if (!fora) return null
   const temAlternativa = (computador: string) => livres.some((c) => {
     if (NAO_RODA.has(estadoDe(c))) return false
+    if (c.cofreDisponivel !== true) return false
+    if (c.semModeloConhecido !== true) return false
     const { agora, fuso, computadores, trilhas, trilhasConhecidas } = condicoes
     if (!trilhasConhecidas) return false
     if (computadores.some((pc) => pc.atribuicao?.contaId === c.id) || trilhas.some((t) => t.contaId === c.id)) return false

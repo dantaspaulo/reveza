@@ -5,6 +5,7 @@ import type { AgenteOpenBot, Conta } from "@/dados/tipos"
 
 import {
   adicionarTexto,
+  agentesRecentes,
   agentesDoTexto,
   alternarAgente,
   avisoContas,
@@ -129,6 +130,12 @@ describe("marcar um agente", () => {
     expect(linha(sub, "vendas", ana)).toMatchObject({ marcado: true, naoEntra: true, foraDoComputador: true })
   })
 
+  it("não move um agente para projeto que não roda neste computador", () => {
+    const lista = [u("alfa", { computadores: [PC2] }), u("beta", { pastas: [{ computador: MAC, padrao: ana.pasta }] })]
+    expect(alternarAgente(lista, "alfa", ana, MAC)).toBeNull()
+    expect(de(lista, "beta").pastas).toEqual([{ computador: MAC, padrao: ana.pasta }])
+  })
+
   it("caminho do Windows, barra no fim e maiúsculas comparam iguais", () => {
     const dora = ag("Dora", "C:\\Users\\X\\Agentes\\Dora")
     const lista = [u("alfa", { pastas: [{ computador: MAC, padrao: "c:/users/x/agentes/dora/" }] })]
@@ -138,6 +145,12 @@ describe("marcar um agente", () => {
 })
 
 describe("a lista de agentes", () => {
+  it("descarta registros bem mais antigos que a última fotografia do mesmo computador", () => {
+    const antigos = [ag("Antigo", "/antigo", MAC, "", "2026-11-24T08:00:00Z"), ana, caio]
+    expect(agentesRecentes(antigos).map((a) => a.nome)).toEqual(["Ana", "Caio"])
+    // computador sem fotografia nova não perde a lista; data ilegível continua incerta
+    expect(agentesRecentes([antigos[0]!, { ...caio, vistoEm: "inválido" }])).toHaveLength(2)
+  })
   it("classifica pelo agente do computador certo quando o caminho existe em dois computadores", () => {
     const outro = ag("Outro", ana.pasta, PC2, "Suporte")
     const lista = [
@@ -166,7 +179,7 @@ describe("a lista de agentes", () => {
     expect(filtrarLinhas(l, "alf").map((x) => x.agente.nome)).toEqual(["Bruno"])
   })
 
-  it("a pasta de um agente da lista sai dos caminhos; a de um agente que sumiu e a de todos os computadores ficam", () => {
+  it("a pasta editada continua na lista mesmo quando coincide com a de um agente", () => {
     const alfa = u("alfa", {
       pastas: [
         { computador: MAC, padrao: ana.pasta },
@@ -176,6 +189,7 @@ describe("a lista de agentes", () => {
       ],
     })
     expect(pastasManuais(alfa, MAC, TODOS).map((p) => [p.indice, p.pasta.padrao])).toEqual([
+      [0, ana.pasta],
       [1, "/home/x/agentes/sumiu"],
       [2, bruno.pasta],
     ])
@@ -203,7 +217,7 @@ describe("a regra por nome ou título", () => {
 describe("o aviso de conta livre", () => {
   const c = (id: string, extra: Partial<Conta> = {}): Conta =>
     ({ id, email: `${id}@exemplo.com`, saiEm: null, pausada: false, precisaLogin: false, agenda: [], tetoSemana: null,
-      semModelo: [], lidoEm: "2026-11-25T11:55:00Z", janelas: [{ tipo: "seven_day", pct: 10, resetEm: null }], ...extra }) as Conta
+      semModelo: [], semModeloConhecido: true, cofreDisponivel: true, lidoEm: "2026-11-25T11:55:00Z", janelas: [{ tipo: "seven_day", pct: 10, resetEm: null }], ...extra }) as Conta
   const estado =
     (mapa: Record<string, EstadoConta> = {}) =>
     (x: Conta): EstadoConta =>
@@ -246,6 +260,10 @@ describe("o aviso de conta livre", () => {
     const mapa: Record<string, EstadoConta> = { c2: "esgotada", c3: "pausada", c4: "precisa_login" }
     expect(aviso(ligadoComAna(["c1"]), contas, mapa)).toEqual({ tipo: "semFolga", fora: 1, livres: 3 })
     expect(aviso(ligadoComAna(["c1"]), [...contas, c("c5")], mapa)).toBeNull()
+  })
+
+  it("não confirma folga quando a única alternativa já está no aviso de consumo", () => {
+    expect(aviso(ligadoComAna(["c1"]), [c("c1"), c("c2")], { c2: "aviso" })).toMatchObject({ tipo: "semFolga" })
   })
 
   it("uma conta livre ocupada em outro computador não é alternativa para este", () => {
@@ -294,6 +312,21 @@ describe("o aviso de conta livre", () => {
     expect(avisoContas(lista, [c("c1"), c("c2")], estado(), usados, classificadorDoRascunho(lista, TODOS), {
       agora, fuso: "UTC", computadores: [], trilhas: [], trilhasConhecidas: false,
     })).toMatchObject({ tipo: "semFolga" })
+  })
+
+  it("não confirma uma conta sem login no cofre ou com leitura do cofre indisponível", () => {
+    const lista = ligadoComAna(["c1"])
+    expect(aviso(lista, [c("c1"), c("c2", { cofreDisponivel: false })])).toMatchObject({ tipo: "semFolga" })
+    expect(aviso(lista, [c("c1"), c("c2", { cofreDisponivel: null })])).toMatchObject({ tipo: "semFolga" })
+  })
+
+  it("não confirma alternativa quando não conseguiu ler restrições de modelo", () => {
+    expect(aviso(ligadoComAna(["c1"]), [c("c1"), c("c2", { semModeloConhecido: false })])).toMatchObject({ tipo: "semFolga" })
+  })
+
+  it("avisa sobre todas as contas reservadas mesmo sem pastas vistas fora de projeto", () => {
+    const lista = ligadoComAna(["c1"])
+    expect(aviso(lista, [c("c1")], {}, [usados[0]!], [{ id: MAC, atribuicao: null }])).toMatchObject({ tipo: "nenhuma", fora: 0 })
   })
 
   it("o subprojeto ligado sem conta própria reserva as do projeto", () => {

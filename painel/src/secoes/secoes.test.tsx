@@ -1013,6 +1013,15 @@ describe("Projetos: os agentes do OpenBot de cada computador (0.21.1, pedido do 
     expect(linha(html, "Ana")).toContain("Não entra: este projeto não roda neste computador")
   })
 
+  it("não permite marcar em projeto que não roda neste computador", async () => {
+    const { AgentesDoComputador } = await import("./empresas")
+    const lista = [un("alfa", { computadores: ["pc2"] })]
+    const Tela = () => <AgentesDoComputador u={lista[0]!} e={edicao(lista)} />
+    const { html } = await desenhar(Tela, fonte, estado)
+    expect(caixa(html, "Ana")).toContain('disabled=""')
+    expect(linha(html, "Ana")).toContain("Não entra: este projeto não roda neste computador")
+  })
+
   it("sem agentes do OpenBot no computador, a lista não aparece", async () => {
     const { AgentesDoComputador } = await import("./empresas")
     const lista = [un("alfa", { nome: "Alfa" })]
@@ -1035,5 +1044,12 @@ describe("Projetos: os agentes do OpenBot de cada computador (0.21.1, pedido do 
     expect(semFolga.erros).toEqual([])
     expect(semFolga.html).toContain("Não foi possível confirmar outra conta para trocar")
     expect(semFolga.html).toContain("1 agente ou pasta")
+  })
+
+  it("alerta da ausência de conta comum mesmo sem pasta observada fora de projeto", async () => {
+    const { AvisoContasLivres } = await import("./empresas")
+    const Tela = () => <AvisoContasLivres aviso={{ tipo: "nenhuma", fora: 0, livres: 0 }} />
+    const { html } = await desenhar(Tela, fonte, estado)
+    expect(html).toContain("Nenhuma conta fica livre para conversas fora dos projetos")
   })
 })

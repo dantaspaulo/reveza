@@ -402,6 +402,8 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
       lidoEm: m.precisaLogin ? iso(t0 - 26 * H) : iso(t0 - (20 + Math.floor(sorteio() * 60)) * 1000),
       fonte: m.precisaLogin ? null : m.id === "conta-reserva" || m.id === "conta-cliente" ? "api" : "sessao",
       loginExpiraEm: m.precisaLogin ? iso(t0 - 26 * H) : iso(t0 + (m.id === "conta-reserva" ? 5 : 30) * H),
+      cofreDisponivel: true,
+      semModeloConhecido: true,
       posse,
       // a conta de equipe não roda o Fable sem créditos: fora do Notebook por algumas horas (o caso de 22/10/2026)
       semModelo: m.id === "conta-laboratorio" ? [{ computadorId: "pc-notebook", modelo: "claude-fable-5-1", ate: iso(t0 + 4 * H) }] : [],
@@ -1350,6 +1352,8 @@ export class FonteDemo implements Fonte {
             lidoEm: null,
             fonte: null,
             loginExpiraEm: null,
+            cofreDisponivel: false,
+            semModeloConhecido: true,
             posse: null,
           }
           this.d.contas.push(c)

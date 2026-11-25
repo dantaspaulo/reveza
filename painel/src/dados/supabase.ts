@@ -381,7 +381,17 @@ export function paraDiagnostico(bruto: unknown, versao: string): Computador["dia
   }
 }
 
-function paraConta(l: Linha, janelas: Linha[], posse: Linha | undefined, validade: string | null = null, semModelo: Linha[] = []): Conta {
+export function idsComLogin(dados: unknown, erro: boolean): Set<string> | null {
+  if (erro || !Array.isArray(dados)) return null
+  const ids = new Set<string>()
+  for (const item of dados) {
+    if (!item || typeof item !== "object" || typeof item.conta_id !== "string" || !item.conta_id) return null
+    ids.add(item.conta_id)
+  }
+  return ids
+}
+
+function paraConta(l: Linha, janelas: Linha[], posse: Linha | undefined, validade: string | null = null, semModelo: Linha[] = [], cofreDisponivel: boolean | null = null, semModeloConhecido = false): Conta {
   const lidoEm =
     janelas
       .map((j) => String(j.lido_em))
@@ -413,6 +423,8 @@ function paraConta(l: Linha, janelas: Linha[], posse: Linha | undefined, validad
     fonte,
     // só a data de validade do login (painel_validade_logins); o login continua cifrado no cofre
     loginExpiraEm: validade,
+    cofreDisponivel,
+    semModeloConhecido,
     semModelo: semModelo
       .filter((s) => typeof s.ate === "string" && Date.parse(s.ate) > Date.now())
       .map((s) => ({ computadorId: String(s.computador_id), modelo: String(s.modelo).slice(0, 60), ate: String(s.ate) })),
@@ -556,10 +568,12 @@ export class FonteSupabase implements Fonte {
       const { data, error } = await sb.rpc(nome)
       return error || !Array.isArray(data) ? [] : (data as T[])
     }
-    const [validades, membrosComEmail] = await Promise.all([
-      extra<{ conta_id: string; expira_em: string | null }>("painel_validade_logins", true),
+    const [resultadoLogins, membrosComEmail] = await Promise.all([
+      sb.rpc("painel_validade_logins"),
       extra<{ user_id: string; email: string }>("painel_membros", admin && eu.aal === "aal2"),
     ])
+    const logins = idsComLogin(resultadoLogins.data, !!resultadoLogins.error)
+    const validades = logins ? (resultadoLogins.data as { conta_id: string; expira_em: string | null }[]) : []
     const validadeDe = new Map(validades.map((v) => [String(v.conta_id), v.expira_em ? String(v.expira_em) : null]))
     // a conta que não roda o modelo de um computador (0028): nuvem de antes da 0.9.0 não tem a tabela, e segue sem
     const { data: dadosSemModelo, error: erroSemModelo } = await sb
@@ -590,7 +604,9 @@ export class FonteSupabase implements Fonte {
           janelas.filter((j) => j.conta_id === c.id),
           posses.find((p) => p.conta_id === c.id),
           validadeDe.get(String(c.id)) ?? null,
-          semModelo.filter((s) => s.conta_id === c.id)
+          semModelo.filter((s) => s.conta_id === c.id),
+          logins === null ? null : logins.has(String(c.id)),
+          !erroSemModelo && Array.isArray(dadosSemModelo)
         )
       ),
       computadores: computadores.map((c): Computador => {
