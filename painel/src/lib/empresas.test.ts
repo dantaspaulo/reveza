@@ -116,7 +116,7 @@ describe("classificador", () => {
   it("0.20.1: a regra de um projeto só vale nos computadores dele, e o subprojeto segue o projeto", () => {
     const d = dados(
       [regra("pasta", "~/Code/alfa", "a"), regra("pasta", "~/Code/alfa/site", "s"), regra("titulo", "cliente x", "a")],
-      [agente("~/agentes/x", "Cliente X")]
+      [{ ...agente("~/agentes/x", "Cliente X"), computadorId: "pc1" }]
     )
     d.empresas = [empresa("a", { emTodosComputadores: false }), empresa("s", { pai: "a" }), empresa("b")]
     d.computadores = [{ empresaId: "a", computadorId: "pc1" }]

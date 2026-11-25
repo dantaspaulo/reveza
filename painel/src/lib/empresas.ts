@@ -64,9 +64,10 @@ export function trocaDoEvento(em: string, texto: string, dados: Record<string, u
 export type Classificar = (pasta: string, projeto: string, computador?: string) => string | null
 
 /** 0.20.1: onde o projeto roda, como rvz_roda_em: o subprojeto segue o projeto; sem a escolha (ou nuvem antiga), em todos. */
-export function criarRodaEm(
-  dados: Pick<DadosEmpresas, "empresas"> & Partial<Pick<DadosEmpresas, "computadores">>
-): (empresa: string, computador: string) => boolean {
+export function criarRodaEm(dados: {
+  empresas: Pick<Empresa, "id" | "pai" | "emTodosComputadores">[]
+  computadores?: DadosEmpresas["computadores"]
+}): (empresa: string, computador: string) => boolean {
   const restritos = new Map<string, Set<string>>()
   for (const e of dados.empresas) if (!e.pai && e.emTodosComputadores === false) restritos.set(e.id, new Set())
   for (const l of dados.computadores ?? []) restritos.get(l.empresaId)?.add(l.computadorId)
@@ -77,9 +78,15 @@ export function criarRodaEm(
   }
 }
 
-/** O classificador das regras de agora: devolve o id da empresa da pasta, ou null (sem dono). */
+/**
+ * O classificador das regras de agora: devolve o id da empresa da pasta, ou null (sem dono). 0.21.1: da empresa só
+ * usa o id, o pai e onde roda, para servir também ao rascunho da tela de Projetos (lib/agentes).
+ */
 export function criarClassificador(
-  dados: Pick<DadosEmpresas, "empresas" | "regras" | "agentes"> & Partial<Pick<DadosEmpresas, "computadores">>
+  dados: Pick<DadosEmpresas, "regras" | "agentes"> & {
+    empresas: Pick<Empresa, "id" | "pai" | "emTodosComputadores">[]
+    computadores?: DadosEmpresas["computadores"]
+  }
 ): Classificar {
   const existe = new Set(dados.empresas.map((e) => e.id))
   // 0.20.1: o projeto escolhido para alguns computadores não classifica pasta nos outros (como rvz_classificar);
@@ -103,10 +110,16 @@ export function criarClassificador(
     .filter((r) => r.texto)
     // o texto mais comprido é o mais específico
     .sort((a, b) => b.texto.length - a.texto.length)
-  const agentes = new Map<string, { nome: string; titulo: string }>()
+  const agentes = new Map<string, Map<string, { nome: string; titulo: string }>>()
+  const agentesSemComputador = new Map<string, { nome: string; titulo: string }>()
   for (const a of dados.agentes) {
     const p = normalizarPasta(a.pasta)
-    if (p && !agentes.has(p)) agentes.set(p, { nome: a.nome.toLowerCase(), titulo: a.titulo.toLowerCase() })
+    if (!p) continue
+    const info = { nome: a.nome.toLowerCase(), titulo: a.titulo.toLowerCase() }
+    const doComputador = agentes.get(a.computadorId) ?? new Map()
+    if (!doComputador.has(p)) doComputador.set(p, info)
+    agentes.set(a.computadorId, doComputador)
+    if (!agentesSemComputador.has(p)) agentesSemComputador.set(p, info)
   }
   const dentro = (p: string, base: string) => p === base || (base === "/" ? p.startsWith("/") : p.startsWith(base + "/"))
 
@@ -134,10 +147,11 @@ export function criarClassificador(
         }
       }
       if (titulos.length) {
+        const agentesAqui = computador === undefined ? agentesSemComputador : agentes.get(computador)
         let pastaAgente: string | null = null
-        for (const a of agentes.keys()) if (dentro(p, a) && (!pastaAgente || a.length > pastaAgente.length)) pastaAgente = a
-        if (pastaAgente) {
-          const ag = agentes.get(pastaAgente)!
+        for (const a of agentesAqui?.keys() ?? []) if (dentro(p, a) && (!pastaAgente || a.length > pastaAgente.length)) pastaAgente = a
+        if (pastaAgente && agentesAqui) {
+          const ag = agentesAqui.get(pastaAgente)!
           const r = titulos.find((x) => vale(x) && (ag.titulo.includes(x.texto) || ag.nome.includes(x.texto)))
           if (r) propor(pastaAgente.length - 0.5, r.empresa)
         }

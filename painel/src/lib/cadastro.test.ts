@@ -134,6 +134,25 @@ describe("conferir antes de salvar", () => {
     const dois = [u("e", { pastas: [pasta("~/x", "pc1")] }), u("f", { pastas: [pasta("~/x", "pc2")] })]
     expect(validar(dois)).toBeNull()
   })
+
+  it("0.21.1: o mesmo texto de agente em dois projetos conflita no mesmo computador, não em computadores diferentes", () => {
+    const texto = (padrao: string, computador: string | null) => ({ tipo: "titulo" as const, padrao, computador })
+    const a = u("a", { titulos: [texto("Vendas", "pc1")] })
+    expect(validar([a, u("b", { titulos: [texto(" vendas ", "pc1")] })], [u("b")])).toEqual({
+      id: "b",
+      chave: "erroTexto",
+      pasta: "vendas",
+      dono: "a",
+    })
+    expect(validar([a, u("b", { titulos: [texto("Vendas", null)] })], [u("b")])?.chave).toBe("erroTexto")
+    expect(validar([a, u("b", { titulos: [texto("Vendas", "pc2")] })], [u("b")])).toBeNull()
+  })
+
+  it("avisa antes de salvar mais de 100 regras na mesma unidade", () => {
+    const regras = Array.from({ length: 101 }, (_, i) => pasta(`~/agentes/${i}`, "pc1"))
+    expect(validar([u("a", { pastas: regras.slice(0, 100) })])).toBeNull()
+    expect(validar([u("a", { pastas: regras })])).toMatchObject({ id: "a", chave: "erroRegras" })
+  })
 })
 
 describe("a ordem de gravar", () => {
@@ -162,6 +181,19 @@ describe("a ordem de gravar", () => {
     expect(plano[0].campos).toEqual({
       pastas: [{ tipo: "pasta", padrao: "~/fica", computador: null }, ...titulos],
     })
+  })
+
+  it("0.21.1: cada texto de agente vai uma vez só, também ao soltar uma pasta (a nuvem recusaria a gravação)", () => {
+    const repetidos = [
+      { tipo: "titulo" as const, padrao: "Vendas", computador: "pc1" },
+      { tipo: "titulo" as const, padrao: " vendas", computador: "pc1" },
+      { tipo: "titulo" as const, padrao: "Vendas", computador: null },
+    ]
+    const um = [{ tipo: "titulo", padrao: "Vendas", computador: "pc1" }, { tipo: "titulo", padrao: "Vendas", computador: null }]
+    expect(planoDeGravar([u("a")], [u("a", { titulos: repetidos })])[0]!.campos.pastas).toEqual(um)
+    const base = [u("e", { pastas: [pasta("~/x")], titulos: repetidos }), u("f")]
+    const lista = [u("e", { titulos: repetidos }), u("f", { pastas: [pasta("~/x")] })]
+    expect(planoDeGravar(base, lista)[0]!.campos.pastas).toEqual(um)
   })
 
   it("só o cadastro novo leva cor e empresa", () => {

@@ -31,7 +31,15 @@ export interface UnidadeRascunho {
 
 export interface ErroCadastro {
   id: string
-  chave: "erroNomeEmpresa" | "erroNomeProjeto" | "erroConta" | "erroDuplicado" | "erroPasta" | "erroComputador"
+  chave:
+    | "erroNomeEmpresa"
+    | "erroNomeProjeto"
+    | "erroConta"
+    | "erroDuplicado"
+    | "erroPasta"
+    | "erroComputador"
+    | "erroTexto"
+    | "erroRegras"
   nome?: string
   pasta?: string
   dono?: string
@@ -197,7 +205,7 @@ export interface Alocacao {
 }
 
 /** As contas que rodam em algum projeto ligado, contando a herança: o subprojeto sem conta própria usa as do projeto. */
-function contasEmLigado(lista: UnidadeRascunho[]): Set<string> {
+export function contasEmLigado(lista: UnidadeRascunho[]): Set<string> {
   const contas = new Set<string>()
   for (const u of lista) if (ligada(u, lista)) for (const c of contasDe(u, lista)) contas.add(c)
   return contas
@@ -297,6 +305,23 @@ function pastasValidas(u: UnidadeRascunho): PastaRascunho[] {
   return r
 }
 
+/**
+ * 0.21.1: os textos de agente sem vazio nem repetido (o mesmo texto no mesmo computador, sem ligar para maiúsculas):
+ * a nuvem tem um índice único da regra e recusaria a gravação inteira.
+ */
+function textosValidos(u: UnidadeRascunho): UnidadeRascunho["titulos"] {
+  const vistos = new Set<string>()
+  const r: UnidadeRascunho["titulos"] = []
+  for (const t of u.titulos) {
+    const padrao = t.padrao.trim()
+    const chave = `${t.tipo}|${t.computador ?? ""}|${normalizarPasta(padrao)}`
+    if (!padrao || vistos.has(chave)) continue
+    vistos.add(chave)
+    r.push({ tipo: t.tipo, padrao, computador: t.computador })
+  }
+  return r
+}
+
 /** A escolha de computadores como texto: a ordem não conta, e "todos" é diferente de "nuvem antiga". */
 const chaveComputadores = (u: UnidadeRascunho) =>
   u.computadores == null ? String(u.computadores) : [...u.computadores].sort().join(",")
@@ -335,6 +360,7 @@ export function validar(lista: UnidadeRascunho[], mudou: UnidadeRascunho[] = lis
     if (!nome) return { id: u.id, chave: u.pai ? "erroNomeProjeto" : "erroNomeEmpresa" }
     if (!u.pai && Array.isArray(u.computadores) && !u.computadores.length) return { id: u.id, chave: "erroComputador", nome }
     if (ligada(u, lista) && !contasDe(u, lista).length) return { id: u.id, chave: "erroConta", nome }
+    if (pastasValidas(u).length + textosValidos(u).length > 100) return { id: u.id, chave: "erroRegras", nome }
     const igual = lista.some(
       (x) => x.id !== u.id && x.pai === u.pai && x.nome.trim().toLowerCase() === nome.toLowerCase()
     )
@@ -342,6 +368,11 @@ export function validar(lista: UnidadeRascunho[], mudou: UnidadeRascunho[] = lis
     for (const p of pastasValidas(u)) {
       const dono = lista.find((x) => x.id !== u.id && pastasValidas(x).some((q) => colidem(p, q)))
       if (dono) return { id: u.id, chave: "erroPasta", pasta: p.padrao, dono: dono.nome.trim() }
+    }
+    // 0.21.1: a nuvem recusa o mesmo texto em dois projetos que se cruzam num computador ("a pasta X já é de Y")
+    for (const p of textosValidos(u)) {
+      const dono = lista.find((x) => x.id !== u.id && textosValidos(x).some((q) => q.tipo === p.tipo && colidem(p, q)))
+      if (dono) return { id: u.id, chave: "erroTexto", pasta: p.padrao, dono: dono.nome.trim() }
     }
   }
   return null
@@ -352,7 +383,7 @@ const camposDe = (u: UnidadeRascunho, antes?: UnidadeRascunho): CamposUnidade =>
   nome: u.nome.trim(),
   modo: u.modo,
   contas: u.contas,
-  pastas: [...pastasValidas(u).map((p) => ({ tipo: "pasta" as const, ...p })), ...u.titulos],
+  pastas: [...pastasValidas(u).map((p) => ({ tipo: "pasta" as const, ...p })), ...textosValidos(u)],
   ...(u.novo ? { cor: u.cor, ...(u.pai ? { pai: u.pai } : {}) } : {}),
   ...(!u.pai && u.computadores !== undefined && (u.novo || !antes || chaveComputadores(u) !== chaveComputadores(antes))
     ? { computadores: u.computadores }
@@ -379,7 +410,9 @@ export function planoDeGravar(base: UnidadeRascunho[], lista: UnidadeRascunho[])
       passos.push({
         id: u.id,
         novo: false,
-        campos: { pastas: [...antes.pastas.filter(fica).map((p) => ({ tipo: "pasta" as const, ...p })), ...u.titulos] },
+        campos: {
+          pastas: [...antes.pastas.filter(fica).map((p) => ({ tipo: "pasta" as const, ...p })), ...textosValidos(u)],
+        },
       })
   }
   const empresas = mudou.filter((u) => !u.pai)

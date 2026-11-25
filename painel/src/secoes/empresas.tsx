@@ -13,6 +13,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   Trash2Icon,
+  TriangleAlertIcon,
   XIcon,
 } from "lucide-react"
 
@@ -37,8 +38,21 @@ import { Toggle } from "@/components/ui/toggle"
 import { useAcao, useAgora, useConsulta, useDados, useEstado, usePermissao } from "@/dados/contexto"
 import { estadoComputador, estadoConta, p5, p7, resetDe } from "@/dados/derivados"
 import { ErroPainel } from "@/dados/fonte"
-import type { Computador, Conta, DadosEmpresas, SessaoUso, TrilhaEmUso } from "@/dados/tipos"
+import type { AgenteOpenBot, Computador, Conta, DadosEmpresas, SessaoUso, TrilhaEmUso } from "@/dados/tipos"
 import { useT } from "@/i18n"
+import {
+  adicionarTexto,
+  agentesDoTexto,
+  alternarAgente,
+  avisoContas,
+  classificadorDoRascunho,
+  filtrarLinhas,
+  linhasDeAgentes,
+  pastasManuais,
+  type AvisoContas,
+  type LinhaAgente,
+  type Usado,
+} from "@/lib/agentes"
 import {
   alteradas,
   alternarComputador,
@@ -47,7 +61,6 @@ import {
   ligada,
   modoAlternado,
   ondeEsta,
-  pastasEm,
   planoDeGravar,
   projetosEmTodos,
   rascunhoDe,
@@ -61,7 +74,13 @@ import {
 } from "@/lib/cadastro"
 import { N_CORES } from "@/lib/cores"
 import { comDemo } from "@/lib/demo"
-import { criarRodaEm, empresasForaNoAntigo, nomeUnidade as rotuloUnidade, versaoNum } from "@/lib/empresas"
+import {
+  criarRodaEm,
+  empresasForaNoAntigo,
+  nomeUnidade as rotuloUnidade,
+  versaoNum,
+  type Classificar,
+} from "@/lib/empresas"
 import { fmtFuturo } from "@/lib/formato"
 import { Link } from "@/lib/rota"
 import { cn } from "@/lib/utils"
@@ -72,13 +91,34 @@ const idNovo = () => `novo-${++ultimoNovo}`
 const CHIP =
   "h-auto min-h-7 max-w-full justify-start rounded-full px-3 py-1 font-normal text-muted-foreground whitespace-normal hover:text-foreground aria-pressed:border-primary aria-pressed:bg-primary/15 aria-pressed:text-foreground data-[state=on]:border-primary data-[state=on]:bg-primary/15"
 
-/** As pastas que a pessoa já usa naquele computador: agentes do OpenBot e sessões dos últimos 30 dias. */
-function sugestoesDe(dados: DadosEmpresas, sessoes: SessaoUso[] | null, computador: string): string[] {
+/**
+ * As pastas que a pessoa já usa naquele computador: agentes do OpenBot e sessões dos últimos 30 dias. 0.21.1: a pasta
+ * de um agente vem com o nome dele.
+ */
+function sugestoesDe(
+  dados: DadosEmpresas,
+  sessoes: SessaoUso[] | null,
+  computador: string
+): { pasta: string; rotulo?: string }[] {
+  const nomes = new Map<string, string>()
+  for (const a of dados.agentes) if (a.computadorId === computador && a.pasta && a.nome) nomes.set(a.pasta, a.nome)
   const todas = [
     ...dados.agentes.filter((a) => a.computadorId === computador).map((a) => a.pasta),
     ...(sessoes ?? []).filter((s) => s.computadorId === computador).map((s) => s.pasta),
   ]
-  return [...new Set(todas.filter(Boolean))].sort().slice(0, 100)
+  return [...new Set(todas.filter(Boolean))]
+    .sort()
+    .slice(0, 100)
+    .map((pasta) => ({ pasta, rotulo: nomes.get(pasta) }))
+}
+
+/** As pastas em uso nos computadores ativos (agentes do OpenBot e sessões recentes): a base do aviso de conta livre. */
+function usadosDe(dados: DadosEmpresas, sessoes: SessaoUso[] | null, ativos: string[]): Usado[] {
+  const ativo = new Set(ativos)
+  return [
+    ...dados.agentes.map((a) => ({ pasta: a.pasta, projeto: "", computadorId: a.computadorId })),
+    ...(sessoes ?? []).map((s) => ({ pasta: s.pasta, projeto: s.projeto, computadorId: s.computadorId })),
+  ].filter((x) => ativo.has(x.computadorId))
 }
 
 /** O que os campos de um projeto ou subprojeto precisam para ler e mudar o rascunho. */
@@ -93,9 +133,14 @@ export interface Edicao {
   trilhas: TrilhaEmUso[]
   /** O cadastro de antes de editar: diz quem perde a conta ao salvar. */
   antes: UnidadeRascunho[]
-  sugestoes: string[]
+  sugestoes: { pasta: string; rotulo?: string }[]
+  /** 0.21.1: os agentes do OpenBot de todos os computadores e onde cada pasta cai pelo rascunho. */
+  agentes: AgenteOpenBot[]
+  classificar: Classificar
   pode: boolean
   mudar: (id: string, campos: Partial<UnidadeRascunho>) => void
+  /** Muda o rascunho inteiro: marcar um agente pode tirá-lo de outro projeto. */
+  aplicar: (fazer: (atual: UnidadeRascunho[]) => UnidadeRascunho[]) => void
   marcarConta: (u: UnidadeRascunho, conta: string) => void
   alternar: (u: UnidadeRascunho) => void
   escolherComputadores: (u: UnidadeRascunho, computadores: string[] | null) => void
@@ -141,13 +186,29 @@ export default function Empresas() {
   // cadastro novo: marcar a primeira conta já liga, até a pessoa mexer na chave
   const [tocados, setTocados] = React.useState<ReadonlySet<string>>(() => new Set())
 
-  const ativos = computadores.map((c) => c.id)
+  const ativos = React.useMemo(
+    () => estado.computadores.filter((c) => !c.revogado).map((c) => c.id),
+    [estado.computadores]
+  )
   const rodaAqui = (u: UnidadeRascunho) => !computador || rodaNoComputador(u, computador.id, ativos)
   // a lista mostra o que roda nesta aba, mais o escolhido: tirar este computador não faz o projeto sumir da tela
   const raizesAqui = raizes.filter((u) => u.id === selecionada || rodaAqui(u))
   const deFora = raizes.filter((u) => !rodaAqui(u))
   const empresa = raizesAqui.find((u) => u.id === selecionada) ?? raizesAqui[0] ?? null
   const mudanca = alteradas(referencia, lista).length > 0 && !aguardando
+
+  // 0.21.1: onde cada pasta cai pelo rascunho e o aviso de conta livre, que muda na hora, antes de salvar
+  const agentes = dados?.agentes
+  const classificar = React.useMemo(() => classificadorDoRascunho(lista, agentes ?? []), [lista, agentes])
+  const usados = React.useMemo(
+    () => (dados ? usadosDe(dados, sessoes.dados, ativos) : []),
+    [dados, sessoes.dados, ativos]
+  )
+  const agora = useAgora(60_000)
+  const aviso = React.useMemo(
+    () => avisoContas(lista, estado.contas, (c) => estadoConta(c, estado.config, agora), usados, classificar),
+    [lista, estado.contas, estado.config, agora, usados, classificar]
+  )
 
   const dadosVistos = React.useRef(dados)
   // salvou, mas a leitura falhou: a tela volta a editar, e salvar de novo não cria em dobro
@@ -308,8 +369,11 @@ export default function Empresas() {
           trilhas: dados.trilhas,
           antes: referencia,
           sugestoes: sugestoesDe(dados, sessoes.dados, computador.id),
+          agentes: dados.agentes,
+          classificar,
           pode,
           mudar,
+          aplicar: editar,
           marcarConta,
           alternar,
           escolherComputadores,
@@ -319,9 +383,12 @@ export default function Empresas() {
   const barraSalvar =
     mudanca || erro ? (
       <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur">
-        <p className={cn("text-sm", erro && "text-erro")} role={erro ? "alert" : undefined}>
-          {erro ? textoErro(erro, t) : t("empresas.op.naoSalvas")}
-        </p>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className={cn("text-sm", erro && "text-erro")} role={erro ? "alert" : undefined}>
+            {erro ? textoErro(erro, t) : t("empresas.op.naoSalvas")}
+          </p>
+          {aviso && mudanca ? <p className="text-xs text-atencao">{t("empresas.agentes.avisoAoSalvar")}</p> : null}
+        </div>
         <div className="ml-auto flex gap-1.5">
           <Button size="sm" variant="ghost" disabled={salvando} onClick={descartar}>
             {t("empresas.op.descartar")}
@@ -351,6 +418,7 @@ export default function Empresas() {
       <AvisoPermissao />
       {dados ? <Avisos dados={dados} /> : null}
       {dados ? <AvisoEmTodos lista={base} ativos={ativos} /> : null}
+      {aviso ? <AvisoContasLivres aviso={aviso} /> : null}
 
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
@@ -1049,10 +1117,13 @@ function LinhaTroca({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
   )
 }
 
-/** A pasta neste computador. Sem nenhuma, uma linha vazia: digitar já cria a regra. */
+/**
+ * A pasta neste computador. Sem nenhuma, uma linha vazia: digitar já cria a regra. 0.21.1: a pasta de um agente da
+ * lista aparece marcada na lista de agentes, e não aqui.
+ */
 function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
   const { t } = useT()
-  const achadas = pastasEm(u, e.computador)
+  const achadas = pastasManuais(u, e.computador, e.agentes)
   const linhas = achadas.length ? achadas : [{ pasta: { computador: e.computador, padrao: "" }, indice: -1 }]
   const idLista = `pastas-${u.id}-${e.computador}`
   const raiz = u.pai ? e.lista.find((x) => x.id === u.pai) : u
@@ -1074,7 +1145,7 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
       <Rotulo>{t("empresas.op.pastaEm", { computador: e.nomeComputador })}</Rotulo>
       <datalist id={idLista}>
         {e.sugestoes.map((p) => (
-          <option key={p} value={p} />
+          <option key={p.pasta} value={p.pasta} label={p.rotulo} />
         ))}
       </datalist>
       {linhas.map(({ pasta, indice }, i) => (
@@ -1147,6 +1218,153 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
           ))}
         </div>
       ) : null}
+      <AgentesDoComputador u={u} e={e} />
     </div>
+  )
+}
+
+/**
+ * 0.21.1 (pedido do Paulo em 24/11/2026): os agentes do OpenBot deste computador, com onde cada um cai. Marcar põe a
+ * pasta do agente nesta unidade, só neste computador; o texto "nome ou título contém" pega os agentes pelo nome. Sem
+ * agentes do OpenBot no computador, nada aparece: a pasta continua valendo como antes.
+ */
+export function AgentesDoComputador({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
+  const { t, tn } = useT()
+  const [busca, setBusca] = React.useState("")
+  const [texto, setTexto] = React.useState("")
+  const linhas = React.useMemo(
+    () => linhasDeAgentes(e.lista, u.id, e.agentes, e.computador, e.classificar),
+    [e.lista, u.id, e.agentes, e.computador, e.classificar]
+  )
+  if (!linhas.length) return null
+  const visiveis = filtrarLinhas(linhas, busca)
+  const entram = linhas.filter((l) => l.onde === u.id).length
+  const naoEntram = linhas.filter((l) => l.naoEntra).length
+  const pega = agentesDoTexto(texto, e.agentes, e.computador)
+  const nomes = `${pega
+    .slice(0, 5)
+    .map((a) => a.nome)
+    .join(", ")}${pega.length > 5 ? ` +${pega.length - 5}` : ""}`
+  const podeAdicionar = e.pode && adicionarTexto(e.lista, u.id, texto, e.computador) !== null
+  const adicionar = () => {
+    if (!podeAdicionar) return
+    e.aplicar((atual) => adicionarTexto(atual, u.id, texto, e.computador) ?? atual)
+    setTexto("")
+  }
+  return (
+    <div className="flex min-w-0 flex-col gap-2 pt-1">
+      <Rotulo>{t("empresas.agentes.titulo", { computador: e.nomeComputador })}</Rotulo>
+      <p className="text-xs text-muted-foreground">{t("empresas.agentes.dicaModo")}</p>
+      <p className="text-xs text-muted-foreground">
+        {entram ? tn("empresas.agentes.entram", entram) : t("empresas.agentes.nenhumEntra")}
+        {naoEntram ? <span className="text-atencao"> · {tn("empresas.agentes.naoEntram", naoEntram)}</span> : null}
+      </p>
+      {linhas.length > 6 ? (
+        <Input
+          aria-label={t("empresas.agentes.buscar")}
+          placeholder={t("empresas.agentes.buscar")}
+          value={busca}
+          onChange={(ev) => setBusca(ev.target.value)}
+          className="h-8"
+        />
+      ) : null}
+      <div className="flex max-h-72 min-w-0 flex-col gap-0.5 overflow-y-auto rounded-xl border bg-muted/30 p-1">
+        {visiveis.map((l) => (
+          <LinhaDoAgente key={l.agente.pasta} l={l} u={u} e={e} />
+        ))}
+        {visiveis.length ? null : <p className="px-2.5 py-2 text-xs text-muted-foreground">{t("empresas.agentes.nada")}</p>}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Input
+          aria-label={t("empresas.agentes.textoRotulo")}
+          placeholder={t("empresas.agentes.textoDica")}
+          maxLength={100}
+          disabled={!e.pode}
+          value={texto}
+          onChange={(ev) => setTexto(ev.target.value)}
+          onKeyDown={(ev) => {
+            if (ev.key !== "Enter") return
+            ev.preventDefault()
+            adicionar()
+          }}
+          className="min-w-0 flex-[1_1_180px]"
+        />
+        <Button size="sm" variant="outline" disabled={!podeAdicionar} onClick={adicionar}>
+          <PlusIcon />
+          {t("empresas.agentes.textoAdicionar")}
+        </Button>
+      </div>
+      {texto.trim() ? (
+        <p className="text-xs text-muted-foreground">
+          {pega.length ? tn("empresas.agentes.textoPega", pega.length, { nomes }) : t("empresas.agentes.textoNenhum")}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/** Um agente na lista: a caixa, o nome, o título e onde ele cai. */
+function LinhaDoAgente({ l, u, e }: { l: LinhaAgente; u: UnidadeRascunho; e: Edicao }) {
+  const { t } = useT()
+  // entra por outra regra (pasta mais larga, nome ou texto) ou está preso a outro projeto em todos os computadores:
+  // a caixa mostra o estado, mas não muda aqui
+  const travado = l.regraEmTodos || (!l.marcado && (l.porRegra !== null || l.bloqueio !== null))
+  const marcada = l.marcado || l.porRegra !== null
+  const [situacao, atencao] = l.naoEntra
+      ? [
+          l.foraDoComputador
+            ? t("empresas.agentes.foraDoComputador")
+            : t("empresas.agentes.caiEm", { onde: l.ondeNome ?? t("empresas.agentes.semProjeto") }),
+          true,
+        ]
+      : l.regraEmTodos
+        ? [t("empresas.agentes.regraEmTodos"), false]
+        : l.bloqueio
+          ? [t("empresas.agentes.bloqueado", { dono: l.bloqueio }), true]
+      : l.porRegra
+        ? [t("empresas.agentes.pelaRegra", { regra: l.porRegra }), false]
+        : l.onde === u.id
+          ? [t("empresas.agentes.aqui"), false]
+          : l.ondeNome
+            ? [t("empresas.agentes.em", { onde: l.ondeNome }), true]
+            : [t("empresas.agentes.semProjeto"), false]
+  return (
+    <label
+      className={cn(
+        "flex min-w-0 items-start gap-2.5 rounded-lg px-2.5 py-2",
+        e.pode && !travado ? "cursor-pointer hover:bg-muted/60" : "cursor-default",
+        marcada && "bg-primary/5"
+      )}
+    >
+      <Checkbox
+        className="mt-0.5"
+        aria-label={l.agente.nome || l.agente.pasta}
+        disabled={!e.pode || travado}
+        checked={marcada}
+        onCheckedChange={() => e.aplicar((atual) => alternarAgente(atual, u.id, l.agente, e.computador) ?? atual)}
+      />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium">{l.agente.nome || l.agente.pasta}</span>
+        <span className="text-xs [overflow-wrap:anywhere] text-muted-foreground">
+          {l.agente.titulo ? `${l.agente.titulo} · ` : ""}
+          <span className={cn(atencao && "text-atencao")}>{situacao}</span>
+        </span>
+      </span>
+    </label>
+  )
+}
+
+/** 0.21.1: com projeto ligado, avisa quando não sobra conta (ou folga) para o que está fora dos projetos ligados. */
+export function AvisoContasLivres({ aviso }: { aviso: AvisoContas }) {
+  const { t, tn } = useT()
+  const nenhuma = aviso.tipo === "nenhuma"
+  return (
+    <Alert className="border-atencao-borda bg-atencao-fundo text-atencao *:data-[slot=alert-description]:text-atencao/90">
+      <TriangleAlertIcon />
+      <AlertTitle>{t(nenhuma ? "empresas.agentes.avisoNenhumaTitulo" : "empresas.agentes.avisoSemFolgaTitulo")}</AlertTitle>
+      <AlertDescription>
+        {tn(nenhuma ? "empresas.agentes.avisoNenhumaTexto" : "empresas.agentes.avisoSemFolgaTexto", aviso.fora)}
+      </AlertDescription>
+    </Alert>
   )
 }

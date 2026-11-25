@@ -245,8 +245,9 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { DadosFixos } from "@/dados/contexto"
 import { FonteSupabase } from "@/dados/supabase"
-import type { Instantaneo } from "@/dados/tipos"
+import type { AgenteOpenBot, Instantaneo } from "@/dados/tipos"
 import { I18nProvider } from "@/i18n"
+import { classificadorDoRascunho } from "@/lib/agentes"
 import type { UnidadeRascunho } from "@/lib/cadastro"
 import { pintarPorWorkspace } from "@/lib/cores"
 import { SECOES, type IdSecao } from "./rotas"
@@ -886,5 +887,151 @@ describe("Contas e Projetos: o projeto de cada conta e o projeto novo num comput
     expect(dois.html).not.toContain("Escritório B")
     const Um = () => <AvisoEmTodos lista={lista} ativos={["pc1"]} />
     expect((await desenhar(Um, fonte, estado)).html).toBe("")
+  })
+})
+
+describe("Projetos: os agentes do OpenBot de cada computador (0.21.1, pedido do Paulo, 24/11/2026)", () => {
+  type Edicao = import("./empresas").Edicao
+  const un = (id: string, campos: Partial<UnidadeRascunho>): UnidadeRascunho => ({
+    id,
+    novo: false,
+    nome: id,
+    pai: null,
+    cor: 0,
+    modo: "desligado",
+    contas: [],
+    pastas: [],
+    titulos: [],
+    computadores: ["pc1"],
+    ...campos,
+  })
+  const ag = (nome: string, pasta: string, titulo = ""): AgenteOpenBot => ({
+    computadorId: "pc1",
+    pasta,
+    nome,
+    titulo,
+    vistoEm: "2026-11-24T12:00:00.000Z",
+  })
+  const ana = ag("Ana", "/home/x/agentes/ana", "Vendas")
+  const bruno = ag("Bruno", "/home/x/agentes/bruno", "Suporte")
+  const caio = ag("Caio", "/home/x/agentes/caio")
+  const agentes = [caio, bruno, ana]
+  // só o que a lista de agentes usa da edição
+  const edicao = (lista: UnidadeRascunho[]) =>
+    ({
+      lista,
+      agentes,
+      computador: "pc1",
+      nomeComputador: "Mac mini",
+      classificar: classificadorDoRascunho(lista, agentes),
+      pode: true,
+      aplicar: () => {},
+    }) as unknown as Edicao
+  /** A caixa de um agente (o botão do Checkbox, com o nome dele no aria-label). */
+  const caixa = (html: string, nome: string) => html.match(new RegExp(`<button[^>]*aria-label="${nome}"[^>]*>`))?.[0] ?? ""
+  /** O trecho da linha de um agente, da caixa dele até a próxima caixa. */
+  const linha = (html: string, nome: string) => {
+    const i = html.indexOf(`aria-label="${nome}"`)
+    const fim = html.indexOf('role="checkbox"', i + 1)
+    return i < 0 ? "" : html.slice(i, fim < 0 ? undefined : fim)
+  }
+
+  it("mostra cada agente do computador, por nome, com onde ele cai; o marcado aqui vem com a caixa marcada", async () => {
+    const { AgentesDoComputador } = await import("./empresas")
+    const lista = [
+      un("alfa", { nome: "Alfa", pastas: [{ computador: "pc1", padrao: ana.pasta }] }),
+      un("beta", { nome: "Beta", pastas: [{ computador: "pc1", padrao: bruno.pasta }] }),
+    ]
+    const Tela = () => <AgentesDoComputador u={lista[0]!} e={edicao(lista)} />
+    const { html, erros } = await desenhar(Tela, fonte, estado)
+    expect(erros).toEqual([])
+    expect(html).toContain("Agentes do OpenBot em Mac mini")
+    expect(html).toContain("A lista mostra o resultado das regras")
+    expect(html).toContain("1 agente entra aqui")
+    // em ordem de nome, não na ordem em que chegaram
+    expect(html.indexOf('aria-label="Ana"')).toBeLessThan(html.indexOf('aria-label="Bruno"'))
+    expect(html.indexOf('aria-label="Bruno"')).toBeLessThan(html.indexOf('aria-label="Caio"'))
+    expect(caixa(html, "Ana")).toContain('aria-checked="true"')
+    expect(linha(html, "Ana")).toContain("Vendas · ")
+    expect(linha(html, "Ana")).toContain(">Aqui<")
+    expect(caixa(html, "Bruno")).toContain('aria-checked="false"')
+    expect(caixa(html, "Bruno")).not.toContain('disabled=""')
+    expect(linha(html, "Bruno")).toContain("Em Beta: marcar traz para cá")
+    expect(linha(html, "Caio")).toContain("Sem projeto")
+    // as pastas dos agentes não aparecem como texto na lista: só o nome e o título
+    expect(html).not.toContain(">/home/x/agentes/ana<")
+  })
+
+  it("a regra por nome marca quem ela pega, sem deixar desmarcar ali; a pasta presa em todos os computadores trava a caixa", async () => {
+    const { AgentesDoComputador } = await import("./empresas")
+    const lista = [
+      un("alfa", { nome: "Alfa", titulos: [{ tipo: "titulo", padrao: "vend", computador: "pc1" }] }),
+      un("beta", { nome: "Beta", computadores: null, pastas: [{ computador: null, padrao: bruno.pasta }] }),
+    ]
+    const Tela = () => <AgentesDoComputador u={lista[0]!} e={edicao(lista)} />
+    const { html, erros } = await desenhar(Tela, fonte, estado)
+    expect(erros).toEqual([])
+    expect(html).toContain("1 agente entra aqui")
+    expect(caixa(html, "Ana")).toContain('aria-checked="true"')
+    expect(caixa(html, "Ana")).toContain('disabled=""')
+    expect(linha(html, "Ana")).toContain("Entra pela regra vend")
+    expect(caixa(html, "Bruno")).toContain('disabled=""')
+    expect(linha(html, "Bruno")).toContain("Beta usa esta pasta em todos os computadores")
+    expect(caixa(html, "Caio")).not.toContain('disabled=""')
+  })
+
+  it("uma regra que vale em todos os computadores não pode ser removida pela caixa deste computador", async () => {
+    const { AgentesDoComputador } = await import("./empresas")
+    const lista = [un("alfa", { pastas: [{ computador: null, padrao: ana.pasta }] })]
+    const Tela = () => <AgentesDoComputador u={lista[0]!} e={edicao(lista)} />
+    const { html, erros } = await desenhar(Tela, fonte, estado)
+    expect(erros).toEqual([])
+    expect(caixa(html, "Ana")).toContain('aria-checked="true"')
+    expect(caixa(html, "Ana")).toContain('disabled=""')
+    expect(linha(html, "Ana")).toContain("Esta pasta vale em todos os computadores")
+  })
+
+  it("regra em todos também mostra quando o projeto não roda neste computador", async () => {
+    const { AgentesDoComputador } = await import("./empresas")
+    const lista = [un("alfa", { computadores: ["pc2"], pastas: [{ computador: null, padrao: ana.pasta }] })]
+    const Tela = () => <AgentesDoComputador u={lista[0]!} e={edicao(lista)} />
+    const { html } = await desenhar(Tela, fonte, estado)
+    expect(linha(html, "Ana")).toContain("Não entra: este projeto não roda neste computador")
+    expect(caixa(html, "Ana")).toContain('disabled=""')
+  })
+
+  it("marcado num projeto que não roda neste computador: avisa que não entra e conta no resumo", async () => {
+    const { AgentesDoComputador } = await import("./empresas")
+    const lista = [un("alfa", { nome: "Alfa", computadores: ["pc2"], pastas: [{ computador: "pc1", padrao: ana.pasta }] })]
+    const Tela = () => <AgentesDoComputador u={lista[0]!} e={edicao(lista)} />
+    const { html, erros } = await desenhar(Tela, fonte, estado)
+    expect(erros).toEqual([])
+    expect(html).toContain("Nenhum agente entra aqui ainda")
+    expect(html).toContain("1 marcado não entra")
+    expect(linha(html, "Ana")).toContain("Não entra: este projeto não roda neste computador")
+  })
+
+  it("sem agentes do OpenBot no computador, a lista não aparece", async () => {
+    const { AgentesDoComputador } = await import("./empresas")
+    const lista = [un("alfa", { nome: "Alfa" })]
+    const e = { ...edicao(lista), computador: "pc2" } as Edicao
+    const Tela = () => <AgentesDoComputador u={lista[0]!} e={e} />
+    const { html, erros } = await desenhar(Tela, fonte, estado)
+    expect(erros).toEqual([])
+    expect(html).toBe("")
+  })
+
+  it("o aviso de conta livre diz quantos agentes ou pastas ficam sem conta para trocar", async () => {
+    const { AvisoContasLivres } = await import("./empresas")
+    const Nenhuma = () => <AvisoContasLivres aviso={{ tipo: "nenhuma", fora: 3, livres: 0 }} />
+    const nenhuma = await desenhar(Nenhuma, fonte, estado)
+    expect(nenhuma.erros).toEqual([])
+    expect(nenhuma.html).toContain("Nenhuma conta sobra para o que está fora dos projetos ligados")
+    expect(nenhuma.html).toContain("3 agentes ou pastas")
+    const SemFolga = () => <AvisoContasLivres aviso={{ tipo: "semFolga", fora: 1, livres: 2 }} />
+    const semFolga = await desenhar(SemFolga, fonte, estado)
+    expect(semFolga.erros).toEqual([])
+    expect(semFolga.html).toContain("Não há outra conta disponível para trocar")
+    expect(semFolga.html).toContain("1 agente ou pasta")
   })
 })
