@@ -1148,7 +1148,7 @@ function LinhaTroca({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
  */
 function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
   const { t } = useT()
-  const achadas = pastasManuais(u, e.computador, e.agentes)
+  const achadas = pastasManuais(u, e.computador)
   const linhas = achadas.length ? achadas : [{ pasta: { computador: e.computador, padrao: "" }, indice: -1 }]
   const idLista = `pastas-${u.id}-${e.computador}`
   const raiz = u.pai ? e.lista.find((x) => x.id === u.pai) : u

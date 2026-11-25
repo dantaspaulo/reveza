@@ -129,7 +129,7 @@ describe("cadastro após salvar", () => {
     await clicar(botao("Salvar"))
     expect(salvar).toHaveBeenCalledTimes(1)
     expect(nome.disabled).toBe(true)
-    expect(tela.textContent).toContain("Não foi possível confirmar se as alterações foram salvas")
+    expect(tela.textContent).toContain("Não deu para confirmar se as mudanças foram salvas")
     expect((await ler()).empresas.some((e) => e.nome === "Agência alterada")).toBe(true)
     falha = false
     await clicar(botao("Tentar atualizar"))

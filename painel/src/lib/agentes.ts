@@ -243,8 +243,7 @@ export function devolverAgente(
 /** As pastas seguem editáveis mesmo quando passam a coincidir com a de um agente. */
 export function pastasManuais(
   u: UnidadeRascunho,
-  computador: string,
-  _agentes: AgenteOpenBot[]
+  computador: string
 ): { pasta: PastaRascunho; indice: number }[] {
   return pastasEm(u, computador)
 }

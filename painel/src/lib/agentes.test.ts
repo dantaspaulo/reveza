@@ -307,7 +307,7 @@ describe("a lista de agentes", () => {
         { computador: PC2, padrao: "/outra" },
       ],
     })
-    expect(pastasManuais(alfa, MAC, TODOS).map((p) => [p.indice, p.pasta.padrao])).toEqual([
+    expect(pastasManuais(alfa, MAC).map((p) => [p.indice, p.pasta.padrao])).toEqual([
       [0, ana.pasta],
       [1, "/home/x/agentes/sumiu"],
       [2, bruno.pasta],
