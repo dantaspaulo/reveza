@@ -186,9 +186,11 @@ export interface Fonte {
 /** Erro com código conhecido, para a tela traduzir a mensagem. */
 export class ErroPainel extends Error {
   readonly codigo: string
-  constructor(codigo: string, mensagem?: string) {
+  readonly recusaConfirmada: boolean
+  constructor(codigo: string, mensagem?: string, recusaConfirmada = false) {
     super(mensagem ?? codigo)
     this.codigo = codigo
+    this.recusaConfirmada = recusaConfirmada
     this.name = "ErroPainel"
   }
 }

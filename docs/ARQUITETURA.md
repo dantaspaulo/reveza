@@ -221,6 +221,12 @@ por empresa foram para a tela de Uso. Salvar chama `painel_unidades` com a lista
 `painel_unidade`, que confere tudo antes de gravar nome, modo, contas e pastas). A lista é uma transação: uma recusa
 desfaz os passos anteriores, e o projeto novo acha a empresa nova pelo `ref` provisório.
 
+Desde a 0.21.1, depois da gravação confirmada, o painel só libera a edição após uma leitura iniciada depois dela. Se a
+leitura falhar, mantém o rascunho bloqueado e permite tentar somente a leitura. Se a resposta da gravação for incerta,
+recarrega o cadastro sem repetir a escrita e preserva o rascunho até a pessoa optar por descartá-lo e conferir a nuvem.
+Os IDs provisórios de projetos criados são substituídos pelos IDs devolvidos na resposta confirmada. A leitura nova pode
+trazer mudanças de outra aba; alterações simultâneas na mesma lista ainda precisam de comparação atômica no servidor.
+
 - **Só as contas dela (`empresas.so_contas_dela`, 0043):** nasce falso, e a tela nova grava verdadeiro. Unidade assim
   (estrita) não usa transbordo (`rvz_serve_trilha`), e a conta marcada para ela, com a unidade ligada, não fica na
   principal de nenhum computador (`rvz_principal_pode`). Quem não salvou pela tela nova segue como na 0.19.

@@ -1578,6 +1578,7 @@ export class FonteDemo implements Fonte {
     } catch (e) {
       this.d.empresas = antes
       this.emitir()
+      if (e instanceof ErroPainel) throw new ErroPainel(e.codigo, e.message, true)
       throw e
     }
     return novos

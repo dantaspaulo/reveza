@@ -180,7 +180,7 @@ export default function Empresas() {
   const [erro, setErro] = React.useState<ErroCadastro | null>(null)
   const [salvando, setSalvando] = React.useState(false)
   // salvou: o rascunho fica na tela até a leitura nova chegar, para nada piscar com o valor de antes
-  const [aguardando, setAguardando] = React.useState(false)
+  const [aguardando, setAguardando] = React.useState<{ versao: number; tipo: "salvo" | "incerto" } | null>(null)
   // enquanto grava, a tela não edita: o que entrasse agora sumiria quando a leitura nova chegasse
   const pode = podeEscrever && !salvando && !aguardando
   // o que já foi criado numa gravação que parou no meio: tentar de novo não cria em dobro
@@ -215,22 +215,20 @@ export default function Empresas() {
     [lista, estado.contas, estado.config, estado.computadores, dados?.trilhas, dados?.trilhasNaNuvem, agora, usados, classificar]
   )
 
-  const dadosVistos = React.useRef(dados)
-  // salvou, mas a leitura falhou: a tela volta a editar, e salvar de novo não cria em dobro
-  if (aguardando && !cadastro.carregando && cadastro.erro !== null) setAguardando(false)
+  const leituraAtualizada = !!aguardando && !cadastro.carregando && !cadastro.erro && !!dados &&
+    cadastro.versaoConcluida >= aguardando.versao
   React.useEffect(() => {
-    if (dados === dadosVistos.current) return
-    dadosVistos.current = dados
-    if (!aguardando) return
-    const real = (id: string | null) => (id ? (criados.current.get(id) ?? id) : id)
+    if (!aguardando || aguardando.tipo !== "salvo" || !leituraAtualizada) return
+    const ids = new Map(criados.current)
+    const real = (id: string | null) => (id ? (ids.get(id) ?? id) : id)
     setSelecionada(real)
     setAberto(real)
     criados.current.clear()
     setTocados(new Set())
     setRascunho(null)
     setFoto(null)
-    setAguardando(false)
-  }, [dados, aguardando])
+    setAguardando(null)
+  }, [aguardando, leituraAtualizada])
 
   // 0.20.2 (pedido do Paulo, 24/11/2026): o botão diz em qual computador o projeto novo nasce (o da aba)
   const rotuloNovo =
@@ -239,7 +237,7 @@ export default function Empresas() {
       : t("empresas.op.novaEmpresa")
 
   const indisponivel = cadastro.erro instanceof ErroPainel && cadastro.erro.codigo === "indisponivel"
-  if (indisponivel)
+  if (indisponivel && !aguardando)
     return (
       <Pagina titulo={t("menu.secoes.empresas")}>
         <Alert>
@@ -327,6 +325,7 @@ export default function Empresas() {
     setTocados(new Set())
   }
   const salvar = async () => {
+    if (!pode) return
     const problema = validar(lista, alteradas(referencia, lista))
     setErro(problema)
     if (problema) {
@@ -336,6 +335,8 @@ export default function Empresas() {
       return
     }
     setSalvando(true)
+    setApagar(null)
+    let recusaConfirmada = false
     const [ok] = await acao(async () => {
       const passos = planoDeGravar(referencia, lista).map((passo) => {
         const id = criados.current.get(passo.id) ?? (passo.novo ? null : passo.id)
@@ -344,14 +345,22 @@ export default function Empresas() {
         return { ref: passo.id, id, campos }
       })
       // numa transação só: mover uma pasta entre empresas não deixa a pasta sem dono se o segundo passo for recusado
-      const novos = await fonte.salvarUnidades(passos)
-      for (const [ref, id] of Object.entries(novos)) criados.current.set(ref, id)
+      try {
+        const novos = await fonte.salvarUnidades(passos)
+        for (const [ref, id] of Object.entries(novos)) criados.current.set(ref, id)
+      } catch (e) {
+        recusaConfirmada = e instanceof ErroPainel && e.recusaConfirmada
+        throw e
+      }
     }, t("empresas.op.salvo"))
     setSalvando(false)
-    if (ok) setAguardando(true)
-    cadastro.recarregar()
+    if (ok || !recusaConfirmada) {
+      const versao = cadastro.recarregar()
+      setAguardando({ versao, tipo: ok ? "salvo" : "incerto" })
+    }
   }
   const confirmarApagar = async (u: UnidadeRascunho) => {
+    if (!pode) return
     const id = criados.current.get(u.id) ?? (u.novo ? null : u.id)
     if (id) {
       const [ok] = await acao(() => fonte.apagarEmpresa(id), t("empresas.op.apagado"))
@@ -421,6 +430,29 @@ export default function Empresas() {
       }
     >
       <AvisoPermissao />
+      {aguardando ? (
+        <Alert role="status">
+          <AlertTitle>{t(aguardando.tipo === "salvo" ? "empresas.op.salvoAtualizar" : "empresas.op.incertoAtualizar")}</AlertTitle>
+          {aguardando.tipo === "incerto" && leituraAtualizada ? (
+            <AlertDescription>
+              <p>{t("empresas.op.incertoDescartar")}</p>
+              <Button size="sm" variant="outline" onClick={() => {
+                setRascunho(null)
+                setFoto(null)
+                setSelecionada(null)
+                setAberto(null)
+                criados.current.clear()
+                setAguardando(null)
+              }}>{t("empresas.op.verCadastro")}</Button>
+            </AlertDescription>
+          ) : cadastro.erro && !cadastro.carregando ? (
+            <AlertDescription><Button size="sm" variant="outline" onClick={() => {
+              const versao = cadastro.recarregar()
+              setAguardando((a) => a && { ...a, versao })
+            }}>{t("empresas.op.tentarAtualizar")}</Button></AlertDescription>
+          ) : null}
+        </Alert>
+      ) : null}
       {dados ? <Avisos dados={dados} /> : null}
       {dados ? <AvisoEmTodos lista={base} ativos={ativos} /> : null}
       {aviso ? <AvisoContasLivres aviso={aviso} /> : null}

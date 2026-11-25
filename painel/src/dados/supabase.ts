@@ -291,7 +291,7 @@ async function rpc<T extends Linha = Linha>(nome: string, args: Record<string, u
   const r = (data ?? {}) as T
   if (r && r.ok === false) {
     const msg = String(r.erro ?? "")
-    throw new ErroPainel(msg ? codigoDoErro(msg) : "falha", msg)
+    throw new ErroPainel(msg ? codigoDoErro(msg) : "falha", msg, true)
   }
   return r
 }
@@ -959,7 +959,13 @@ export class FonteSupabase implements Fonte {
 
   async salvarUnidades(passos: PassoUnidade[]): Promise<Record<string, string>> {
     const r = await rpc("painel_unidades", { p_passos: passos })
-    return (r.ids ?? {}) as Record<string, string>
+    const ids = r.ids
+    if (r.ok !== true || !ids || typeof ids !== "object" || Array.isArray(ids))
+      throw new ErroPainel("resultado_incerto")
+    const mapa = ids as Record<string, unknown>
+    if (passos.some((p) => !p.id && (typeof mapa[p.ref] !== "string" || !mapa[p.ref])))
+      throw new ErroPainel("resultado_incerto")
+    return mapa as Record<string, string>
   }
 
   async apagarEmpresa(id: string) {

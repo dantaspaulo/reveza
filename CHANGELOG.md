@@ -31,6 +31,8 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
   Alfa antes desta edição", com o botão **Devolver**, que o põe de volta lá com a regra como estava. Vale para marcar
   em outro projeto, desmarcar, tirar a linha da pasta ou apagar o projeto novo em que ele foi marcado. Nada volta
   sozinho.
+- **Recuperação depois de salvar.** A edição espera uma leitura nova do cadastro. Se a leitura falhar, a tela oferece
+  tentar de novo sem repetir a gravação. Se a resposta da gravação se perder, o painel pede para conferir o cadastro.
 
 ### Correção na troca manual
 

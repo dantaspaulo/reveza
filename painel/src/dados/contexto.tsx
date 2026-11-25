@@ -196,11 +196,13 @@ export function useConsulta<T>(fazer: (fonte: Fonte) => Promise<T>, deps: React.
     fazerRef.current = fazer
   })
   const [versao, setVersao] = React.useState(0)
+  const proximaVersao = React.useRef(0)
   // quando o instantâneo muda, o que depende dele (o uso de hoje) é relido, no máximo de 5 em 5 minutos
   const janela = atualizadoEm ? Math.floor(atualizadoEm.getTime() / 300_000) : 0
   const chave = JSON.stringify([versao, janela, idioma, ...deps])
-  const [resultado, setResultado] = React.useState<{ chave: string | null; dados: T | null; erro: Error | null }>({
+  const [resultado, setResultado] = React.useState<{ chave: string | null; versao: number; dados: T | null; erro: Error | null }>({
     chave: null,
+    versao: -1,
     dados: null,
     erro: null,
   })
@@ -209,21 +211,26 @@ export function useConsulta<T>(fazer: (fonte: Fonte) => Promise<T>, deps: React.
     let vivo = true
     fazerRef
       .current(fonte)
-      .then((dados) => vivo && setResultado({ chave, dados, erro: null }))
+      .then((dados) => vivo && setResultado({ chave, versao, dados, erro: null }))
       .catch(
         (e) =>
-          vivo && setResultado((r) => ({ chave, dados: r.dados, erro: e instanceof Error ? e : new Error(String(e)) }))
+          vivo && setResultado((r) => ({ chave, versao, dados: r.dados, erro: e instanceof Error ? e : new Error(String(e)) }))
       )
     return () => {
       vivo = false
     }
-  }, [fonte, chave])
+  }, [fonte, chave, versao])
 
   return {
     dados: resultado.dados,
     erro: resultado.erro,
     carregando: resultado.chave !== chave,
-    recarregar: () => setVersao((v) => v + 1),
+    versaoConcluida: resultado.versao,
+    recarregar: () => {
+      const nova = ++proximaVersao.current
+      setVersao(nova)
+      return nova
+    },
   }
 }
 
