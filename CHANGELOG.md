@@ -7,7 +7,7 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
-## 0.21.1 · 24/11/2026
+## 0.21.1 · 25/11/2026
 
 Melhoria no painel para quem separa as contas por projeto: escolher os agentes do OpenBot de cada computador num
 projeto ou subprojeto, e saber antes de salvar quando ligar um projeto deixa um computador sem conta livre. Só o painel
@@ -16,14 +16,15 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
 ### O que muda em Projetos
 
 - **Os agentes do OpenBot de cada computador.** No projeto e no subprojeto, a lista dos agentes do OpenBot daquele
-  computador, com busca e com o projeto em que cada um cai hoje. Marcar um agente põe só ele naquele projeto e só
-  naquele computador; se ele estava em outro projeto pela mesma pasta, muda de projeto. Quem entra por uma regra mais
+  computador, com busca e com o projeto previsto pelas regras. Marcar grava a regra da pasta naquele computador: todos
+  os agentes que usam a mesma pasta seguem juntos. A lista pode conter agentes antigos. Quem entra por uma regra mais
   larga aparece marcado, com a regra que o pega. Nada muda antes de Salvar.
 - **Regra pelo nome.** "Nome ou título contém" pega os agentes do computador com aquele texto no nome ou no título,
   inclusive os criados depois, com a prévia de quantos e quais casam.
 - **Sugestão de pasta com o nome do agente.** A pasta de um agente aparece com o nome dele nas sugestões.
 - **Aviso de conta livre.** Com um projeto ligado, a tela avisa, antes de salvar, quando não sobra conta (ou conta com
-  folga) para as conversas que ficam fora dos projetos ligados.
+  folga) para as conversas que ficam fora dos projetos ligados. O aviso usa as informações disponíveis no painel e
+  não garante disponibilidade futura.
 - **O mesmo texto em dois projetos no mesmo computador** é recusado na tela, com mensagem própria (antes, só a nuvem
   recusava, com uma mensagem genérica).
 
