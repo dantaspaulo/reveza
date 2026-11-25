@@ -202,7 +202,8 @@ describe("a regra por nome ou título", () => {
 
 describe("o aviso de conta livre", () => {
   const c = (id: string, extra: Partial<Conta> = {}): Conta =>
-    ({ id, email: `${id}@exemplo.com`, saiEm: null, pausada: false, precisaLogin: false, janelas: [], ...extra }) as Conta
+    ({ id, email: `${id}@exemplo.com`, saiEm: null, pausada: false, precisaLogin: false, agenda: [], tetoSemana: null,
+      semModelo: [], lidoEm: "2026-11-25T11:55:00Z", janelas: [{ tipo: "seven_day", pct: 10, resetEm: null }], ...extra }) as Conta
   const estado =
     (mapa: Record<string, EstadoConta> = {}) =>
     (x: Conta): EstadoConta =>
@@ -215,8 +216,10 @@ describe("o aviso de conta livre", () => {
   const ligadoComAna = (contas: string[]) => [
     u("alfa", { modo: "ligado", contas, pastas: [{ computador: MAC, padrao: ana.pasta }] }),
   ]
-  const aviso = (lista: UnidadeRascunho[], contas: Conta[], mapa: Record<string, EstadoConta> = {}, us = usados) =>
-    avisoContas(lista, contas, estado(mapa), us, classificadorDoRascunho(lista, TODOS))
+  const agora = new Date("2026-11-25T12:00:00Z")
+  const aviso = (lista: UnidadeRascunho[], contas: Conta[], mapa: Record<string, EstadoConta> = {}, us = usados,
+    computadores: { id: string; atribuicao: { contaId: string | null } | null }[] = [], trilhas: { contaId: string }[] = []) =>
+    avisoContas(lista, contas, estado(mapa), us, classificadorDoRascunho(lista, TODOS), { agora, fuso: "UTC", computadores, trilhas, trilhasConhecidas: true })
 
   it("sem projeto ligado, não avisa", () => {
     expect(aviso([u("alfa", { modo: "sombra", contas: ["c1"] })], [c("c1")])).toBeNull()
@@ -249,6 +252,48 @@ describe("o aviso de conta livre", () => {
     const lista = ligadoComAna(["c1"])
     const contas = [c("c1"), c("c2", { posse: { computadorId: PC2, motivo: "uso", expiraEm: "2099-01-01T00:00:00Z" } })]
     expect(aviso(lista, contas, { c2: "em_uso" })).toEqual({ tipo: "semFolga", fora: 1, livres: 1 })
+  })
+
+  it("não conta como alternativa conta sem leitura, no teto semanal ou sem modelo neste computador", () => {
+    const lista = ligadoComAna(["c1"])
+    const semLeitura = c("c2", { janelas: [] })
+    const teto = c("c3", { tetoSemana: 10 })
+    const semModelo = c("c4", { semModelo: [{ computadorId: MAC, modelo: "opus", ate: "2099-01-01T00:00:00Z" }] })
+    expect(aviso(lista, [c("c1"), semLeitura, teto, semModelo])).toMatchObject({ tipo: "semFolga", fora: 1 })
+  })
+
+  it("não conta atribuição ou trilha já em uso mesmo que a posse esteja vencida", () => {
+    const lista = ligadoComAna(["c1"])
+    const contas = [c("c1"), c("c2"), c("c3")]
+    const computadores = [{ id: PC2, atribuicao: { contaId: "c2" } }]
+    expect(aviso(lista, contas, {}, usados, computadores, [{ contaId: "c3" }])).toMatchObject({ tipo: "semFolga" })
+  })
+
+  it("respeita a agenda no fuso configurado", () => {
+    const lista = ligadoComAna(["c1"])
+    const fora = c("c2", { agenda: [{ dias: [3], de: "13:00", ate: "14:00" }] })
+    expect(aviso(lista, [c("c1"), fora])).toMatchObject({ tipo: "semFolga" })
+    const dentro = c("c2", { agenda: [{ dias: [3], de: "11:00", ate: "13:00" }] })
+    expect(aviso(lista, [c("c1"), dentro])).toBeNull()
+  })
+
+  it("aceita o início exato de uma agenda com segundos", () => {
+    const lista = ligadoComAna(["c1"])
+    const conta = c("c2", { agenda: [{ dias: [3], de: "12:00:00", ate: "13:00:00" }] })
+    expect(aviso(lista, [c("c1"), conta])).toBeNull()
+  })
+
+  it("trata uma leitura velha como insuficiente para confirmar alternativa", () => {
+    const lista = ligadoComAna(["c1"])
+    const conta = c("c2", { lidoEm: "2026-11-25T11:40:00Z" })
+    expect(aviso(lista, [c("c1"), conta])).toMatchObject({ tipo: "semFolga" })
+  })
+
+  it("não confirma alternativa quando a leitura das trilhas falhou", () => {
+    const lista = ligadoComAna(["c1"])
+    expect(avisoContas(lista, [c("c1"), c("c2")], estado(), usados, classificadorDoRascunho(lista, TODOS), {
+      agora, fuso: "UTC", computadores: [], trilhas: [], trilhasConhecidas: false,
+    })).toMatchObject({ tipo: "semFolga" })
   })
 
   it("o subprojeto ligado sem conta própria reserva as do projeto", () => {

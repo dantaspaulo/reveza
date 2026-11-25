@@ -306,7 +306,7 @@ export default secao({
       // 0.21.1: escolher os agentes do OpenBot de cada computador num projeto ou subprojeto
       agentes: {
         titulo: "Agentes do OpenBot em {computador}",
-        dicaModo: "A lista mostra o resultado das regras. Projetos em teste ou desligados não separam contas.",
+        dicaModo: "A lista mostra o resultado das regras. A escolha vale para todos os agentes que usam a mesma pasta. A lista pode incluir agentes antigos. Projetos em teste ou desligados não separam contas.",
         entram: { um: "{n} agente entra aqui", outros: "{n} agentes entram aqui" },
         nenhumEntra: "Nenhum agente entra aqui ainda: marque os deste projeto",
         naoEntram: { um: "{n} marcado não entra", outros: "{n} marcados não entram" },
@@ -334,11 +334,11 @@ export default secao({
           outros:
             "{n} agentes ou pastas (do OpenBot e das sessões dos últimos 30 dias) ficam fora dos projetos ligados, e toda conta está marcada num projeto ligado. Quando a conta em uso encher, o Reveza não terá para onde trocar. Deixe ao menos uma conta fora dos projetos ligados ou ponha esses agentes num projeto.",
         },
-        avisoSemFolgaTitulo: "Não há outra conta disponível para trocar",
+        avisoSemFolgaTitulo: "Não foi possível confirmar outra conta para trocar",
         avisoSemFolgaTexto: {
-          um: "{n} agente ou pasta (do OpenBot e das sessões dos últimos 30 dias) fica fora dos projetos ligados, e não há outra conta disponível para o computador. As restantes podem estar esgotadas, pausadas, sem login ou em uso.",
+          um: "{n} agente ou pasta (do OpenBot e das sessões dos últimos 30 dias) fica fora dos projetos ligados. As outras contas podem estar em uso, sem leitura recente, fora da agenda, no teto, esgotadas, pausadas ou sem login. Confira antes de ligar.",
           outros:
-            "{n} agentes ou pastas (do OpenBot e das sessões dos últimos 30 dias) ficam fora dos projetos ligados, e não há outra conta disponível para os computadores afetados. As restantes podem estar esgotadas, pausadas, sem login ou em uso.",
+            "{n} agentes ou pastas (do OpenBot e das sessões dos últimos 30 dias) ficam fora dos projetos ligados. As outras contas podem estar em uso, sem leitura recente, fora da agenda, no teto, esgotadas, pausadas ou sem login. Confira antes de ligar.",
         },
         avisoAoSalvar: "Atenção: veja no topo o aviso sobre as contas fora dos projetos ligados",
       },
@@ -643,7 +643,7 @@ export default secao({
       },
       agentes: {
         titulo: "OpenBot agents on {computador}",
-        dicaModo: "This list shows the rule matches. Projects in test mode or turned off do not separate accounts.",
+        dicaModo: "This list shows the rule matches. A choice applies to every agent using the same folder. The list may include old agents. Projects in test mode or turned off do not separate accounts.",
         entram: { um: "{n} agent goes here", outros: "{n} agents go here" },
         nenhumEntra: "No agent goes here yet: tick the ones for this project",
         naoEntram: { um: "{n} ticked does not go in", outros: "{n} ticked do not go in" },
@@ -671,11 +671,11 @@ export default secao({
           outros:
             "{n} agents or folders (from OpenBot and from sessions in the last 30 days) are outside the projects that are on, and every account is ticked in a project that is on. When the account in use fills up, Reveza will have nowhere to switch. Leave at least one account outside the projects that are on, or put these agents in a project.",
         },
-        avisoSemFolgaTitulo: "No other account is available to switch to",
+        avisoSemFolgaTitulo: "Could not confirm another account to switch to",
         avisoSemFolgaTexto: {
-          um: "{n} agent or folder (from OpenBot and from sessions in the last 30 days) is outside the projects that are on, and no other account is available for that computer. The remaining accounts may be used up, paused, signed out or in use.",
+          um: "{n} agent or folder (from OpenBot and from sessions in the last 30 days) is outside the projects that are on. Other accounts may be in use, missing a recent reading, outside their schedule, at their limit, exhausted, paused or signed out. Check before turning it on.",
           outros:
-            "{n} agents or folders (from OpenBot and from sessions in the last 30 days) are outside the projects that are on, and no other account is available for the affected computers. The remaining accounts may be used up, paused, signed out or in use.",
+            "{n} agents or folders (from OpenBot and from sessions in the last 30 days) are outside the projects that are on. Other accounts may be in use, missing a recent reading, outside their schedule, at their limit, exhausted, paused or signed out. Check before turning it on.",
         },
         avisoAoSalvar: "Heads up: see the warning at the top about accounts outside the projects that are on",
       },

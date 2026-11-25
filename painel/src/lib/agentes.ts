@@ -4,7 +4,7 @@
 // tela de Projetos e sem React, para testar sozinho: a tela mostra o que a nuvem fará depois de salvar, porque o
 // classificador é o mesmo de lib/empresas, que segue rvz_classificar.
 
-import type { EstadoConta } from "@/dados/derivados"
+import { cheia, type EstadoConta } from "@/dados/derivados"
 import type { AgenteOpenBot, Conta, RegraPasta } from "@/dados/tipos"
 
 import { contasEmLigado, ligada, pastasEm, type PastaRascunho, type UnidadeRascunho } from "./cadastro"
@@ -244,6 +244,29 @@ export interface AvisoContas {
 
 const NAO_RODA: ReadonlySet<EstadoConta> = new Set<EstadoConta>(["saindo", "precisa_login", "pausada", "esgotada"])
 
+interface CondicoesDoAviso {
+  agora: Date
+  fuso: string
+  computadores: { atribuicao: { contaId: string | null } | null }[]
+  trilhas: { contaId: string }[]
+  trilhasConhecidas: boolean
+}
+
+/** O mesmo dia e horário da agenda da nuvem. Se não for possível interpretar, não garante disponibilidade. */
+function agendaPermite(c: Conta, agora: Date, fuso: string): boolean {
+  if (!c.agenda.length) return true
+  try {
+    const partes = new Intl.DateTimeFormat("en-US", { timeZone: fuso, weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(agora)
+    const obter = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? ""
+    const dia = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(obter("weekday")) + 1
+    const hora = `${obter("hour")}:${obter("minute")}:${obter("second")}`
+    const comSegundos = (s: string) => /^\d{2}:\d{2}$/.test(s) ? `${s}:00` : s
+    return dia > 0 && c.agenda.some((a) => a.dias.includes(dia) && hora >= comSegundos(a.de) && hora < comSegundos(a.ate))
+  } catch {
+    return false
+  }
+}
+
 /**
  * Com algum projeto ligado, a conta marcada nele deixa de servir ao resto (rvz_principal_pode). Avisa quando há pasta
  * usada fora dos projetos ligados e nenhuma conta sobra para ela, ou as que sobram não rodam agora. null: nada a avisar.
@@ -253,7 +276,8 @@ export function avisoContas(
   contas: Conta[],
   estadoDe: (c: Conta) => EstadoConta,
   usados: Usado[],
-  classificar: Classificar
+  classificar: Classificar,
+  condicoes: CondicoesDoAviso
 ): AvisoContas | null {
   if (!lista.some((u) => ligada(u, lista))) return null
   const porId = new Map(lista.map((u) => [u.id, u]))
@@ -277,7 +301,16 @@ export function avisoContas(
   if (!livres.length) return { tipo: "nenhuma", fora, livres: 0 }
   const temAlternativa = (computador: string) => livres.some((c) => {
     if (NAO_RODA.has(estadoDe(c))) return false
-    if (!c.posse || Date.parse(c.posse.expiraEm) <= Date.now()) return true
+    const { agora, fuso, computadores, trilhas, trilhasConhecidas } = condicoes
+    if (!trilhasConhecidas) return false
+    if (computadores.some((pc) => pc.atribuicao?.contaId === c.id) || trilhas.some((t) => t.contaId === c.id)) return false
+    if (c.semModelo.some((s) => s.computadorId === computador && Date.parse(s.ate) > agora.getTime())) return false
+    if (!agendaPermite(c, agora, fuso)) return false
+    const semana = c.janelas.find((j) => j.tipo === "seven_day")?.pct ?? 0
+    if (c.tetoSemana !== null && semana >= c.tetoSemana) return false
+    const lido = c.lidoEm ? Date.parse(c.lidoEm) : NaN
+    if (!Number.isFinite(lido) || agora.getTime() - lido >= 15 * 60_000 || cheia(c, agora) === null) return false
+    if (!c.posse || Date.parse(c.posse.expiraEm) <= agora.getTime()) return true
     return c.posse.computadorId === computador && c.posse.motivo !== "uso"
   })
   const semAlternativa = [...foraPorComputador].reduce((n, [pc, quantidade]) => n + (temAlternativa(pc) ? 0 : quantidade), 0)

@@ -947,6 +947,8 @@ describe("Projetos: os agentes do OpenBot de cada computador (0.21.1, pedido do 
     expect(erros).toEqual([])
     expect(html).toContain("Agentes do OpenBot em Mac mini")
     expect(html).toContain("A lista mostra o resultado das regras")
+    expect(html).toContain("A escolha vale para todos os agentes que usam a mesma pasta")
+    expect(html).toContain("A lista pode incluir agentes antigos")
     expect(html).toContain("1 agente entra aqui")
     // em ordem de nome, não na ordem em que chegaram
     expect(html.indexOf('aria-label="Ana"')).toBeLessThan(html.indexOf('aria-label="Bruno"'))
@@ -1031,7 +1033,7 @@ describe("Projetos: os agentes do OpenBot de cada computador (0.21.1, pedido do 
     const SemFolga = () => <AvisoContasLivres aviso={{ tipo: "semFolga", fora: 1, livres: 2 }} />
     const semFolga = await desenhar(SemFolga, fonte, estado)
     expect(semFolga.erros).toEqual([])
-    expect(semFolga.html).toContain("Não há outra conta disponível para trocar")
+    expect(semFolga.html).toContain("Não foi possível confirmar outra conta para trocar")
     expect(semFolga.html).toContain("1 agente ou pasta")
   })
 })

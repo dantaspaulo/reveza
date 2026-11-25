@@ -206,8 +206,11 @@ export default function Empresas() {
   )
   const agora = useAgora(60_000)
   const aviso = React.useMemo(
-    () => avisoContas(lista, estado.contas, (c) => estadoConta(c, estado.config, agora), usados, classificar),
-    [lista, estado.contas, estado.config, agora, usados, classificar]
+    () => avisoContas(lista, estado.contas, (c) => estadoConta(c, estado.config, agora), usados, classificar, {
+      agora, fuso: estado.config.fuso, computadores: estado.computadores, trilhas: dados?.trilhas ?? [],
+      trilhasConhecidas: dados?.trilhasNaNuvem === true,
+    }),
+    [lista, estado.contas, estado.config, estado.computadores, dados?.trilhas, dados?.trilhasNaNuvem, agora, usados, classificar]
   )
 
   const dadosVistos = React.useRef(dados)
