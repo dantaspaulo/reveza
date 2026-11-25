@@ -61,6 +61,11 @@ describe("a chave de ligar", () => {
 })
 
 describe("contas e pastas", () => {
+  it("alocar conta não bloqueia por regras antigas que a operação não altera", () => {
+    const regras = Array.from({ length: 101 }, (_, i) => pasta(`~/pasta/${i}`, "pc1"))
+    const lista = [u("e", { pastas: regras })]
+    expect(planoDeAlocar(lista, "e", "conta", true, [])?.erro).toBeNull()
+  })
   it("projeto sem conta usa a da empresa; com conta, só a dele", () => {
     const e = u("e", { contas: ["a"] })
     const p = u("p", { pai: "e" })

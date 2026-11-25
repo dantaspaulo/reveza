@@ -238,7 +238,8 @@ export function planoDeAlocar(
       return !c.revogado && principal != null && agora.has(principal) && !antes.has(principal)
     })
     .map((c) => c.nome)
-  return { contas, erro: validar(depois, [nova]), saem }
+  const semConta = depois.find((x) => (x.id === nova.id || x.pai === nova.id) && ligada(x, depois) && !contasDe(x, depois).length)
+  return { contas, erro: semConta ? { id: semConta.id, chave: "erroConta", nome: semConta.nome.trim() } : null, saem }
 }
 
 /**
