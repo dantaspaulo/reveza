@@ -26,7 +26,9 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
   folga) para as conversas que ficam fora dos projetos ligados. O aviso usa as informações disponíveis no painel e
   não garante disponibilidade futura.
 - **O mesmo texto em dois projetos no mesmo computador** é recusado na tela, com mensagem própria (antes, só a nuvem
-  recusava, com uma mensagem genérica).
+  recusava, ao salvar, com uma mensagem que falava em pasta).
+- **Marcar um agente por engano e desmarcar** devolve a pasta dele ao projeto de onde ela tinha saído, como estava
+  antes de editar.
 
 ### Correção na troca manual
 

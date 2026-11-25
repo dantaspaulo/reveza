@@ -1342,7 +1342,9 @@ function LinhaDoAgente({ l, u, e }: { l: LinhaAgente; u: UnidadeRascunho; e: Edi
         aria-label={l.agente.nome || l.agente.pasta}
         disabled={!e.pode || travado}
         checked={marcada}
-        onCheckedChange={() => e.aplicar((atual) => alternarAgente(atual, u.id, l.agente, e.computador) ?? atual)}
+        onCheckedChange={() =>
+          e.aplicar((atual) => alternarAgente(atual, u.id, l.agente, e.computador, e.antes) ?? atual)
+        }
       />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{l.agente.nome || l.agente.pasta}</span>

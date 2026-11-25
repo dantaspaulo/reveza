@@ -160,20 +160,29 @@ export function linhasDeAgentes(
 
 /**
  * Marcar ou desmarcar um agente. Marcar põe a pasta dele nesta unidade, só neste computador, e tira a mesma pasta de
- * outra unidade neste computador (o agente muda de projeto). Desmarcar tira a pasta exata dele daqui. null: outra
- * unidade tem a pasta em todos os computadores, e mudar lá mexeria nos outros computadores.
+ * outra unidade neste computador (o agente muda de projeto). Desmarcar tira a pasta exata dele daqui e a devolve à
+ * unidade que a tinha antes da edição (`antes`), se ninguém ficou com ela. null: outra unidade tem a pasta em todos os
+ * computadores, e mudar lá mexeria nos outros computadores.
  */
 export function alternarAgente(
   lista: UnidadeRascunho[],
   unidadeId: string,
   agente: AgenteOpenBot,
-  computador: string
+  computador: string,
+  antes: UnidadeRascunho[] = []
 ): UnidadeRascunho[] | null {
   const u = lista.find((x) => x.id === unidadeId)
   if (!u || !normalizarPasta(agente.pasta)) return null
   if (u.pastas.some((p) => p.computador === null && ehDoAgente(p, agente.pasta))) return null
   const aqui = (p: PastaRascunho) => (p.computador === null || p.computador === computador) && ehDoAgente(p, agente.pasta)
-  if (u.pastas.some(aqui)) return lista.map((x) => (x.id === u.id ? { ...x, pastas: x.pastas.filter((p) => !aqui(p)) } : x))
+  if (u.pastas.some(aqui))
+    return devolverOrigem(
+      lista.map((x) => (x.id === u.id ? { ...x, pastas: x.pastas.filter((p) => !aqui(p)) } : x)),
+      u.id,
+      agente,
+      computador,
+      antes
+    )
   const raiz = u.pai ? lista.find((x) => x.id === u.pai) : u
   if (raiz && Array.isArray(raiz.computadores) && !raiz.computadores.includes(computador)) return null
   if (lista.some((x) => x.id !== u.id && x.pastas.some((p) => p.computador === null && ehDoAgente(p, agente.pasta))))
@@ -183,6 +192,31 @@ export function alternarAgente(
     if (x.id === u.id) return { ...x, pastas: [...x.pastas, { computador, padrao: agente.pasta.trim() }] }
     return x.pastas.some(sai) ? { ...x, pastas: x.pastas.filter((p) => !sai(p)) } : x
   })
+}
+
+/**
+ * Depois de desmarcar: a pasta exata do agente neste computador volta, com o texto de antes, à unidade que a tinha
+ * antes da edição e que ainda está no rascunho, quando nenhuma unidade ficou com ela (aqui ou em todos). Marcar aqui
+ * tirou de lá: marcar por engano e desmarcar não pode apagar a regra do projeto de origem.
+ */
+function devolverOrigem(
+  lista: UnidadeRascunho[],
+  unidadeId: string,
+  agente: AgenteOpenBot,
+  computador: string,
+  antes: UnidadeRascunho[]
+): UnidadeRascunho[] {
+  const ocupada = lista.some((x) =>
+    x.pastas.some((p) => (p.computador === null || p.computador === computador) && ehDoAgente(p, agente.pasta))
+  )
+  if (ocupada) return lista
+  const daqui = (p: PastaRascunho) => p.computador === computador && ehDoAgente(p, agente.pasta)
+  for (const origem of antes) {
+    if (origem.id === unidadeId || !lista.some((x) => x.id === origem.id)) continue
+    const regra = origem.pastas.find(daqui)
+    if (regra) return lista.map((x) => (x.id === origem.id ? { ...x, pastas: [...x.pastas, { ...regra }] } : x))
+  }
+  return lista
 }
 
 /** As pastas seguem editáveis mesmo quando passam a coincidir com a de um agente. */

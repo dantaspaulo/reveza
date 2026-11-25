@@ -123,6 +123,49 @@ describe("marcar um agente", () => {
     expect(linha(depois, "beta", ana)).toMatchObject({ onde: "alfa", marcado: false })
   })
 
+  it("marcar por engano e desmarcar devolve a pasta, com o texto de antes, ao projeto de onde ela saiu", () => {
+    const original = { computador: MAC, padrao: `${ana.pasta}/` }
+    const antes = [u("alfa", { pastas: [original] }), u("beta")]
+    const marcado = alternarAgente(antes, "beta", ana, MAC, antes)!
+    expect(de(marcado, "alfa").pastas).toEqual([])
+    const desmarcado = alternarAgente(marcado, "beta", ana, MAC, antes)!
+    expect(de(desmarcado, "alfa").pastas).toEqual([original])
+    expect(de(desmarcado, "beta").pastas).toEqual([])
+    expect(linha(desmarcado, "beta", ana)).toMatchObject({ onde: "alfa", marcado: false })
+    // nada mudou de verdade: salvar não grava nada
+    expect(planoDeGravar(antes, desmarcado)).toEqual([])
+  })
+
+  it("desmarcar a pasta que já era daqui antes da edição não a põe em outro projeto", () => {
+    const antes = [u("alfa"), u("beta", { pastas: [{ computador: MAC, padrao: ana.pasta }] })]
+    const depois = alternarAgente(antes, "beta", ana, MAC, antes)!
+    expect(de(depois, "beta").pastas).toEqual([])
+    expect(de(depois, "alfa").pastas).toEqual([])
+  })
+
+  it("não devolve à origem quando outro projeto já tem a pasta do agente aqui, nem a um projeto que saiu do rascunho", () => {
+    const antes = [u("alfa", { pastas: [{ computador: MAC, padrao: ana.pasta }] }), u("beta"), u("gama")]
+    const marcado = alternarAgente(antes, "beta", ana, MAC, antes)!
+    // a mesma pasta digitada à mão em gama, neste computador
+    const comGama = marcado.map((x) => (x.id === "gama" ? { ...x, pastas: [{ computador: MAC, padrao: ana.pasta }] } : x))
+    const desmarcado = alternarAgente(comGama, "beta", ana, MAC, antes)!
+    expect(de(desmarcado, "alfa").pastas).toEqual([])
+    expect(de(desmarcado, "gama").pastas).toEqual([{ computador: MAC, padrao: ana.pasta }])
+    const semAlfa = marcado.filter((x) => x.id !== "alfa")
+    const desmarcadoSemAlfa = alternarAgente(semAlfa, "beta", ana, MAC, antes)!
+    expect(desmarcadoSemAlfa.map((x) => x.id)).toEqual(["beta", "gama"])
+    expect(desmarcadoSemAlfa.every((x) => x.pastas.length === 0)).toBe(true)
+  })
+
+  it("a pasta de origem em outro computador não volta para este", () => {
+    const antes = [u("alfa", { pastas: [{ computador: PC2, padrao: ana.pasta }] }), u("beta")]
+    const marcado = alternarAgente(antes, "beta", ana, MAC, antes)!
+    expect(de(marcado, "alfa").pastas).toEqual([{ computador: PC2, padrao: ana.pasta }])
+    const desmarcado = alternarAgente(marcado, "beta", ana, MAC, antes)!
+    expect(de(desmarcado, "alfa").pastas).toEqual([{ computador: PC2, padrao: ana.pasta }])
+    expect(de(desmarcado, "beta").pastas).toEqual([])
+  })
+
   it("projeto que não roda neste computador: o agente marcado não entra, e a linha avisa", () => {
     const lista = [u("alfa", { computadores: [PC2], pastas: [{ computador: MAC, padrao: ana.pasta }] })]
     expect(linha(lista, "alfa", ana)).toMatchObject({ marcado: true, onde: null, naoEntra: true, foraDoComputador: true })
