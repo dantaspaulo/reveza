@@ -1022,6 +1022,32 @@ describe("Projetos: os agentes do OpenBot de cada computador (0.21.1, pedido do 
     expect(linha(html, "Ana")).toContain("Não entra: este projeto não roda neste computador")
   })
 
+  it("o agente que saiu de um projeto nesta edição mostra de onde, com o botão Devolver; sem edição, nada aparece", async () => {
+    const { AgentesDoComputador } = await import("./empresas")
+    const antes = [
+      un("alfa", { nome: "Alfa", pastas: [{ computador: "pc1", padrao: ana.pasta }, { computador: "pc1", padrao: bruno.pasta }] }),
+      un("beta", { nome: "Beta" }),
+    ]
+    // Ana marcada em Beta (saiu de Alfa); Bruno desmarcado em Alfa (sem projeto)
+    const lista = [
+      un("alfa", { nome: "Alfa" }),
+      un("beta", { nome: "Beta", pastas: [{ computador: "pc1", padrao: ana.pasta }] }),
+    ]
+    const Tela = () => <AgentesDoComputador u={lista[1]!} e={{ ...edicao(lista), antes } as Edicao} />
+    const { html, erros } = await desenhar(Tela, fonte, estado)
+    expect(erros).toEqual([])
+    expect(linha(html, "Ana")).toContain(">Aqui<")
+    expect(linha(html, "Ana")).toContain("Estava em Alfa antes desta edição")
+    expect(linha(html, "Ana")).toContain('aria-label="Devolver para Alfa"')
+    expect(linha(html, "Bruno")).toContain("Sem projeto")
+    expect(linha(html, "Bruno")).toContain("Estava em Alfa antes desta edição")
+    expect(linha(html, "Bruno")).toContain('aria-label="Devolver para Alfa"')
+    expect(linha(html, "Caio")).not.toContain("Estava em")
+    // sem edição (o cadastro de antes igual ao rascunho), nenhum aviso
+    const Igual = () => <AgentesDoComputador u={antes[1]!} e={{ ...edicao(antes), antes } as Edicao} />
+    expect((await desenhar(Igual, fonte, estado)).html).not.toContain("Estava em")
+  })
+
   it("sem agentes do OpenBot no computador, a lista não aparece", async () => {
     const { AgentesDoComputador } = await import("./empresas")
     const lista = [un("alfa", { nome: "Alfa" })]

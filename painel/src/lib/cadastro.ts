@@ -10,11 +10,6 @@ export interface PastaRascunho {
   /** null: vale em todos os computadores. */
   computador: string | null
   padrao: string
-  /**
-   * 0.21.1, só no rascunho (não vai à nuvem nem conta como mudança): as regras que marcar o agente desta pasta tirou
-   * de outras unidades, como estavam, para desmarcar devolver.
-   */
-  veioDe?: { unidadeId: string; pasta: PastaRascunho }[]
 }
 
 export interface UnidadeRascunho {

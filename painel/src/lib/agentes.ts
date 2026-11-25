@@ -88,6 +88,10 @@ export interface LinhaAgente {
   foraDoComputador: boolean
   /** Não dá para marcar: outra unidade tem a mesma pasta em todos os computadores (o nome dela). */
   bloqueio: string | null
+  /** 0.21.1: a unidade de onde ele saiu nesta edição (`origemDoAgente`): o id e o nome, ou null. */
+  estavaEm: { id: string; nome: string } | null
+  /** O botão Devolver funciona agora (`devolverAgente` não é null). */
+  podeDevolver: boolean
 }
 
 /** A regra da unidade que pega a pasta do agente neste computador: a de caminho mais comprida, a de nome, a de texto. */
@@ -119,13 +123,17 @@ function regraQuePega(u: UnidadeRascunho, agente: AgenteOpenBot, computador: str
   return texto ? texto.r.padrao.trim() : null
 }
 
-/** A lista de agentes do computador no editor de uma unidade: onde cada um cai e o que a caixa dele pode fazer. */
+/**
+ * A lista de agentes do computador no editor de uma unidade: onde cada um cai, o que a caixa dele pode fazer e, com o
+ * cadastro de antes de editar (`antes`), de onde ele saiu nesta edição.
+ */
 export function linhasDeAgentes(
   lista: UnidadeRascunho[],
   unidadeId: string,
   agentes: AgenteOpenBot[],
   computador: string,
-  classificar: Classificar
+  classificar: Classificar,
+  antes: UnidadeRascunho[] = lista
 ): LinhaAgente[] {
   const u = lista.find((x) => x.id === unidadeId)
   if (!u) return []
@@ -144,6 +152,7 @@ export function linhasDeAgentes(
     const dono = marcado
       ? undefined
       : lista.find((x) => x.id !== u.id && x.pastas.some((p) => p.computador === null && ehDoAgente(p, agente.pasta)))
+    const origem = origemDoAgente(antes, lista, agente, computador)
     return {
       agente,
       onde,
@@ -154,16 +163,17 @@ export function linhasDeAgentes(
       naoEntra: marcado && onde !== u.id,
       foraDoComputador,
       bloqueio: dono ? nomeUnidade(dono, lista) : null,
+      estavaEm: origem ? { id: origem.id, nome: nomeUnidade(origem, lista) } : null,
+      podeDevolver: origem ? devolverAgente(antes, lista, agente, computador) !== null : false,
     }
   })
 }
 
 /**
  * Marcar ou desmarcar um agente. Marcar põe a pasta dele nesta unidade, só neste computador, e tira a mesma pasta de
- * outra unidade neste computador (o agente muda de projeto); a regra nova guarda, só no rascunho, a que foi tirada
- * (`veioDe`). Desmarcar tira a pasta exata dele daqui e devolve a que a marcação tirou: desfaz só a marcação, e o que a
- * pessoa mudou de propósito antes continua. null: outra unidade tem a pasta em todos os computadores, e mudar lá
- * mexeria nos outros computadores.
+ * outra unidade neste computador (o agente muda de projeto). Desmarcar tira a pasta exata dele daqui. Nada volta
+ * sozinho: a linha do agente mostra de onde ele saiu (`origemDoAgente`) e o botão Devolver (`devolverAgente`). null:
+ * outra unidade tem a pasta em todos os computadores, e mudar lá mexeria nos outros computadores.
  */
 export function alternarAgente(
   lista: UnidadeRascunho[],
@@ -175,69 +185,58 @@ export function alternarAgente(
   if (!u || !normalizarPasta(agente.pasta)) return null
   if (u.pastas.some((p) => p.computador === null && ehDoAgente(p, agente.pasta))) return null
   const aqui = (p: PastaRascunho) => (p.computador === null || p.computador === computador) && ehDoAgente(p, agente.pasta)
-  if (u.pastas.some(aqui))
-    return devolver(
-      lista.map((x) => (x.id === u.id ? { ...x, pastas: x.pastas.filter((p) => !aqui(p)) } : x)),
-      u.pastas.filter(aqui)
-    )
+  if (u.pastas.some(aqui)) return lista.map((x) => (x.id === u.id ? { ...x, pastas: x.pastas.filter((p) => !aqui(p)) } : x))
   const raiz = u.pai ? lista.find((x) => x.id === u.pai) : u
   if (raiz && Array.isArray(raiz.computadores) && !raiz.computadores.includes(computador)) return null
   if (lista.some((x) => x.id !== u.id && x.pastas.some((p) => p.computador === null && ehDoAgente(p, agente.pasta))))
     return null
   const sai = (p: PastaRascunho) => p.computador === computador && ehDoAgente(p, agente.pasta)
-  const veioDe = lista.flatMap((x) =>
-    x.id === u.id ? [] : x.pastas.filter(sai).map((pasta) => ({ unidadeId: x.id, pasta }))
-  )
-  const nova: PastaRascunho = { computador, padrao: agente.pasta.trim(), ...(veioDe.length ? { veioDe } : {}) }
   return lista.map((x) => {
-    if (x.id === u.id) return { ...x, pastas: [...x.pastas, nova] }
+    if (x.id === u.id) return { ...x, pastas: [...x.pastas, { computador, padrao: agente.pasta.trim() }] }
     return x.pastas.some(sai) ? { ...x, pastas: x.pastas.filter((p) => !sai(p)) } : x
   })
 }
 
-/** A mesma pasta valendo no mesmo computador (ou em todos): a nuvem não deixa duas unidades com ela. */
-const colide = (a: PastaRascunho, b: PastaRascunho) =>
-  mesmaPasta(a.padrao, b.padrao) && (a.computador === null || b.computador === null || a.computador === b.computador)
+/**
+ * 0.21.1: a unidade que tinha a pasta exata do agente neste computador (ou em todos) no cadastro de antes de editar
+ * (`antes`, o que está na nuvem) e que, no rascunho, não a tem mais: o agente saiu de lá nesta edição (marcado em outro
+ * projeto, desmarcado, a linha tirada ou o projeto apagado). Só informa, sem guardar estado: tudo sai da comparação
+ * entre o cadastro de antes e o rascunho, e nada volta sozinho.
+ */
+export function origemDoAgente(
+  antes: UnidadeRascunho[],
+  lista: UnidadeRascunho[],
+  agente: AgenteOpenBot,
+  computador: string
+): UnidadeRascunho | null {
+  if (!normalizarPasta(agente.pasta)) return null
+  const tem = (x: UnidadeRascunho) =>
+    x.pastas.some((p) => (p.computador === null || p.computador === computador) && ehDoAgente(p, agente.pasta))
+  const origem = antes.find(tem)
+  const agora = origem ? lista.find((x) => x.id === origem.id) : undefined
+  return agora && !tem(agora) ? agora : null
+}
 
 /**
- * As regras que marcações tiraram de outras unidades (o `veioDe` das pastas que saem) voltam para lá, como estavam
- * (com o `veioDe` delas: desfazer de novo segue voltando), quando nenhuma unidade do rascunho ficou com a mesma pasta
- * neste computador ou em todos. Unidade que saiu do rascunho não recebe nada.
+ * O botão Devolver: o agente volta à unidade de antes (`origemDoAgente`), saindo de onde estiver neste computador, e
+ * com a regra como ela era quando valia só neste computador (o mesmo texto: salvar não muda nada lá). Regra que era em
+ * todos volta só para este computador: tirar o "em todos" foi uma escolha feita nesta edição. null: não há para onde
+ * devolver, ou marcar lá não é possível agora (os mesmos casos de `alternarAgente`).
  */
-function devolver(lista: UnidadeRascunho[], saem: PastaRascunho[]): UnidadeRascunho[] {
-  let r = lista
-  for (const { unidadeId, pasta } of saem.flatMap((p) => p.veioDe ?? [])) {
-    if (r.some((x) => x.pastas.some((q) => colide(q, pasta)))) continue
-    r = r.map((x) => (x.id === unidadeId ? { ...x, pastas: [...x.pastas, pasta] } : x))
-  }
-  return r
-}
-
-/** Tirar uma linha de pasta (o X da lista): a regra que a marcação dela tirou de outra unidade volta, como desmarcar. */
-export function tirarPasta(lista: UnidadeRascunho[], unidadeId: string, indice: number): UnidadeRascunho[] {
-  const p = lista.find((x) => x.id === unidadeId)?.pastas[indice]
-  if (!p) return lista
-  return devolver(
-    lista.map((x) => (x.id === unidadeId ? { ...x, pastas: x.pastas.filter((_, i) => i !== indice) } : x)),
-    [p]
-  )
-}
-
-/** Tirar do rascunho uma unidade e os projetos dela: as regras que as marcações nelas tiraram de outras voltam. */
-export function tirarUnidade(lista: UnidadeRascunho[], id: string): UnidadeRascunho[] {
-  const sai = (x: UnidadeRascunho) => x.id === id || x.pai === id
-  return devolver(
-    lista.filter((x) => !sai(x)),
-    lista.filter(sai).flatMap((x) => x.pastas)
-  )
-}
-
-/** Depois de gravar: as marcações já valem na nuvem, e desmarcar não deve mais devolver nada. */
-export function semOrigens(lista: UnidadeRascunho[]): UnidadeRascunho[] {
-  return lista.map((x) =>
-    x.pastas.some((p) => p.veioDe)
-      ? { ...x, pastas: x.pastas.map((p) => ({ computador: p.computador, padrao: p.padrao })) }
-      : x
+export function devolverAgente(
+  antes: UnidadeRascunho[],
+  lista: UnidadeRascunho[],
+  agente: AgenteOpenBot,
+  computador: string
+): UnidadeRascunho[] | null {
+  const origem = origemDoAgente(antes, lista, agente, computador)
+  const movido = origem ? alternarAgente(lista, origem.id, agente, computador) : null
+  if (!origem || !movido) return null
+  const exata = (p: PastaRascunho) => p.computador === computador && ehDoAgente(p, agente.pasta)
+  const regra = antes.find((x) => x.id === origem.id)?.pastas.find(exata)
+  if (!regra) return movido
+  return movido.map((x) =>
+    x.id === origem.id ? { ...x, pastas: x.pastas.map((p) => (exata(p) ? { ...regra } : p)) } : x
   )
 }
 

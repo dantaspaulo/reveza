@@ -47,12 +47,10 @@ import {
   alternarAgente,
   avisoContas,
   classificadorDoRascunho,
+  devolverAgente,
   filtrarLinhas,
   linhasDeAgentes,
   pastasManuais,
-  semOrigens,
-  tirarPasta,
-  tirarUnidade,
   type AvisoContas,
   type LinhaAgente,
   type Usado,
@@ -350,11 +348,7 @@ export default function Empresas() {
       for (const [ref, id] of Object.entries(novos)) criados.current.set(ref, id)
     }, t("empresas.op.salvo"))
     setSalvando(false)
-    if (ok) {
-      setAguardando(true)
-      // gravado: se a leitura nova falhar e a tela voltar a editar, desmarcar não devolve o que já saiu na nuvem
-      setRascunho((r) => r && semOrigens(r))
-    }
+    if (ok) setAguardando(true)
     cadastro.recarregar()
   }
   const confirmarApagar = async (u: UnidadeRascunho) => {
@@ -364,7 +358,7 @@ export default function Empresas() {
       if (!ok) return
       cadastro.recarregar()
     }
-    setRascunho((r) => r && tirarUnidade(r, u.id))
+    setRascunho((r) => r && r.filter((x) => x.id !== u.id && x.pai !== u.id))
     setApagar(null)
     if (aberto === u.id) setAberto(null)
   }
@@ -1188,7 +1182,7 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
               className="size-8 shrink-0"
               disabled={!e.pode}
               aria-label={t("empresas.op.removerPasta")}
-              onClick={() => e.aplicar((atual) => tirarPasta(atual, u.id, indice))}
+              onClick={() => e.mudar(u.id, { pastas: u.pastas.filter((_, x) => x !== indice) })}
             >
               <XIcon />
             </Button>
@@ -1244,8 +1238,8 @@ export function AgentesDoComputador({ u, e }: { u: UnidadeRascunho; e: Edicao })
   const [busca, setBusca] = React.useState("")
   const [texto, setTexto] = React.useState("")
   const linhas = React.useMemo(
-    () => linhasDeAgentes(e.lista, u.id, e.agentes, e.computador, e.classificar),
-    [e.lista, u.id, e.agentes, e.computador, e.classificar]
+    () => linhasDeAgentes(e.lista, u.id, e.agentes, e.computador, e.classificar, e.antes),
+    [e.lista, u.id, e.agentes, e.computador, e.classificar, e.antes]
   )
   if (!linhas.length) return null
   const visiveis = filtrarLinhas(linhas, busca)
@@ -1314,7 +1308,10 @@ export function AgentesDoComputador({ u, e }: { u: UnidadeRascunho; e: Edicao })
   )
 }
 
-/** Um agente na lista: a caixa, o nome, o título e onde ele cai. */
+/**
+ * Um agente na lista: a caixa, o nome, o título e onde ele cai. Se ele saiu de um projeto nesta edição, a linha diz de
+ * onde e mostra o botão Devolver: nada volta sozinho.
+ */
 function LinhaDoAgente({ l, u, e }: { l: LinhaAgente; u: UnidadeRascunho; e: Edicao }) {
   const { t } = useT()
   // entra por outra regra (pasta mais larga, nome ou texto) ou está preso a outro projeto em todos os computadores:
@@ -1337,28 +1334,46 @@ function LinhaDoAgente({ l, u, e }: { l: LinhaAgente; u: UnidadeRascunho; e: Edi
             ? [t("empresas.agentes.em", { onde: l.ondeNome }), true]
             : [t("empresas.agentes.semProjeto"), false]
   return (
-    <label
-      className={cn(
-        "flex min-w-0 items-start gap-2.5 rounded-lg px-2.5 py-2",
-        e.pode && !travado ? "cursor-pointer hover:bg-muted/60" : "cursor-default",
-        marcada && "bg-primary/5"
-      )}
-    >
-      <Checkbox
-        className="mt-0.5"
-        aria-label={l.agente.nome || l.agente.pasta}
-        disabled={!e.pode || travado}
-        checked={marcada}
-        onCheckedChange={() => e.aplicar((atual) => alternarAgente(atual, u.id, l.agente, e.computador) ?? atual)}
-      />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium">{l.agente.nome || l.agente.pasta}</span>
-        <span className="text-xs [overflow-wrap:anywhere] text-muted-foreground">
-          {l.agente.titulo ? `${l.agente.titulo} · ` : ""}
-          <span className={cn(atencao && "text-atencao")}>{situacao}</span>
+    <div className={cn("flex min-w-0 flex-col rounded-lg", marcada && "bg-primary/5")}>
+      <label
+        className={cn(
+          "flex min-w-0 items-start gap-2.5 rounded-lg px-2.5 py-2",
+          e.pode && !travado ? "cursor-pointer hover:bg-muted/60" : "cursor-default"
+        )}
+      >
+        <Checkbox
+          className="mt-0.5"
+          aria-label={l.agente.nome || l.agente.pasta}
+          disabled={!e.pode || travado}
+          checked={marcada}
+          onCheckedChange={() => e.aplicar((atual) => alternarAgente(atual, u.id, l.agente, e.computador) ?? atual)}
+        />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-sm font-medium">{l.agente.nome || l.agente.pasta}</span>
+          <span className="text-xs [overflow-wrap:anywhere] text-muted-foreground">
+            {l.agente.titulo ? `${l.agente.titulo} · ` : ""}
+            <span className={cn(atencao && "text-atencao")}>{situacao}</span>
+          </span>
         </span>
-      </span>
-    </label>
+      </label>
+      {l.estavaEm ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 pr-2.5 pb-2 pl-9 text-xs text-muted-foreground">
+          <span className="[overflow-wrap:anywhere]">{t("empresas.agentes.estavaEm", { onde: l.estavaEm.nome })}</span>
+          {l.podeDevolver ? (
+            <Button
+              size="sm"
+              variant="link"
+              className="h-auto p-0 text-xs"
+              disabled={!e.pode}
+              aria-label={t("empresas.agentes.devolverPara", { onde: l.estavaEm.nome })}
+              onClick={() => e.aplicar((atual) => devolverAgente(e.antes, atual, l.agente, e.computador) ?? atual)}
+            >
+              {t("empresas.agentes.devolver")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

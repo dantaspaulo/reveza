@@ -27,9 +27,10 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
   não garante disponibilidade futura.
 - **O mesmo texto em dois projetos no mesmo computador** é recusado na tela, com mensagem própria (antes, só a nuvem
   recusava, ao salvar, com uma mensagem que falava em pasta).
-- **Marcar um agente por engano e desfazer** (desmarcar, tirar a linha da pasta ou apagar o projeto novo em que ele
-  foi marcado) devolve a pasta dele ao projeto de onde a marcação a tirou, como estava. O que foi mudado de propósito
-  antes de marcar continua.
+- **O agente que sai de um projeto mostra de onde saiu.** Enquanto a edição não é salva, a linha dele diz "Estava em
+  Alfa antes desta edição", com o botão **Devolver**, que o põe de volta lá com a regra como estava. Vale para marcar
+  em outro projeto, desmarcar, tirar a linha da pasta ou apagar o projeto novo em que ele foi marcado. Nada volta
+  sozinho.
 
 ### Correção na troca manual
 
