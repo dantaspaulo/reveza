@@ -308,7 +308,8 @@ function pastasValidas(u: UnidadeRascunho): PastaRascunho[] {
 
 /**
  * 0.21.1: os textos de agente sem vazio nem repetido (o mesmo texto no mesmo computador, sem ligar para maiúsculas):
- * a nuvem tem um índice único da regra e recusaria a gravação inteira.
+ * a nuvem guarda uma regra só por texto e computador (índice único) e ignora o repetido exato, mas o que muda só nas
+ * maiúsculas viraria duas regras iguais.
  */
 function textosValidos(u: UnidadeRascunho): UnidadeRascunho["titulos"] {
   const vistos = new Set<string>()
