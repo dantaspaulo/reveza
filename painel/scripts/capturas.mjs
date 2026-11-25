@@ -73,6 +73,32 @@ const INTERACOES = [
     },
   ],
   [
+    // 0.21.1: digitar na pasta de um projeto a mesma pasta de um agente do OpenBot (o Suporte da demonstração) não
+    // tira o campo da tela nem o cursor dele, antes, no meio e depois da pasta igual. Falha se o valor ou o foco se perder.
+    "i-projetos-pasta-de-agente",
+    "/projetos",
+    async (p) => {
+      const campo = p.getByLabel(L("Pasta", "Folder"), { exact: true }).first()
+      await campo.scrollIntoViewIfNeeded()
+      await campo.fill("")
+      const conferir = async (esperado) => {
+        const ativo = await p.evaluate(() => {
+          const el = document.activeElement
+          return el && el.tagName === "INPUT" ? el.value : null
+        })
+        if (ativo !== esperado)
+          throw new Error(`pasta: esperava ${JSON.stringify(esperado)} com o cursor, veio ${JSON.stringify(ativo)}`)
+      }
+      await campo.pressSequentially("~/agentes/suporte", { delay: 20 })
+      await conferir("~/agentes/suporte")
+      await p.keyboard.type("/x", { delay: 20 })
+      await conferir("~/agentes/suporte/x")
+      await p.keyboard.press("Backspace")
+      await p.keyboard.press("Backspace")
+      await conferir("~/agentes/suporte")
+    },
+  ],
+  [
     "i-contas-editar",
     "/contas",
     async (p) => {
