@@ -252,9 +252,20 @@ export function codigoDoErro(mensagem: string, codigoPg?: string): string {
   return "falha"
 }
 
+/**
+ * Recusa comprovada: o banco respondeu com um erro identificado, então a transação foi desfeita e nada ficou gravado.
+ * Só provam isso o SQLSTATE do Postgres (5 caracteres, como P0001 de uma função que levanta exceção, 23505, 40P01) e
+ * os códigos do PostgREST. Um número de status (502, 504) não prova nada: o pedido pode ter chegado e a gravação ainda
+ * estar em curso, e aí o resultado é incerto, não recusa.
+ */
+function recusaComprovada(e: PostgrestError | Error | null): boolean {
+  const codigo = (e as PostgrestError | null)?.code
+  return typeof codigo === "string" && (/^PGRST\d+$/.test(codigo) || /^[0-9A-Z]{5}$/.test(codigo))
+}
+
 function erro(e: PostgrestError | Error | null): never {
   const msg = e?.message ?? ""
-  throw new ErroPainel(codigoDoErro(msg, (e as PostgrestError | null)?.code), msg)
+  throw new ErroPainel(codigoDoErro(msg, (e as PostgrestError | null)?.code), msg, recusaComprovada(e))
 }
 
 const texto = (v: unknown) => (v === null || v === undefined ? null : String(v))

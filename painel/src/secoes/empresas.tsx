@@ -433,19 +433,7 @@ export default function Empresas() {
       {aguardando ? (
         <Alert role="status">
           <AlertTitle>{t(aguardando.tipo === "salvo" ? "empresas.op.salvoAtualizar" : "empresas.op.incertoAtualizar")}</AlertTitle>
-          {aguardando.tipo === "incerto" && leituraAtualizada ? (
-            <AlertDescription>
-              <p>{t("empresas.op.incertoDescartar")}</p>
-              <Button size="sm" variant="outline" onClick={() => {
-                setRascunho(null)
-                setFoto(null)
-                setSelecionada(null)
-                setAberto(null)
-                criados.current.clear()
-                setAguardando(null)
-              }}>{t("empresas.op.verCadastro")}</Button>
-            </AlertDescription>
-          ) : cadastro.erro && !cadastro.carregando ? (
+          {cadastro.erro && !cadastro.carregando ? (
             <AlertDescription><Button size="sm" variant="outline" onClick={() => {
               const versao = cadastro.recarregar()
               setAguardando((a) => a && { ...a, versao })

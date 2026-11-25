@@ -31,8 +31,11 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
   Alfa antes desta edição", com o botão **Devolver**, que o põe de volta lá com a regra como estava. Vale para marcar
   em outro projeto, desmarcar, tirar a linha da pasta ou apagar o projeto novo em que ele foi marcado. Nada volta
   sozinho.
-- **Recuperação depois de salvar.** A edição espera uma leitura nova do cadastro. Se a leitura falhar, a tela oferece
-  tentar de novo sem repetir a gravação. Se a resposta da gravação se perder, o painel pede para conferir o cadastro.
+- **Recuperação depois de salvar.** A edição espera uma leitura nova do cadastro, começada depois da gravação. Se a
+  leitura falhar, a tela deixa tentar de novo, só a leitura, sem repetir a gravação. Se a resposta da gravação se
+  perder, a edição fica bloqueada nesta aba: o painel nunca volta a gravar em cima de um cadastro que pode estar velho,
+  e a saída é recarregar a página e conferir o que foi salvo. Recusa que o banco comprova, como um campo que falta,
+  continua devolvendo o rascunho para corrigir na hora.
 
 ### Correção na troca manual
 

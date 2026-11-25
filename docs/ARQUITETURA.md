@@ -222,10 +222,19 @@ por empresa foram para a tela de Uso. Salvar chama `painel_unidades` com a lista
 desfaz os passos anteriores, e o projeto novo acha a empresa nova pelo `ref` provisório.
 
 Desde a 0.21.1, depois da gravação confirmada, o painel só libera a edição após uma leitura iniciada depois dela. Se a
-leitura falhar, mantém o rascunho bloqueado e permite tentar somente a leitura. Se a resposta da gravação for incerta,
-recarrega o cadastro sem repetir a escrita e preserva o rascunho até a pessoa optar por descartá-lo e conferir a nuvem.
-Os IDs provisórios de projetos criados são substituídos pelos IDs devolvidos na resposta confirmada. A leitura nova pode
-trazer mudanças de outra aba; alterações simultâneas na mesma lista ainda precisam de comparação atômica no servidor.
+leitura falhar, mantém o rascunho bloqueado e permite tentar somente a leitura. Se a resposta da gravação for incerta
+(sem resposta do banco), a edição não volta nesta aba: a escrita pode ainda estar em curso, e uma leitura que chegasse
+antes dela mostraria o cadastro velho, a partir do qual a segunda gravação apagaria o que a primeira escreveu. A saída
+é recarregar a página e conferir o cadastro. Os IDs provisórios dos projetos criados são substituídos pelos IDs
+devolvidos na resposta confirmada.
+
+Recusa comprovada é diferente de resultado incerto: um erro com código do próprio banco (SQLSTATE, como o `P0001` de
+uma função que levanta exceção, ou um código do PostgREST) prova que a transação foi desfeita, e aí o rascunho volta a
+ser editável na hora. Sem código do banco (queda de rede, 502, 504) não há prova de recusa, e vale o bloqueio acima.
+
+Fica de fora desta versão, para a 0.22.0: gravar conferindo a revisão do cadastro sob bloqueio no servidor, que é o que
+falta para duas abas, dois computadores ou um painel antigo não gravarem em cima de uma fotografia velha. Esse limite
+já existia antes da 0.21.1. O desenho e o código em estudo estão na ref `refs/reveza/0220-cadastro-seguro`.
 
 - **Só as contas dela (`empresas.so_contas_dela`, 0043):** nasce falso, e a tela nova grava verdadeiro. Unidade assim
   (estrita) não usa transbordo (`rvz_serve_trilha`), e a conta marcada para ela, com a unidade ligada, não fica na

@@ -18,6 +18,25 @@ describe("resposta da gravação de projetos", () => {
     await expect(new FonteSupabase().salvarUnidades(passos)).rejects.toMatchObject({ recusaConfirmada: false })
   })
 
+  it("um erro do próprio banco é recusa confirmada; um erro sem resposta do banco não é", async () => {
+    // uma função que levanta exceção desfaz a transação inteira, e o PostgREST devolve o código do Postgres: nada ficou
+    // gravado, então a pessoa pode continuar editando o rascunho
+    for (const code of ["P0001", "23505", "42501", "40P01", "57014", "PGRST202"]) {
+      chamada.mockResolvedValueOnce({ data: null, error: { message: "projeto desconhecido", code } })
+      await expect(new FonteSupabase().salvarUnidades(passos)).rejects.toMatchObject({ recusaConfirmada: true, codigo: expect.any(String) })
+    }
+    // sem código do banco não há prova de recusa: a gravação ainda pode estar em curso do outro lado
+    for (const error of [
+      { message: "Failed to fetch", code: "" },
+      { message: "NetworkError when attempting to fetch resource" },
+      { message: "Gateway Timeout", code: "504" },
+      { message: "Bad Gateway", code: "502" },
+    ]) {
+      chamada.mockResolvedValueOnce({ data: null, error })
+      await expect(new FonteSupabase().salvarUnidades(passos)).rejects.toMatchObject({ recusaConfirmada: false })
+    }
+  })
+
   it("não confirma gravação sem resposta válida e sem os IDs das unidades novas", async () => {
     for (const data of [null, {}, { ok: true }, { ok: true, ids: {} }, { ok: true, ids: { "novo-1": "" } }]) {
       chamada.mockResolvedValueOnce({ data, error: null })

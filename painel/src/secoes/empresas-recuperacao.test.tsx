@@ -111,7 +111,7 @@ describe("cadastro após salvar", () => {
     expect(ler).not.toHaveBeenCalled()
   })
 
-  it("resultado incerto relê sem gravar de novo e só descarta o rascunho com escolha explícita", async () => {
+  it("resultado incerto mantém o rascunho bloqueado mesmo quando a leitura retorna", async () => {
     const fonte = await montar()
     const salvarDeVerdade = fonte.salvarUnidades.bind(fonte)
     const salvar = vi.spyOn(fonte, "salvarUnidades").mockImplementation(async (passos) => {
@@ -134,11 +134,33 @@ describe("cadastro após salvar", () => {
     falha = false
     await clicar(botao("Tentar atualizar"))
     expect(nome.disabled).toBe(true)
-    await clicar(botao("Descartar rascunho e ver cadastro"))
     expect(salvar).toHaveBeenCalledTimes(1)
     const atualizado = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
-    expect(atualizado.disabled).toBe(false)
+    expect(atualizado.disabled).toBe(true)
     expect(atualizado.value).toBe("Agência alterada")
+    expect([...tela.querySelectorAll("button")].some((b) => b.textContent?.includes("Descartar rascunho e ver cadastro"))).toBe(false)
+  })
+
+  it("não libera edição quando a escrita sem resposta ainda pode terminar depois da leitura", async () => {
+    const fonte = await montar()
+    const ler = fonte.empresas.bind(fonte)
+    const gravar = fonte.salvarUnidades.bind(fonte)
+    let terminar: (() => Promise<unknown>) | undefined
+    const salvar = vi.spyOn(fonte, "salvarUnidades").mockImplementation(async (passos) => {
+      terminar = () => gravar(passos)
+      throw new Error("resposta perdida antes de gravar")
+    })
+    const nome = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    await digitar(nome, "Alfa alterada")
+    await clicar(botao("Salvar"))
+    expect(salvar).toHaveBeenCalledTimes(1)
+    expect((await ler()).empresas.some((e) => e.nome === "Alfa alterada")).toBe(false)
+    expect(nome.disabled).toBe(true)
+    const liberar = [...tela.querySelectorAll("button")].find((b) => b.textContent?.includes("Descartar rascunho e ver cadastro"))
+    expect(!liberar || liberar.disabled).toBe(true)
+    await act(async () => { await terminar!() })
+    expect(salvar).toHaveBeenCalledTimes(1)
+    expect(nome.disabled).toBe(true)
   })
 
   it("devolver antes de salvar restaura a regra de origem sem escrita", async () => {
