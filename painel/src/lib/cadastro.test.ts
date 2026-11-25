@@ -110,6 +110,12 @@ describe("conferir antes de salvar", () => {
     expect(planoDeGravar(foto, meu).map((p) => p.id)).toEqual(["a"])
   })
 
+  it("editar o nome não regrava contas ou regras alteradas por outra pessoa na mesma unidade", () => {
+    const foto = [u("a", { nome: "Antes", contas: ["conta1"], pastas: [pasta("~/um", "pc1")] })]
+    const meu = [u("a", { nome: "Depois", contas: ["conta1"], pastas: [pasta("~/um", "pc1")] })]
+    expect(planoDeGravar(foto, meu)[0]!.campos).toEqual({ nome: "Depois" })
+  })
+
   it("cadastro antigo com problema não impede de salvar outra empresa", () => {
     const antiga = u("antiga", { modo: "ligado" })
     const editada = u("editada", { nome: "Nova" })
@@ -156,6 +162,27 @@ describe("conferir antes de salvar", () => {
 })
 
 describe("a ordem de gravar", () => {
+  it("solta textos que mudam de dono antes de adicioná-los em outro projeto", () => {
+    const titulo = (padrao: string) => ({ tipo: "titulo" as const, padrao, computador: "pc1" })
+    const base = [u("a", { titulos: [titulo("Alfa")] }), u("b", { titulos: [titulo("Beta")] })]
+    const lista = [u("a", { titulos: [titulo("Beta")] }), u("b", { titulos: [titulo("Alfa")] })]
+    const passos = planoDeGravar(base, lista)
+    expect(passos.slice(0, 2)).toEqual([
+      { id: "a", novo: false, campos: { pastas: [] } },
+      { id: "b", novo: false, campos: { pastas: [] } },
+    ])
+  })
+
+  it("ao soltar uma pasta, não adiciona cedo um texto que ainda pertence a outro projeto", () => {
+    const titulo = { tipo: "titulo" as const, padrao: "Suporte", computador: "pc1" }
+    const base = [u("a", { pastas: [pasta("~/x", "pc1")] }), u("b", { titulos: [titulo] })]
+    const lista = [u("a", { titulos: [titulo] }), u("b", { pastas: [pasta("~/x", "pc1")] })]
+    const passos = planoDeGravar(base, lista)
+    expect(passos.slice(0, 2)).toEqual([
+      { id: "a", novo: false, campos: { pastas: [] } },
+      { id: "b", novo: false, campos: { pastas: [] } },
+    ])
+  })
   it("só grava o que mudou, ignorando pasta vazia", () => {
     const base = [u("e", { pastas: [pasta("~/x")] })]
     expect(alteradas(base, [u("e", { pastas: [pasta("~/x"), pasta("  ", "pc1")] })])).toEqual([])

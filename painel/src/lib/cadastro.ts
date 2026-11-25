@@ -378,17 +378,26 @@ export function validar(lista: UnidadeRascunho[], mudou: UnidadeRascunho[] = lis
   return null
 }
 
-// os computadores só vão quando mudaram: salvar outro campo não desfaz o que outra pessoa escolheu nesse meio tempo
-const camposDe = (u: UnidadeRascunho, antes?: UnidadeRascunho): CamposUnidade => ({
-  nome: u.nome.trim(),
-  modo: u.modo,
-  contas: u.contas,
-  pastas: [...pastasValidas(u).map((p) => ({ tipo: "pasta" as const, ...p })), ...textosValidos(u)],
-  ...(u.novo ? { cor: u.cor, ...(u.pai ? { pai: u.pai } : {}) } : {}),
-  ...(!u.pai && u.computadores !== undefined && (u.novo || !antes || chaveComputadores(u) !== chaveComputadores(antes))
-    ? { computadores: u.computadores }
-    : {}),
-})
+// Enviar apenas campos editados evita desfazer alterações simultâneas em outros campos da mesma unidade.
+const regrasDe = (u: UnidadeRascunho) => [
+  ...pastasValidas(u).map((p) => ({ tipo: "pasta" as const, ...p })),
+  ...textosValidos(u),
+]
+const chaveRegras = (u: UnidadeRascunho) =>
+  JSON.stringify(regrasDe(u).map((r) => JSON.stringify([r.tipo, r.computador, r.padrao])).sort())
+const camposDe = (u: UnidadeRascunho, antes?: UnidadeRascunho): CamposUnidade => {
+  const novo = u.novo || !antes
+  return {
+    ...(novo || u.nome.trim() !== antes.nome.trim() ? { nome: u.nome.trim() } : {}),
+    ...(novo || u.modo !== antes.modo ? { modo: u.modo } : {}),
+    ...(novo || JSON.stringify([...u.contas].sort()) !== JSON.stringify([...antes.contas].sort()) ? { contas: u.contas } : {}),
+    ...(novo || chaveRegras(u) !== chaveRegras(antes) ? { pastas: regrasDe(u) } : {}),
+    ...(u.novo ? { cor: u.cor, ...(u.pai ? { pai: u.pai } : {}) } : {}),
+    ...(!u.pai && u.computadores !== undefined && (novo || chaveComputadores(u) !== chaveComputadores(antes))
+      ? { computadores: u.computadores }
+      : {}),
+  }
+}
 
 /**
  * A ordem de gravar, porque a nuvem confere cada unidade sozinha: primeiro solta a pasta que mudou de dono; depois as
@@ -402,16 +411,22 @@ export function planoDeGravar(base: UnidadeRascunho[], lista: UnidadeRascunho[])
     const antes = base.find((x) => x.id === u.id)
     if (!antes || u.novo) continue
     const agora = pastasValidas(u)
+    const titulosAgora = textosValidos(u)
     const fica = (p: PastaRascunho) =>
       agora.some((q) => q.computador === p.computador && normalizarPasta(q.padrao) === normalizarPasta(p.padrao))
+    const ficaTitulo = (p: UnidadeRascunho["titulos"][number]) =>
+      titulosAgora.some((q) => q.tipo === p.tipo && q.computador === p.computador && normalizarPasta(q.padrao) === normalizarPasta(p.padrao))
     const sai = antes.pastas.filter((p) => !fica(p))
-    const outroQuer = sai.some((p) => lista.some((x) => x.id !== u.id && pastasValidas(x).some((q) => colidem(p, q))))
+    const saiTitulo = textosValidos(antes).filter((p) => !ficaTitulo(p))
+    const outroQuer =
+      sai.some((p) => lista.some((x) => x.id !== u.id && pastasValidas(x).some((q) => colidem(p, q)))) ||
+      saiTitulo.some((p) => lista.some((x) => x.id !== u.id && textosValidos(x).some((q) => q.tipo === p.tipo && colidem(p, q))))
     if (outroQuer)
       passos.push({
         id: u.id,
         novo: false,
         campos: {
-          pastas: [...antes.pastas.filter(fica).map((p) => ({ tipo: "pasta" as const, ...p })), ...textosValidos(u)],
+          pastas: [...pastasValidas(antes).filter(fica).map((p) => ({ tipo: "pasta" as const, ...p })), ...textosValidos(antes).filter(ficaTitulo)],
         },
       })
   }
