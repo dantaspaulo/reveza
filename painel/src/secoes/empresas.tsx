@@ -50,6 +50,9 @@ import {
   filtrarLinhas,
   linhasDeAgentes,
   pastasManuais,
+  semOrigens,
+  tirarPasta,
+  tirarUnidade,
   type AvisoContas,
   type LinhaAgente,
   type Usado,
@@ -347,7 +350,11 @@ export default function Empresas() {
       for (const [ref, id] of Object.entries(novos)) criados.current.set(ref, id)
     }, t("empresas.op.salvo"))
     setSalvando(false)
-    if (ok) setAguardando(true)
+    if (ok) {
+      setAguardando(true)
+      // gravado: se a leitura nova falhar e a tela voltar a editar, desmarcar não devolve o que já saiu na nuvem
+      setRascunho((r) => r && semOrigens(r))
+    }
     cadastro.recarregar()
   }
   const confirmarApagar = async (u: UnidadeRascunho) => {
@@ -357,7 +364,7 @@ export default function Empresas() {
       if (!ok) return
       cadastro.recarregar()
     }
-    setRascunho((r) => r && r.filter((x) => x.id !== u.id && x.pai !== u.id))
+    setRascunho((r) => r && tirarUnidade(r, u.id))
     setApagar(null)
     if (aberto === u.id) setAberto(null)
   }
@@ -1181,7 +1188,7 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
               className="size-8 shrink-0"
               disabled={!e.pode}
               aria-label={t("empresas.op.removerPasta")}
-              onClick={() => e.mudar(u.id, { pastas: u.pastas.filter((_, x) => x !== indice) })}
+              onClick={() => e.aplicar((atual) => tirarPasta(atual, u.id, indice))}
             >
               <XIcon />
             </Button>
@@ -1342,9 +1349,7 @@ function LinhaDoAgente({ l, u, e }: { l: LinhaAgente; u: UnidadeRascunho; e: Edi
         aria-label={l.agente.nome || l.agente.pasta}
         disabled={!e.pode || travado}
         checked={marcada}
-        onCheckedChange={() =>
-          e.aplicar((atual) => alternarAgente(atual, u.id, l.agente, e.computador, e.antes) ?? atual)
-        }
+        onCheckedChange={() => e.aplicar((atual) => alternarAgente(atual, u.id, l.agente, e.computador) ?? atual)}
       />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{l.agente.nome || l.agente.pasta}</span>

@@ -27,8 +27,9 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
   não garante disponibilidade futura.
 - **O mesmo texto em dois projetos no mesmo computador** é recusado na tela, com mensagem própria (antes, só a nuvem
   recusava, ao salvar, com uma mensagem que falava em pasta).
-- **Marcar um agente por engano e desmarcar** devolve a pasta dele ao projeto de onde ela tinha saído, como estava
-  antes de editar.
+- **Marcar um agente por engano e desfazer** (desmarcar, tirar a linha da pasta ou apagar o projeto novo em que ele
+  foi marcado) devolve a pasta dele ao projeto de onde a marcação a tirou, como estava. O que foi mudado de propósito
+  antes de marcar continua.
 
 ### Correção na troca manual
 
