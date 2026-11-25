@@ -73,13 +73,18 @@ const INTERACOES = [
     },
   ],
   [
-    // 0.21.1: digitar na pasta de um projeto a mesma pasta de um agente do OpenBot (o Suporte da demonstração) não
-    // tira o campo da tela nem o cursor dele, antes, no meio e depois da pasta igual. Falha se o valor ou o foco se perder.
+    // 0.21.1: digitar na pasta de um projeto, só neste computador, a mesma pasta de um agente do OpenBot (o Suporte da
+    // demonstração) não tira o campo da tela nem o cursor dele, antes, no meio e depois da pasta igual. Falha se o
+    // valor ou o foco se perder. A regra da demonstração vale em todos os computadores, e o defeito antigo só escondia
+    // a regra deste computador: tira o "em todos" antes de digitar.
     "i-projetos-pasta-de-agente",
     "/projetos",
     async (p) => {
       const campo = p.getByLabel(L("Pasta", "Folder"), { exact: true }).first()
       await campo.scrollIntoViewIfNeeded()
+      const emTodos = p.getByRole("checkbox", { name: L("Em todos", "On all"), exact: true }).first()
+      if ((await emTodos.getAttribute("aria-checked")) !== "true") throw new Error("pasta: a primeira regra não vale em todos")
+      await emTodos.click()
       await campo.fill("")
       const conferir = async (esperado) => {
         const ativo = await p.evaluate(() => {
@@ -89,13 +94,14 @@ const INTERACOES = [
         if (ativo !== esperado)
           throw new Error(`pasta: esperava ${JSON.stringify(esperado)} com o cursor, veio ${JSON.stringify(ativo)}`)
       }
-      await campo.pressSequentially("~/agentes/suporte", { delay: 20 })
-      await conferir("~/agentes/suporte")
+      const pasta = L("~/agentes/suporte", "~/agents/support")
+      await campo.pressSequentially(pasta, { delay: 20 })
+      await conferir(pasta)
       await p.keyboard.type("/x", { delay: 20 })
-      await conferir("~/agentes/suporte/x")
+      await conferir(`${pasta}/x`)
       await p.keyboard.press("Backspace")
       await p.keyboard.press("Backspace")
-      await conferir("~/agentes/suporte")
+      await conferir(pasta)
     },
   ],
   [
