@@ -172,8 +172,9 @@ export default function Empresas() {
   const base = React.useMemo(() => (dados ? rascunhoDe(dados) : []), [dados])
   const [rascunho, setRascunho] = React.useState<UnidadeRascunho[] | null>(null)
   // como o cadastro estava ao começar a editar: o que outra pessoa salvou nesse meio tempo não volta ao valor antigo
-  const [foto, setFoto] = React.useState<UnidadeRascunho[] | null>(null)
-  const referencia = foto ?? base
+  // 0.21.2: com a revisão da leitura de onde ela saiu, que vai junto ao salvar (o banco recusa se o cadastro mudou)
+  const [foto, setFoto] = React.useState<{ lista: UnidadeRascunho[]; revisao?: string } | null>(null)
+  const referencia = foto?.lista ?? base
   const lista = rascunho ?? base
   const raizes = lista.filter((u) => !u.pai)
   const [selecionada, setSelecionada] = React.useState<string | null>(null)
@@ -250,6 +251,8 @@ export default function Empresas() {
     confirmadasVistas.current = gravacao.confirmadas
     if (salvando || aguardando) return
     const versao = cadastro.recarregar()
+    // reação a uma mudança da trava da aba (loja de fora do React), junto com a leitura que ela pede; não é estado derivado
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAguardando({ versao, tipo: "salvo" })
   }, [gravacao.confirmadas, salvando, aguardando, cadastro])
 
@@ -273,7 +276,7 @@ export default function Empresas() {
 
   const editar = (fazer: (atual: UnidadeRascunho[]) => UnidadeRascunho[]) => {
     setErro(null)
-    setFoto((f) => f ?? base)
+    setFoto((f) => f ?? { lista: base, revisao: dados?.revisao })
     setRascunho((r) => fazer(r ?? base))
   }
   const mudar = (id: string, campos: Partial<UnidadeRascunho>) =>
@@ -360,6 +363,7 @@ export default function Empresas() {
     setSalvando(true)
     setApagar(null)
     let recusaConfirmada = false
+    let mudou = false
     const [ok] = await acao(async () => {
       const passos = planoDeGravar(referencia, lista).map((passo) => {
         const id = criados.current.get(passo.id) ?? (passo.novo ? null : passo.id)
@@ -370,14 +374,18 @@ export default function Empresas() {
       // numa transação só: mover uma pasta entre empresas não deixa a pasta sem dono se o segundo passo for recusado
       try {
         // pela trava da aba: sem resposta comprovada, nada mais grava o cadastro aqui até recarregar a página
-        const novos = await gravarCadastro(fonte, passos)
+        // a revisão é a da leitura de onde a edição saiu (a da tela, se nada foi editado): a leitura velha é recusada
+        const novos = await gravarCadastro(fonte, passos, foto ? foto.revisao : dados?.revisao)
         for (const [ref, id] of Object.entries(novos)) criados.current.set(ref, id)
       } catch (e) {
         recusaConfirmada = e instanceof ErroPainel && e.recusaConfirmada
+        mudou = e instanceof ErroPainel && e.codigo === "cadastro_mudou"
         throw e
       }
     }, t("empresas.op.salvo"))
     setSalvando(false)
+    // o banco recusou por leitura velha: o rascunho fica, e a tela lê de novo para o Descartar voltar ao cadastro atual
+    if (mudou) cadastro.recarregar()
     if (ok || !recusaConfirmada) {
       const versao = cadastro.recarregar()
       setAguardando({ versao, tipo: ok ? "salvo" : "incerto" })

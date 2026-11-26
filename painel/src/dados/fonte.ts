@@ -149,8 +149,11 @@ export interface Fonte {
   salvarEmpresa(id: string | null, campos: CamposEmpresa): Promise<string>
   /** 0.20.0: grava nome, modo, contas e pastas de uma vez; a unidade passa a rodar só nas contas dela. Devolve o id. */
   salvarUnidade(id: string | null, campos: CamposUnidade): Promise<string>
-  /** Várias unidades numa transação só: ou grava tudo, ou nada. Devolve o id real de cada unidade nova, pela `ref`. */
-  salvarUnidades(passos: PassoUnidade[]): Promise<Record<string, string>>
+  /**
+   * Várias unidades numa transação só: ou grava tudo, ou nada. Devolve o id real de cada unidade nova, pela `ref`.
+   * 0.21.2: com a `revisao` da leitura que a tela mostra, o banco recusa (`cadastro_mudou`) se o cadastro mudou desde ela.
+   */
+  salvarUnidades(passos: PassoUnidade[], revisao?: string): Promise<Record<string, string>>
   /** Apaga a empresa, as marcas das contas nela e as regras das pastas dela. O uso fica, sem dono. */
   apagarEmpresa(id: string): Promise<void>
   /** As empresas desta conta (a lista troca a de antes); vazia: a conta serve a todas. */

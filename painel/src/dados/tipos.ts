@@ -546,6 +546,11 @@ export interface DadosEmpresas {
   computadoresNaNuvem: boolean
   /** 0.20.1: os computadores de cada projeto que não roda em todos; vazio com a nuvem antes da 0.20.1. */
   computadores: ComputadorDoProjeto[]
+  /**
+   * 0.21.2: a revisão do cadastro, lida na nuvem ANTES das tabelas (0048). A gravação a manda de volta e o banco recusa
+   * se o cadastro mudou desde então. Falta com a nuvem antes da 0.21.2: aí a gravação segue como antes.
+   */
+  revisao?: string
 }
 
 /** 0.20.1: um computador em que o projeto roda (tabela empresa_computadores). */

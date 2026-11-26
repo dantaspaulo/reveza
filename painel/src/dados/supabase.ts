@@ -245,6 +245,8 @@ const MENSAGENS: [RegExp, string][] = [
 ]
 
 export function codigoDoErro(mensagem: string, codigoPg?: string): string {
+  // 0.21.2 (0048): a gravação saiu de uma leitura velha e o banco recusou sem mudar nada
+  if (mensagem === "o cadastro mudou; atualize antes de salvar") return "cadastro_mudou"
   // 0.20.0: o motivo da recusa do cadastro traz nomes e vai para a tela como o banco escreveu
   if (/^a pasta .+ já é de |^escolha uma conta para ligar$|^escolha um computador para este projeto$|^um (sub)?projeto ligado usa a conta|^atualize o computador .+ antes de ligar|^há sessões abertas na trilha/.test(mensagem)) return "cadastro"
   for (const [re, codigo] of MENSAGENS) if (re.test(mensagem)) return codigo
@@ -792,6 +794,9 @@ export class FonteSupabase implements Fonte {
 
   async empresas(): Promise<DadosEmpresas> {
     const sb = supabase()
+    // 0.21.2: a revisão ANTES das tabelas. Assim ela nunca é mais nova que o que a tela mostra: se o cadastro mudar entre
+    // as duas leituras, a gravação seguinte é recusada pelo banco (seguro), em vez de gravar por cima
+    const revisao = await this.revisaoDoCadastro()
     const [e, m, r, a, t, s, c] = await Promise.all([
       // "*": a coluna separar só existe desde a 0038 (0.18.0) e pai, modo e herdar_transbordo desde a 0040 (0.19.0);
       // com a nuvem de antes elas faltam e valem como antes
@@ -877,7 +882,22 @@ export class FonteSupabase implements Fonte {
         empresaId: String(l.empresa_id),
         computadorId: String(l.computador_id),
       })),
+      ...(revisao ? { revisao } : {}),
     }
+  }
+
+  /** A revisão do cadastro (0048). Nuvem sem a função: sem revisão, e a gravação segue como antes. */
+  private async revisaoDoCadastro(): Promise<string | undefined> {
+    const { data, error } = await supabase().rpc("painel_cadastro_revisao")
+    if (error) {
+      // só a função que falta vira "nuvem antiga"; falha passageira derruba a leitura, para nunca gravar sem a conferência
+      if (error.code === "PGRST202" || error.code === "42883") return undefined
+      erro(error)
+    }
+    const revisao = (data as Linha | null)?.revisao
+    if (typeof revisao !== "string" || !/^[0-9a-f]{64}$/.test(revisao))
+      throw new ErroPainel("falha", "revisão do cadastro inválida")
+    return revisao
   }
 
   async trocas({ de, ate }: Intervalo): Promise<TrocaUso[]> {
@@ -970,8 +990,11 @@ export class FonteSupabase implements Fonte {
     return String(r.id)
   }
 
-  async salvarUnidades(passos: PassoUnidade[]): Promise<Record<string, string>> {
-    const r = await rpc("painel_unidades", { p_passos: passos })
+  async salvarUnidades(passos: PassoUnidade[], revisao?: string): Promise<Record<string, string>> {
+    // 0.21.2: com a revisão da leitura, o banco confere que nada mudou; cada gravação leva uma operação nova
+    const r = revisao
+      ? await rpc("painel_unidades_seguro", { p_operacao: crypto.randomUUID(), p_revisao: revisao, p_passos: passos })
+      : await rpc("painel_unidades", { p_passos: passos })
     const ids = r.ids
     if (r.ok !== true || !ids || typeof ids !== "object" || Array.isArray(ids))
       throw new ErroPainel("resultado_incerto")

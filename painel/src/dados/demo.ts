@@ -940,7 +940,18 @@ export class FonteDemo implements Fonte {
     const e = this.d.empresas
     // as contas que saíram levam as marcas junto (como o "on delete cascade" do banco)
     const contas = new Set(this.d.contas.map((c) => c.id))
-    return this.l(structuredClone({ ...e, marcas: e.marcas.filter((m) => contas.has(m.contaId)) }))
+    return this.l(structuredClone({ ...e, marcas: e.marcas.filter((m) => contas.has(m.contaId)), revisao: this.revisao() }))
+  }
+
+  /** 0.21.2: a revisão do cadastro, como a da 0048: muda com qualquer mudança nas quatro partes que o cadastro grava. */
+  private revisao(): string {
+    const e = this.d.empresas
+    const contas = new Set(this.d.contas.map((c) => c.id))
+    const texto = JSON.stringify([e.empresas, e.marcas.filter((m) => contas.has(m.contaId)), e.regras, e.computadores])
+    // FNV-1a de 32 bits, repetido até os 64 caracteres do sha256 da nuvem: basta para a demonstração e os testes
+    let h = 0x811c9dc5
+    for (let i = 0; i < texto.length; i++) h = Math.imul(h ^ texto.charCodeAt(i), 0x01000193) >>> 0
+    return h.toString(16).padStart(8, "0").repeat(8)
   }
 
   async trocas({ de, ate }: Intervalo): Promise<TrocaUso[]> {
@@ -1565,7 +1576,10 @@ export class FonteDemo implements Fonte {
     return novo
   }
 
-  async salvarUnidades(passos: PassoUnidade[]): Promise<Record<string, string>> {
+  async salvarUnidades(passos: PassoUnidade[], revisao?: string): Promise<Record<string, string>> {
+    // como o banco (0048): a gravação que sai de uma leitura velha é recusada sem mudar nada
+    if (revisao !== undefined && revisao !== this.revisao())
+      throw new ErroPainel("cadastro_mudou", "o cadastro mudou; atualize antes de salvar", true)
     // como o banco (0044): um passo recusado desfaz os anteriores
     const antes = structuredClone(this.d.empresas)
     const novos: Record<string, string> = {}

@@ -115,6 +115,32 @@ describe("cadastro após salvar", () => {
     expect(tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')?.value).toBe("Agência alterada")
   })
 
+  it("sequência do BigBoss: a gravação que sai da leitura velha é recusada e a pasta fica onde a outra gravação pôs", async () => {
+    const fonte = await montar()
+    // a recarga leu o cadastro antes de a gravação da aba anterior terminar: a tela fica com essa leitura velha
+    const velha = await fonte.empresas()
+    const ler = vi.spyOn(fonte, "empresas").mockResolvedValue(velha)
+    await remontar(fonte)
+    const regra = fonte.dados.empresas.regras.find((r) => r.tipo === "pasta")!
+    const destino = fonte.dados.empresas.empresas.find((e) => e.id !== regra.empresaId)!
+    // a gravação anterior termina agora no banco: a pasta passa para outro projeto
+    regra.empresaId = destino.id
+    const salvar = vi.spyOn(fonte, "salvarUnidades")
+    const chamadasAntes = ler.mock.calls.length
+    const nome = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    await digitar(nome, "Agência alterada")
+    await clicar(botao("Salvar"))
+    // a gravação leva a revisão da leitura velha, e o banco recusa sem mudar nada
+    expect(salvar).toHaveBeenCalledTimes(1)
+    expect(salvar.mock.calls[0]![1]).toBe(velha.revisao)
+    await expect(salvar.mock.results[0]!.value).rejects.toMatchObject({ codigo: "cadastro_mudou", recusaConfirmada: true })
+    expect(fonte.dados.empresas.regras.find((r) => r.id === regra.id)!.empresaId).toBe(destino.id)
+    expect(fonte.dados.empresas.empresas.some((e) => e.nome === "Agência alterada")).toBe(false)
+    // o rascunho fica para a pessoa ver, e a tela lê o cadastro de novo para o Descartar voltar ao atual
+    expect(nome.value).toBe("Agência alterada")
+    expect(ler.mock.calls.length).toBeGreaterThan(chamadasAntes)
+  })
+
   it("recusa confirmada mantém o rascunho editável", async () => {
     const fonte = await montar()
     const ler = vi.spyOn(fonte, "empresas")

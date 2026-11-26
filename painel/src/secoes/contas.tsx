@@ -155,7 +155,8 @@ export default function Contas() {
     // a recusa volta como texto, fora do aviso de erro da ação (que troca texto com "network" pela falha genérica)
     const [ok, recusa] = await acao(async (): Promise<string | null> => {
       // lê de novo antes de gravar: a marca que outra pessoa pôs nesse meio tempo não volta ao valor antigo
-      const atual = rascunhoDe(await fonte.empresas())
+      const lido = await fonte.empresas()
+      const atual = rascunhoDe(lido)
       // o projeto foi apagado nesse meio tempo: nada a gravar, e a pessoa fica sabendo
       if (!atual.some((x) => x.id === unidade.id)) return t("contas.projeto.mudou")
       const plano = planoDeAlocar(atual, unidade.id, conta.id, marcar, estado.computadores)
@@ -165,7 +166,8 @@ export default function Contas() {
       // outro computador passou a usar a conta depois da confirmação: a pessoa confere de novo
       if (plano.saem.some((pc) => !saem.includes(pc))) return t("contas.projeto.mudou")
       // pela trava da aba, a mesma da tela Projetos: depois de uma gravação sem resposta, não grava até recarregar
-      await gravarCadastro(fonte, [{ ref: unidade.id, id: unidade.id, campos: { contas: plano.contas } }])
+      // com a revisão da leitura de onde o plano saiu: o banco recusa se o cadastro mudou desde ela (0.21.2)
+      await gravarCadastro(fonte, [{ ref: unidade.id, id: unidade.id, campos: { contas: plano.contas } }], lido.revisao)
       return null
     })
     setGravando(false)

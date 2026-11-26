@@ -46,7 +46,9 @@ function mudar(fonte: object, novo: (antes: EstadoGravacao) => EstadoGravacao) {
  */
 export async function gravarCadastro(
   fonte: Pick<Fonte, "salvarUnidades">,
-  passos: PassoUnidade[]
+  passos: PassoUnidade[],
+  /** 0.21.2: a revisão da leitura de onde a edição saiu; o banco recusa (`cadastro_mudou`) se o cadastro mudou desde ela */
+  revisao?: string
 ): Promise<Record<string, string>> {
   const antes = estadoGravacao(fonte)
   // nada foi enviado nos dois casos: a recusa é certa
@@ -54,7 +56,7 @@ export async function gravarCadastro(
   if (antes.emCurso > 0) throw new ErroPainel("gravacao_em_curso", undefined, true)
   mudar(fonte, (e) => ({ ...e, emCurso: e.emCurso + 1 }))
   try {
-    const ids = await fonte.salvarUnidades(passos)
+    const ids = await (revisao ? fonte.salvarUnidades(passos, revisao) : fonte.salvarUnidades(passos))
     mudar(fonte, (e) => ({ ...e, emCurso: e.emCurso - 1, confirmadas: e.confirmadas + 1 }))
     return ids
   } catch (erro) {

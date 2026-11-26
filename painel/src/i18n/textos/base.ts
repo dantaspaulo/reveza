@@ -243,6 +243,8 @@ export default secao({
       resultado_incerto:
         "Não deu para confirmar se a gravação foi salva. Recarregue a página e confira o cadastro antes de mudar de novo.",
       gravacao_em_curso: "Uma gravação do cadastro ainda está sem resposta. Espere terminar e tente de novo.",
+      cadastro_mudou:
+        "O cadastro mudou desde que você começou a editar, e nada foi gravado. Descarte as mudanças, confira o cadastro e faça de novo.",
       sem_conexao: "Sem conexão com a nuvem.",
       sem_permissao: "Só quem administra a instalação pode fazer isso.",
       precisa_aal2: "Confirme a verificação em duas etapas para continuar.",
@@ -562,6 +564,8 @@ export default secao({
       resultado_incerto:
         "We could not confirm whether the save went through. Reload the page and check the project list before changing anything again.",
       gravacao_em_curso: "A save to the project list has not answered yet. Wait for it to finish and try again.",
+      cadastro_mudou:
+        "The project list changed after you started editing, and nothing was saved. Discard your changes, check the list and make them again.",
       sem_conexao: "No connection to the cloud.",
       sem_permissao: "Only the installation's admins can do this.",
       precisa_aal2: "Confirm two-step verification to continue.",
