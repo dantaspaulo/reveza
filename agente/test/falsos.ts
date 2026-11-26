@@ -7,7 +7,7 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ApiContas, Janela, Perfil } from "../src/anthropic.js";
 import type { Cli } from "../src/claudecli.js";
-import type { AgenteOpenBot, OpenBot } from "../src/openbot.js";
+import type { AgenteOpenBot, OpenBot, PastaOpenBot } from "../src/openbot.js";
 import { caminhos, type Caminhos } from "../src/config.js";
 import type { Blob } from "../src/credenciais/blob.js";
 import { CredenciaisFalsas } from "../src/credenciais/falsa.js";
@@ -176,8 +176,11 @@ export class OpenBotFalso implements OpenBot {
   leituras = 0;
   agentes() {
     this.leituras++;
-    return this.lista.map((a) => ({ ...a }));
+    return this.lista.map((a) => ({ ...a, ...(a.secoes ? { secoes: [...a.secoes] } : {}) }));
   }
+  /** A barra lateral (0.22.0): sem as duas, o OpenBot falso é o de antes, sem pastas. */
+  pastas?: () => PastaOpenBot[];
+  barraEstado?: () => "ok" | "velha" | "sem_leitura";
 }
 
 export class CliFalsa implements Cli {
@@ -288,6 +291,9 @@ export class BancoFalso {
   tokens = new Map<string, LinhaTokens>();
   sessoes = new Map<string, SessaoNuvem>();
   agentesOpenBot = new Map<string, AgenteNuvem>();
+  /** As pastas da barra do OpenBot de cada computador (0.22.0); `semSecoes`: nuvem antes da 0050, sem a função. */
+  secoesOpenBot = new Map<string, PastaOpenBot[]>();
+  semSecoes = false;
   /** Empresas separadas (0.18.0) e as regras delas, como o agente_empresas devolve. */
   empresas: EmpresaSeparada[] = [];
   regras: RegraEmpresa[] = [];
@@ -610,6 +616,13 @@ export class NuvemFalsa implements Nuvem {
   async relatarAgentes(lista: AgenteNuvem[]) {
     this.registrarChamada("relatarAgentes", lista.length);
     for (const a of lista) this.banco.agentesOpenBot.set(`${this.pc}|${a.pasta}`, a);
+    return { ok: true };
+  }
+
+  async relatarSecoes(lista: PastaOpenBot[]) {
+    this.registrarChamada("relatarSecoes", lista.length);
+    if (this.banco.semSecoes) throw new ErroNuvem("Could not find the function public.agente_relatar_secoes", false, "PGRST202");
+    this.banco.secoesOpenBot.set(this.pc, lista.map((s) => ({ ...s })));
     return { ok: true };
   }
 

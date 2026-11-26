@@ -4,6 +4,7 @@
 // > pasta do OpenBot (a mais funda ganha) > título > caminho de uma pasta acima. Computador antes da 0.22.0 não recebe a
 // regra e a nuvem não a aplica a ele.
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { banco } from "./apoio.mjs";
@@ -213,6 +214,24 @@ test("sem regra de pasta do OpenBot, a classificação é a de sempre (mesmo com
   assert.equal(await classificar(b, mini, AG1), t);
   await salvar(b, admin, t, { pastas: [] });
   assert.equal(await classificar(b, mini, AG1), p);
+});
+
+test("a tabela de casos comum com o agente e o painel (casos-pasta-openbot.json)", async () => {
+  const tabela = JSON.parse(fs.readFileSync(new URL("./casos-pasta-openbot.json", import.meta.url), "utf8"));
+  const { b, admin, mini } = await cenario();
+  await relatar(b, mini, tabela.agentes);
+  for (const [i, caso] of tabela.casos.entries()) {
+    const porProjeto = {};
+    for (const [tipo, padrao, projeto] of caso.regras) {
+      (porProjeto[projeto] ??= []).push({ tipo, padrao, computador: tipo === "secao" ? mini.pc : null });
+    }
+    const ids = {};
+    for (const [projeto, pastas] of Object.entries(porProjeto)) ids[projeto] = await criar(b, admin, { nome: `${projeto} ${i}`, pastas });
+    for (const [p, espera] of caso.perguntas) {
+      assert.equal(await classificar(b, mini, p), espera ? ids[espera] : null, `${caso.nome}: ${p}`);
+    }
+    for (const id of Object.values(ids)) assert.equal((await salvar(b, admin, id, { pastas: [] })).ok, true);
+  }
 });
 
 // ------------------------------------------------------------------------------------------- entregar as regras

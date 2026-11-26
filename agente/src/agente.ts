@@ -210,6 +210,10 @@ export class Agente {
   private agentesEnviados = "";
   private agentesEnviadosEm = 0;
   private agentesTentadoEm = -Infinity;
+  /** As pastas da barra do OpenBot enviadas à nuvem (0.22.0), como os agentes. */
+  private secoesEnviadas = "";
+  private secoesEnviadasEm = 0;
+  private secoesTentadoEm = -Infinity;
   private agentesLidosEm = -Infinity;
   private agentesLista: AgenteOpenBot[] = [];
   /** A última leitura dos agentes do OpenBot falhou: vale a lista anterior. */
@@ -366,6 +370,7 @@ export class Agente {
         pastaDe: (cwd) => this.pastas.de(cwd),
         agentes: () => this.agentesNaNuvem(),
         agentesFalhou: () => this.agentesFalhou,
+        barraSemLeitura: () => this.d.openbot?.barraEstado?.() === "sem_leitura",
         vivo: processoVivo,
         inicioDoProcesso,
         renovar: async (pasta) => void (await this.d.cli.renovar(pasta, 0)),
@@ -383,10 +388,22 @@ export class Agente {
   private agentesNaNuvem(): AgentePasta[] {
     const de = this.agentesOpenBot();
     if (this.agentesConvertidos?.de !== de) {
-      const lista = de.map((a) => ({ pasta: pastaNaNuvem(relativaAPessoal(a.pasta, this.d.c.home)), nome: a.nome, titulo: a.titulo }));
+      const lista = de.map((a) => ({ pasta: pastaNaNuvem(relativaAPessoal(a.pasta, this.d.c.home)), nome: a.nome, titulo: a.titulo, ...this.secoesDe(a) }));
       this.agentesConvertidos = { de, lista };
     }
     return this.agentesConvertidos.lista;
+  }
+
+  /**
+   * A cadeia de pastas da barra do OpenBot de um agente, como vai à nuvem e ao classificador (0.22.0): sem o campo quando
+   * o OpenBot não lê a barra; null quando a barra nunca foi lida (a nuvem mantém a que tinha, e a regra não pega aqui);
+   * senão a cadeia da última leitura boa, ou vazia sem pasta.
+   */
+  private secoesDe(a: AgenteOpenBot): { secoes?: string[] | null } {
+    const estado = this.d.openbot?.barraEstado?.();
+    if (!estado) return {};
+    if (estado === "sem_leitura") return { secoes: null };
+    return { secoes: a.secoes ? [...a.secoes] : [] };
   }
 
   /** Trabalho que roda solto (registro na nuvem, avisos): guardado para os testes e o desligamento esperarem. */
@@ -2694,6 +2711,7 @@ export class Agente {
       }
       this.contador.salvarNoRitmo();
       await this.relatarAgentes(nuvem);
+      await this.relatarSecoes(nuvem);
     } catch (e) {
       this.d.log.erro(`registro de uso: ${(e as Error).message}`);
     } finally {
@@ -2724,7 +2742,7 @@ export class Agente {
     const t = this.d.relogio.agora();
     if (t - this.agentesTentadoEm < 300) return; // no máximo a cada 5 min, também quando a nuvem recusa
     const lista = this.agentesOpenBot()
-      .map((a) => ({ pasta: pastaNaNuvem(relativaAPessoal(a.pasta, this.d.c.home)), nome: a.nome, titulo: a.titulo }))
+      .map((a) => ({ pasta: pastaNaNuvem(relativaAPessoal(a.pasta, this.d.c.home)), nome: a.nome, titulo: a.titulo, ...this.secoesDe(a) }))
       .filter((a) => a.pasta && a.pasta !== "~")
       .sort((a, b) => a.pasta.localeCompare(b.pasta));
     const assinatura = JSON.stringify(lista);
@@ -2739,6 +2757,35 @@ export class Agente {
     } catch (e) {
       // nuvem que ainda não tem a função (antes da 0036) ou fora do ar: tenta de novo no próximo ciclo
       this.d.log.info(`agentes do OpenBot: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * As pastas da barra do OpenBot deste computador vão à nuvem (0.22.0), para o painel mostrar o nome de cada uma: só
+   * com a última leitura boa (a lista troca a que a nuvem tinha, e uma barra que falhou tiraria as pastas de lá); quando
+   * muda, ou uma vez por hora. A nuvem antes da 0050 recusa: tenta de novo em 5 min, sem atrapalhar o resto.
+   */
+  private async relatarSecoes(nuvem: Nuvem): Promise<void> {
+    const ob = this.d.openbot;
+    if (!ob?.pastas || ob.barraEstado?.() !== "ok") return;
+    const t = this.d.relogio.agora();
+    if (t - this.secoesTentadoEm < 300) return;
+    const lista = ob
+      .pastas()
+      .map((p) => ({ id: p.id, nome: p.nome, pai: p.pai }))
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .slice(0, 500);
+    const assinatura = JSON.stringify(lista);
+    if (assinatura === this.secoesEnviadas && t - this.secoesEnviadasEm < 3600) return;
+    this.secoesTentadoEm = t;
+    try {
+      const r = await nuvem.relatarSecoes(lista);
+      if (r.ok) {
+        this.secoesEnviadas = assinatura;
+        this.secoesEnviadasEm = t;
+      }
+    } catch (e) {
+      this.d.log.info(`pastas do OpenBot: ${(e as Error).message}`);
     }
   }
 

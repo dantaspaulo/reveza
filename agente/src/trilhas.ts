@@ -66,6 +66,11 @@ export interface AgentePasta {
   pasta: string;
   nome: string;
   titulo: string;
+  /**
+   * As pastas da barra do OpenBot do agente, da raiz até a dele (ids; 0.22.0). null: a barra nunca foi lida desde que o
+   * agente ligou (não se sabe: a regra de pasta do OpenBot não pega). Ausente ou vazia: sem pasta.
+   */
+  secoes?: string[] | null;
 }
 
 /** Caminho para comparar: barras normais, sem barra no fim, minúsculo (o mesmo do painel). */
@@ -98,10 +103,26 @@ export function criarClassificador(empresas: EmpresaSeparada[], regras: RegraEmp
     .map((r) => ({ texto: r.padrao.trim().toLowerCase(), empresa: r.empresa }))
     .filter((r) => r.texto)
     .sort((a, b) => b.texto.length - a.texto.length);
-  const pastasAgentes = new Map<string, { nome: string; titulo: string }>();
+  // 0.22.0: o padrão é o id exato da pasta do OpenBot (sem minúsculas, como na nuvem)
+  const secoes = validas.filter((r) => r.tipo === "secao" && r.padrao).map((r) => ({ id: r.padrao, empresa: r.empresa }));
+  const pastasAgentes = new Map<string, { nome: string; titulo: string; secoes: string[] | null }>();
   for (const a of agentes) {
     const p = normalizarPasta(a.pasta);
-    if (p && !pastasAgentes.has(p)) pastasAgentes.set(p, { nome: a.nome.toLowerCase(), titulo: a.titulo.toLowerCase() });
+    if (!p) continue;
+    const cadeia = a.secoes === null ? null : (a.secoes ?? []);
+    const antes = pastasAgentes.get(p);
+    if (!antes) {
+      pastasAgentes.set(p, { nome: a.nome.toLowerCase(), titulo: a.titulo.toLowerCase(), secoes: cadeia });
+    } else if (antes.secoes) {
+      // agentes na mesma pasta de trabalho: a conversa é de todos, vale a parte comum do começo das cadeias (a nuvem
+      // faz o mesmo); uma cadeia que não se sabe deixa a parte comum sem saber
+      if (!cadeia) antes.secoes = null;
+      else {
+        let i = 0;
+        while (i < antes.secoes.length && i < cadeia.length && antes.secoes[i] === cadeia[i]) i++;
+        antes.secoes = antes.secoes.slice(0, i);
+      }
+    }
   }
   const dentro = (p: string, base: string) => p === base || (base === "/" ? p.startsWith("/") : p.startsWith(base + "/"));
   return (pasta) => {
@@ -120,11 +141,24 @@ export function criarClassificador(empresas: EmpresaSeparada[], regras: RegraEmp
         break;
       }
     }
-    if (titulos.length) {
+    if (titulos.length || secoes.length) {
       let pastaAgente: string | null = null;
       for (const a of pastasAgentes.keys()) if (dentro(p, a) && (!pastaAgente || a.length > pastaAgente.length)) pastaAgente = a;
       if (pastaAgente) {
         const ag = pastasAgentes.get(pastaAgente)!;
+        // pasta do OpenBot (0.22.0): entre o nome de pasta e o título; a mais funda da cadeia ganha
+        if (ag.secoes?.length) {
+          let fundo = 0;
+          let empresa: string | null = null;
+          for (const r of secoes) {
+            const i = ag.secoes.indexOf(r.id) + 1;
+            if (i > fundo) {
+              fundo = i;
+              empresa = r.empresa;
+            }
+          }
+          if (empresa) propor(pastaAgente.length - 0.49 + 0.01 * Math.min(fundo, 9), empresa);
+        }
         const r = titulos.find((x) => ag.titulo.includes(x.texto) || ag.nome.includes(x.texto));
         if (r) propor(pastaAgente.length - 0.5, r.empresa);
       }
@@ -155,6 +189,8 @@ export interface DepsTrilhas {
   agentes: () => AgentePasta[];
   /** A última leitura dos agentes do OpenBot falhou (vale a lista anterior, que pode estar velha). */
   agentesFalhou?: () => boolean;
+  /** A barra do OpenBot nunca foi lida desde que o agente ligou (0.22.0): ninguém tem pasta do OpenBot conhecida. */
+  barraSemLeitura?: () => boolean;
   /** O processo ainda roda? */
   vivo: (pid: number) => boolean;
   /** Renova o login de uma pasta pelo assistente (conta que chega do cofre com o token vencido). */
@@ -296,7 +332,14 @@ export class Trilhas {
    * compartilhada a sessão de um projeto que só usa as contas dele é o erro que a separação existe para evitar.
    */
   private certeza(): boolean {
-    return !!this.d.nuvem() && this.lidasEm > 0 && this.agora() - this.lidasEm <= 2 * EMPRESAS_LER_S && !this.d.agentesFalhou?.();
+    return (
+      !!this.d.nuvem() &&
+      this.lidasEm > 0 &&
+      this.agora() - this.lidasEm <= 2 * EMPRESAS_LER_S &&
+      !this.d.agentesFalhou?.() &&
+      // 0.22.0: com regra de pasta do OpenBot, a barra que nunca foi lida deixa sem saber de qual projeto é a pasta
+      !(this.d.barraSemLeitura?.() && this.regras.some((r) => r.tipo === "secao"))
+    );
   }
 
   /** A resposta "abre na principal"; na pergunta de novo, com a marca de certeza quando o agente a tem. */

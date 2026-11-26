@@ -51,7 +51,8 @@ export interface EmpresaSeparada {
   contas?: string[];
 }
 export interface RegraEmpresa {
-  tipo: "pasta" | "titulo";
+  /** "secao" (0.22.0): o padrão é o id de uma pasta da barra do OpenBot deste computador. */
+  tipo: "pasta" | "titulo" | "secao";
   padrao: string;
   empresa: string;
 }
@@ -173,6 +174,18 @@ export interface AgenteNuvem {
   pasta: string;
   nome: string;
   titulo: string;
+  /**
+   * As pastas da barra do OpenBot em que o agente está, da raiz até a dele (ids; 0.22.0). null: a barra não foi lida
+   * agora (a nuvem mantém a cadeia que tinha). Sem o campo: OpenBot sem a barra (a nuvem guarda vazia).
+   */
+  secoes?: string[] | null;
+}
+
+/** Uma pasta da barra do OpenBot deste computador (0.22.0, agente_relatar_secoes). */
+export interface SecaoNuvem {
+  id: string;
+  nome: string;
+  pai: string | null;
 }
 
 /** Tipos de evento que a nuvem aceita do agente. */
@@ -216,6 +229,8 @@ export interface Nuvem {
   relatarTokens(linhas: LinhaTokens[], sessoes: SessaoNuvem[]): Promise<{ ok: boolean }>;
   /** Os agentes do OpenBot deste computador (0.17.0): o painel liga a pasta de cada um a uma empresa pelo título. */
   relatarAgentes(lista: AgenteNuvem[]): Promise<{ ok: boolean }>;
+  /** As pastas da barra do OpenBot deste computador (0.22.0): a lista inteira troca a que a nuvem tinha. */
+  relatarSecoes(lista: SecaoNuvem[]): Promise<{ ok: boolean }>;
   limite(contaId: string, sessao: string | null): Promise<{ ok: boolean; trocou: boolean; versao: number | null }>;
   /** As empresas separadas e as regras delas (0039). */
   empresas(): Promise<RespostaEmpresas>;

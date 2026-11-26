@@ -15,7 +15,7 @@ import { idiomaAtual, t } from "./i18n.js";
 import { lerChave } from "./ligar.js";
 import type { StatusServico } from "./servico.js";
 import { carregarEstado } from "./estado.js";
-import { openBotCarregaConfiguracao } from "./openbot.js";
+import { avisoDaBarra, openBotCarregaConfiguracao } from "./openbot.js";
 
 export type Situacao = "ok" | "aviso" | "falha";
 
@@ -291,6 +291,20 @@ export async function doctor(d: DepsDoctor): Promise<Conferencia[]> {
           'in this computer\'s OpenBot, turn on "Use my Claude Code setup" (in the settings, under Claude Code)',
         ),
       },
+    );
+  }
+
+  // A barra lateral do OpenBot que não dá para ler (0.22.0): os projetos pelas pastas dele ficam com a última leitura boa
+  const barra = avisoDaBarra(d.c.home);
+  if (barra) {
+    add(
+      "openbot-barra",
+      t("Pastas do OpenBot", "OpenBot folders"),
+      "aviso",
+      t(
+        `${barra}: os projetos escolhidos pelas pastas do OpenBot seguem com a última leitura boa (ou sem pasta, se o Reveza ligou depois disso)`,
+        `the OpenBot sidebar could not be read (${barra}): projects chosen by OpenBot folders keep the last good reading (or no folder, if Reveza started after that)`,
+      ),
     );
   }
 

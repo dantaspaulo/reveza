@@ -23,6 +23,7 @@ import {
   type SessaoNuvem,
   type TokenNuvem,
   type AgenteNuvem,
+  type SecaoNuvem,
   type RegraEmpresa,
   type RespostaEmpresas,
   type TrilhaNuvem,
@@ -197,6 +198,11 @@ export class NuvemRpc implements Nuvem {
     return { ok: r.ok === true };
   }
 
+  async relatarSecoes(lista: SecaoNuvem[]) {
+    const r = await this.chamar("agente_relatar_secoes", { p_lista: lista });
+    return { ok: r.ok === true };
+  }
+
   async limite(contaId: string, sessao: string | null) {
     const r = await this.chamar("agente_limite", { p_conta: contaId, p_sessao: sessao });
     return { ok: r.ok === true, trocou: r.trocou === true, versao: numero(r.versao) };
@@ -217,7 +223,7 @@ export class NuvemRpc implements Nuvem {
     const regras = (Array.isArray(r.regras) ? r.regras : []).flatMap((v): RegraEmpresa[] => {
       const x = v as Record<string, unknown> | null;
       const empresa = uuid(x?.empresa);
-      const tipo = x?.tipo === "pasta" || x?.tipo === "titulo" ? x.tipo : null;
+      const tipo = x?.tipo === "pasta" || x?.tipo === "titulo" || x?.tipo === "secao" ? x.tipo : null;
       return empresa && tipo && typeof x?.padrao === "string" ? [{ tipo, padrao: x.padrao.slice(0, 300), empresa }] : [];
     });
     return { empresas, regras };

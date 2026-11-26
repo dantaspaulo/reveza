@@ -757,6 +757,72 @@ describe("relatos", () => {
     assert.equal(fns("relatarAgentes").length, 0);
   });
 
+  test("0.22.0: os agentes vão com a cadeia de pastas da barra e as pastas vão só com leitura boa", async () => {
+    const ob = new OpenBotFalso();
+    ob.barraEstado = () => "ok";
+    ob.pastas = () => [{ id: "clientes", nome: "Clientes", pai: null }, { id: "loja", nome: "Loja", pai: "clientes" }];
+    await preparar({ openbot: ob });
+    const home = m.c.home;
+    const um = path.join(home, "OpenBot/Agents/agent-1");
+    const dois = path.join(home, "OpenBot/Agents/agent-2");
+    ob.lista = [{ pasta: um, nome: "Um", titulo: "T1", secoes: ["clientes", "loja"] }, { pasta: dois, nome: "Dois", titulo: "T2" }];
+    const ag = (p: string) => [...banco.agentesOpenBot.values()].find((a) => a.pasta === p) as unknown as Record<string, unknown>;
+    const pastasNaNuvem = () => [...banco.secoesOpenBot.values()][0];
+    await m.agente.registro();
+    assert.deepEqual(ag("~/OpenBot/Agents/agent-1"), { pasta: "~/OpenBot/Agents/agent-1", nome: "Um", titulo: "T1", secoes: ["clientes", "loja"] });
+    assert.deepEqual(ag("~/OpenBot/Agents/agent-2").secoes, [], "sem pasta na barra: lista vazia");
+    assert.deepEqual(pastasNaNuvem(), [{ id: "clientes", nome: "Clientes", pai: null }, { id: "loja", nome: "Loja", pai: "clientes" }]);
+    assert.equal(fns("relatarSecoes").length, 1);
+
+    m.relogio.t += 301;
+    await m.agente.registro();
+    assert.equal(fns("relatarSecoes").length, 1, "as mesmas pastas não vão de novo antes de uma hora");
+    ob.pastas = () => [{ id: "clientes", nome: "Clientes novos", pai: null }];
+    m.relogio.t += 301;
+    await m.agente.registro();
+    assert.equal(fns("relatarSecoes").length, 2, "mudaram: vão");
+    assert.equal(pastasNaNuvem()!.length, 1);
+
+    // velha (a leitura falhou e vale a última boa): a cadeia vai como está; a lista das pastas não vai (ela troca a lista inteira)
+    ob.barraEstado = () => "velha";
+    ob.pastas = () => [];
+    ob.lista = [{ pasta: um, nome: "Um", titulo: "T1", secoes: ["clientes"] }, { pasta: dois, nome: "Dois", titulo: "T2" }];
+    m.relogio.t += 3601;
+    await m.agente.registro();
+    assert.deepEqual(ag("~/OpenBot/Agents/agent-1").secoes, ["clientes"]);
+    assert.equal(fns("relatarSecoes").length, 2);
+    assert.equal(pastasNaNuvem()!.length, 1, "a nuvem segue com as pastas da última leitura boa");
+
+    // sem leitura nenhuma: a cadeia vai null (a nuvem mantém a que estava) e as pastas não vão
+    ob.barraEstado = () => "sem_leitura";
+    ob.lista = [{ pasta: um, nome: "Um", titulo: "T1" }, { pasta: dois, nome: "Dois", titulo: "T2" }];
+    m.relogio.t += 301;
+    await m.agente.registro();
+    assert.equal(ag("~/OpenBot/Agents/agent-1").secoes, null);
+    assert.equal(ag("~/OpenBot/Agents/agent-2").secoes, null);
+    assert.equal(fns("relatarSecoes").length, 2);
+  });
+
+  test("0.22.0: nuvem antes da 0050 (sem a função das pastas): os agentes vão assim mesmo e as pastas tentam de novo depois", async () => {
+    const ob = new OpenBotFalso();
+    ob.barraEstado = () => "ok";
+    ob.pastas = () => [{ id: "clientes", nome: "Clientes", pai: null }];
+    await preparar({ openbot: ob });
+    banco.semSecoes = true;
+    ob.lista = [{ pasta: path.join(m.c.home, "OpenBot/Agents/agent-1"), nome: "Um", titulo: "T1", secoes: ["clientes"] }];
+    await m.agente.registro();
+    assert.equal(fns("relatarAgentes").length, 1);
+    assert.equal(fns("relatarSecoes").length, 1);
+    m.relogio.t += 60;
+    await m.agente.registro();
+    assert.equal(fns("relatarSecoes").length, 1, "a recusa não vira uma chamada a cada ciclo");
+    banco.semSecoes = false;
+    m.relogio.t += 301;
+    await m.agente.registro();
+    assert.equal(fns("relatarSecoes").length, 2);
+    assert.equal([...banco.secoesOpenBot.values()][0]!.length, 1);
+  });
+
   test("conta em uso que perdeu o login avisa a nuvem uma vez; voltando, avisa de novo", async () => {
     await preparar();
     const a = await ativaEm(m, "A", 10);

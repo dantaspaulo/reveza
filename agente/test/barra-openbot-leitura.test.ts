@@ -75,7 +75,8 @@ describe("agentes do OpenBot com as pastas da barra", { skip: !fs.existsSync(SQL
       const semBarra = new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec);
       assert.equal(semBarra.agentes()[0]!.secoes, undefined, "nunca houve arquivo: ninguém tem pasta, sem erro");
       assert.deepEqual(semBarra.pastas(), []);
-      assert.equal(semBarra.barraEstado(), "ok");
+      // parte C: sem arquivo desde que ligou não é leitura (o OpenBot pode estar regravando): a nuvem mantém o que tinha
+      assert.equal(semBarra.barraEstado(), "sem_leitura");
       fs.writeFileSync(barra, boa);
       assert.deepEqual(ob.agentes()[0]!.secoes, [A, B]);
       assert.equal(ob.barraEstado(), "ok", "voltou a ler: não está mais velha");
@@ -83,6 +84,30 @@ describe("agentes do OpenBot com as pastas da barra", { skip: !fs.existsSync(SQL
       assert.equal(fs.statSync(banco).mtimeMs, antesBanco, "o banco não foi escrito");
     } finally {
       fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("aviso do doctor sobre a barra do OpenBot (0.22.0)", () => {
+  test("só avisa com a barra que existe e não dá para ler; sem OpenBot, sem a barra ou fora do macOS, nada", async () => {
+    const { avisoDaBarra } = (await import("../src/openbot.js")) as { avisoDaBarra?: (home: string, plataforma?: NodeJS.Platform) => string | null };
+    assert.equal(typeof avisoDaBarra, "function");
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "reveza-doctor-barra-"));
+    try {
+      const pasta = path.join(home, "Library", "Application Support", "OpenBot");
+      assert.equal(avisoDaBarra!(home, "darwin"), null, "sem OpenBot");
+      fs.mkdirSync(pasta, { recursive: true });
+      fs.writeFileSync(path.join(pasta, "openbot.db"), "");
+      assert.equal(avisoDaBarra!(home, "darwin"), null, "sem a barra (ninguém usa pastas)");
+      fs.writeFileSync(path.join(pasta, BARRA_ARQUIVO), JSON.stringify({ version: 2, sections: [], agentAssignments: {} }));
+      assert.equal(avisoDaBarra!(home, "darwin"), null, "barra boa");
+      fs.writeFileSync(path.join(pasta, BARRA_ARQUIVO), "{ pela metade");
+      assert.match(avisoDaBarra!(home, "darwin") ?? "", /JSON/);
+      fs.writeFileSync(path.join(pasta, BARRA_ARQUIVO), JSON.stringify({ version: 3, sections: [], agentAssignments: {} }));
+      assert.match(avisoDaBarra!(home, "darwin") ?? "", /versão desconhecida/);
+      assert.equal(avisoDaBarra!(home, "linux"), null, "fora do macOS não há OpenBot");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
     }
   });
 });

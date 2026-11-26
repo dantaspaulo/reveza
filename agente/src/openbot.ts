@@ -36,6 +36,10 @@ export interface OpenBot {
    * lança erro (0.21.0), para o agente manter a última lista em vez de tirar as pastas dos projetos.
    */
   agentes?(): AgenteOpenBot[];
+  /** As pastas da barra lateral da última leitura boa (0.22.0). */
+  pastas?(): PastaOpenBot[];
+  /** Como foi a última leitura da barra (0.22.0): "ok", "velha" (vale a anterior) ou "sem_leitura" (nunca houve uma boa). */
+  barraEstado?(): "ok" | "velha" | "sem_leitura";
 }
 
 export interface AgenteOpenBot {
@@ -210,6 +214,25 @@ export function openBotCarregaConfiguracao(home: string, plataforma: NodeJS.Plat
   }
 }
 
+/**
+ * O aviso do doctor sobre a barra lateral do OpenBot (0.22.0): o motivo quando o arquivo existe e não dá para ler (JSON
+ * pela metade, versão nova do OpenBot), ou null (sem OpenBot, sem a barra, barra boa, fora do macOS). Só leitura.
+ */
+export function avisoDaBarra(home: string, plataforma: NodeJS.Platform = process.platform): string | null {
+  if (plataforma !== "darwin") return null;
+  const pasta = path.join(home, "Library", "Application Support", "OpenBot");
+  if (!fs.existsSync(path.join(pasta, "openbot.db"))) return null;
+  const arquivo = path.join(pasta, BARRA_ARQUIVO);
+  try {
+    if (fs.statSync(arquivo).size > 4 << 20) return "a barra do OpenBot está grande demais";
+    barraDoLayout(fs.readFileSync(arquivo, "utf8"));
+    return null;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    return (e as Error).message;
+  }
+}
+
 /** A consulta do chat principal: a sessão do assistente ativa ligada à conversa (thread) de um agente. */
 export function consultaDoChatPrincipal(sessao: string): string | null {
   if (!SESSAO_VALIDA.test(sessao)) return null;
@@ -280,15 +303,16 @@ export class OpenBotLocal implements OpenBot {
   }
 
   /**
-   * A última leitura da barra: "ok"; "velha" (falhou e vale a anterior; o doctor avisa); "sem_leitura" (falhou e nunca
-   * houve uma boa: ninguém tem pasta, e quem classifica trata como incerto quando há regra de pasta do OpenBot).
+   * A última leitura da barra: "ok"; "velha" (falhou e vale a anterior; o doctor avisa); "sem_leitura" (falhou, ou não
+   * havia o arquivo, e nunca houve uma boa: ninguém tem pasta, a nuvem mantém a cadeia que tinha, e quem classifica trata
+   * como incerto quando há regra de pasta do OpenBot).
    */
   barraEstado(): "ok" | "velha" | "sem_leitura" {
     return !this.barraFalhou ? "ok" : this.barraBoa ? "velha" : "sem_leitura";
   }
 
   /**
-   * A barra lateral do OpenBot, só leitura. Sem o arquivo desde o começo: barra vazia. A leitura que falha (JSON pela
+   * A barra lateral do OpenBot, só leitura. Sem o arquivo desde o começo: barra vazia, "sem_leitura". A leitura que falha (JSON pela
    * metade, versão nova do OpenBot, arquivo que sumiu no meio de uma regravação) mantém a última boa; sem leitura boa
    * antes, barra vazia e estado "sem_leitura". Nunca lança: a barra estragada não pode derrubar a lista dos agentes de
    * quem nem usa pastas (a lista que falha deixa o agente sem certeza em todas as conversas).
@@ -303,6 +327,9 @@ export class OpenBotLocal implements OpenBot {
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`a barra do OpenBot não deu para ler: ${(e as Error).message}`);
         if (this.barraBoa && this.barraBoa.pastas.length) throw new Error("a barra do OpenBot sumiu depois de uma leitura boa");
+        // sem o arquivo desde que o agente ligou (nunca houve pastas, ou o OpenBot regravando nesse instante) não é uma
+        // leitura: a cadeia vai null e a nuvem mantém a que tinha (parte C da 0.22.0)
+        if (!this.barraBoa) throw new Error("a barra do OpenBot não existe");
       }
       const b = barraDoLayout(texto);
       this.barraBoa = b;

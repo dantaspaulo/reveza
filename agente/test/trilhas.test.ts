@@ -10,8 +10,13 @@ import { FILA_VALIDA_OPENBOT_S } from "../src/config.js";
 import { carregarEstado } from "../src/estado.js";
 import { lerChave } from "../src/ligar.js";
 import { NuvemRpc } from "../src/nuvem/rpc.js";
-import { criarClassificador, ehCaminho, EMPRESAS_LER_S, EMPRESAS_VENCIDAS_S, normalizarPasta } from "../src/trilhas.js";
+import { fileURLToPath } from "node:url";
+import type { RegraEmpresa } from "../src/nuvem/tipos.js";
+import { criarClassificador, ehCaminho, EMPRESAS_LER_S, EMPRESAS_VENCIDAS_S, normalizarPasta, type AgentePasta } from "../src/trilhas.js";
 import { ativaEm, BancoFalso, blob, contaEstacionada, montar, NuvemFalsa, OpenBotFalso, type Montado } from "./falsos.js";
+
+/** A tabela de casos da pasta do OpenBot, a mesma da nuvem (dist/test -> nuvem/testes). */
+const CASOS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "nuvem", "testes", "casos-pasta-openbot.json");
 
 const E1 = "11111111-2222-4333-8444-555555555555";
 const E2 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -59,6 +64,40 @@ describe("classificador das empresas separadas (o mesmo do painel)", () => {
     );
     assert.equal(c("~/Code/um/api"), E1);
     assert.equal(c("~/Code/um/site/web"), null);
+  });
+
+  test("0.22.0: a tabela de casos comum com a nuvem e o painel (pasta do OpenBot)", () => {
+    const tabela = JSON.parse(fs.readFileSync(CASOS, "utf8")) as {
+      agentes: AgentePasta[];
+      casos: { nome: string; regras: [string, string, string][]; perguntas: [string, string | null][] }[];
+    };
+    const id = (p: string) => `00000000-0000-4000-8000-${Buffer.from(p).toString("hex").padStart(12, "0")}`;
+    assert.ok(tabela.casos.length >= 10);
+    for (const caso of tabela.casos) {
+      const projetos = [...new Set(caso.regras.map((r) => r[2]))];
+      const c = criarClassificador(
+        projetos.map((p) => ({ id: id(p), nome: p })),
+        caso.regras.map(([tipo, padrao, p]) => ({ tipo: tipo as RegraEmpresa["tipo"], padrao, empresa: id(p) })),
+        tabela.agentes,
+      );
+      for (const [p, espera] of caso.perguntas) assert.equal(c(p), espera ? id(espera) : null, `${caso.nome}: ${p}`);
+    }
+  });
+
+  test("0.22.0: a pasta do OpenBot sem leitura (null) não pega a conversa; o título e o caminho seguem valendo", () => {
+    const regras = [
+      { tipo: "secao", padrao: "clientes", empresa: E1 },
+      { tipo: "titulo", padrao: "Exemplo", empresa: E2 },
+    ] as RegraEmpresa[];
+    const empresas = [{ id: E1, nome: "Um" }, { id: E2, nome: "Dois" }];
+    const ag = { pasta: "~/OpenBot/Agents/agent-1", nome: "Um", titulo: "Projeto Exemplo" };
+    const com = (...l: object[]) => l as AgentePasta[];
+    assert.equal(criarClassificador(empresas, regras, com({ ...ag, secoes: ["clientes"] }))("~/OpenBot/Agents/agent-1"), E1);
+    assert.equal(criarClassificador(empresas, regras, com({ ...ag, secoes: null }))("~/OpenBot/Agents/agent-1"), E2);
+    assert.equal(criarClassificador(empresas, regras, [ag])("~/OpenBot/Agents/agent-1"), E2, "agente sem pasta na barra");
+    // um dos agentes da mesma pasta sem leitura: a parte comum não se sabe, a regra não pega
+    const dois = com({ ...ag, secoes: ["clientes"] }, { ...ag, nome: "Outro", secoes: null });
+    assert.equal(criarClassificador(empresas, regras, dois)("~/OpenBot/Agents/agent-1"), E2);
   });
 
   test("normalizar e reconhecer caminho", () => {
@@ -523,6 +562,57 @@ describe("trilhas no agente", () => {
     });
     const r = await n.empresas();
     assert.deepEqual(r.empresas, [{ id: E1, nome: "Um", estrita: true, contas: [conta] }, { id: E2, nome: "Dois" }]);
+  });
+
+  test("0.22.0: a regra de pasta do OpenBot passa pela chamada real; tipo desconhecido continua de fora", async () => {
+    const n = new NuvemRpc({
+      chamar: async () => ({
+        ok: true,
+        empresas: [{ id: E1, nome: "Um" }],
+        regras: [
+          { tipo: "secao", padrao: "clientes", empresa: E1 },
+          { tipo: "pasta", padrao: "~/x", empresa: E1 },
+          { tipo: "outro", padrao: "y", empresa: E1 },
+        ],
+      }),
+      horaDoServidor: async () => null,
+    });
+    const r = await n.empresas();
+    assert.deepEqual(r.regras, [
+      { tipo: "secao", padrao: "clientes", empresa: E1 },
+      { tipo: "pasta", padrao: "~/x", empresa: E1 },
+    ]);
+  });
+
+  test("0.22.0: a pasta do OpenBot leva a sessão do agente ao projeto; sem leitura da barra, a pergunta de novo não tem certeza", async () => {
+    banco = new BancoFalso();
+    nuvemFalsa = new NuvemFalsa(banco, "pc-1");
+    const ob = new OpenBotFalso();
+    ob.barraEstado = () => "ok";
+    m = await montar({ nuvem: nuvemFalsa, openbot: ob });
+    banco.agora = () => m.relogio.agora();
+    const pastaAgente = path.join(m.c.home, "OpenBot", "Agents", "agent-1");
+    const cwd = path.join(pastaAgente, "trabalho");
+    fs.mkdirSync(cwd, { recursive: true });
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra", secoes: ["clientes"] }];
+    await comPrincipal();
+    await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true }];
+    banco.regras = [{ tipo: "secao", padrao: "clientes", empresa: E1 }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "a pasta do agente é do projeto pela pasta do OpenBot");
+    // a barra nunca foi lida (estragada desde que o agente ligou): o agente fica sem pasta e não há certeza
+    ob.barraEstado = () => "sem_leitura";
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra" }];
+    await m.relogio.dormir(301_000);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null }, "com regra de pasta do OpenBot e a barra sem leitura, sem certeza");
+    // sem regra de pasta do OpenBot, quem não usa pastas não fica sem certeza por causa da barra
+    banco.regras = [{ tipo: "titulo", padrao: "Nenhum", empresa: E1 }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true });
   });
 
   /** A conta A em uso na principal é a única da empresa, sem trilha própria. */

@@ -1,0 +1,70 @@
+{
+  "sobre": "0.22.0: a mesma tabela de casos da regra de pasta do OpenBot (tipo secao) para os classificadores da nuvem (rvz_classificar, pastas-openbot.test.mjs), do agente (criarClassificador, trilhas.test.ts) e do painel. Cada regra: [tipo, padrao, projeto]; a de tipo secao vale num computador (o da conversa). Cada pergunta: [pasta da conversa, projeto esperado ou null].",
+  "agentes": [
+    { "pasta": "~/OpenBot/Agents/agent-1", "nome": "Um", "titulo": "Atendimento", "secoes": ["clientes", "loja"] },
+    { "pasta": "~/OpenBot/Agents/comum", "nome": "C1", "titulo": "", "secoes": ["clientes", "loja"] },
+    { "pasta": "~/OpenBot/Agents/comum", "nome": "C2", "titulo": "", "secoes": ["clientes", "outra"] }
+  ],
+  "casos": [
+    {
+      "nome": "a pasta do OpenBot pega a conversa do agente e o que está dentro da pasta dele; fora de agente, não vale",
+      "regras": [["secao", "clientes", "A"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", "A"], ["~/OpenBot/Agents/agent-1/trabalho", "A"], ["~/Code/outro", null]]
+    },
+    {
+      "nome": "a subpasta ganha da pasta de cima",
+      "regras": [["secao", "clientes", "A"], ["secao", "loja", "B"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", "B"]]
+    },
+    {
+      "nome": "a pasta do OpenBot ganha do título",
+      "regras": [["secao", "clientes", "A"], ["titulo", "Atendimento", "T"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", "A"]]
+    },
+    {
+      "nome": "sem regra de pasta do OpenBot, a classificação é a de sempre",
+      "regras": [["titulo", "Atendimento", "T"], ["pasta", "~/OpenBot", "P"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", "T"], ["~/OpenBot/outra", "P"]]
+    },
+    {
+      "nome": "o caminho exato da pasta do agente ganha da pasta do OpenBot",
+      "regras": [["secao", "loja", "S"], ["pasta", "~/OpenBot/Agents/agent-1", "E"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", "E"]]
+    },
+    {
+      "nome": "o nome da pasta do agente ganha da pasta do OpenBot",
+      "regras": [["secao", "loja", "S"], ["pasta", "agent-1", "E"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", "E"]]
+    },
+    {
+      "nome": "o caminho de uma pasta acima perde para a pasta do OpenBot",
+      "regras": [["secao", "loja", "S"], ["pasta", "~/OpenBot", "E"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", "S"], ["~/OpenBot/outra", "E"]]
+    },
+    {
+      "nome": "o nome de uma pasta acima perde para a pasta do OpenBot",
+      "regras": [["secao", "loja", "S"], ["pasta", "Agents", "E"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", "S"]]
+    },
+    {
+      "nome": "a regra de caminho mais funda que a pasta do agente ganha dentro dela",
+      "regras": [["secao", "loja", "S"], ["pasta", "~/OpenBot/Agents/agent-1/trabalho", "E"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1/trabalho/x", "E"], ["~/OpenBot/Agents/agent-1", "S"]]
+    },
+    {
+      "nome": "agentes na mesma pasta de trabalho: vale só a parte comum das pastas deles",
+      "regras": [["secao", "loja", "B"]],
+      "perguntas": [["~/OpenBot/Agents/comum", null], ["~/OpenBot/Agents/agent-1", "B"]]
+    },
+    {
+      "nome": "agentes na mesma pasta de trabalho: a pasta comum vale",
+      "regras": [["secao", "clientes", "A"]],
+      "perguntas": [["~/OpenBot/Agents/comum", "A"]]
+    },
+    {
+      "nome": "o id da pasta é exato: maiúscula diferente ou pasta fora da cadeia não pega",
+      "regras": [["secao", "Clientes", "A"], ["secao", "sumiu", "S"]],
+      "perguntas": [["~/OpenBot/Agents/agent-1", null]]
+    }
+  ]
+}
