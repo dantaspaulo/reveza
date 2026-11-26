@@ -38,7 +38,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { useAcao, useAgora, useConsulta, useDados, useEstado, usePermissao } from "@/dados/contexto"
 import { estadoComputador, estadoConta, p5, p7, resetDe } from "@/dados/derivados"
 import { ErroPainel } from "@/dados/fonte"
-import { estadoGravacao, gravarCadastro, ouvirGravacao } from "@/dados/gravacao"
+import { apagarNoCadastro, estadoGravacao, gravarCadastro, ouvirGravacao } from "@/dados/gravacao"
 import type { AgenteOpenBot, Computador, Conta, DadosEmpresas, SessaoUso, TrilhaEmUso } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import {
@@ -182,6 +182,9 @@ export default function Empresas() {
   const [apagar, setApagar] = React.useState<string | null>(null)
   const [erro, setErro] = React.useState<ErroCadastro | null>(null)
   const [salvando, setSalvando] = React.useState(false)
+  // 0.21.2: o banco recusou a gravação por leitura velha; salvar de novo daria a mesma recusa, então o Salvar espera o
+  // Descartar (o rascunho fica para a pessoa ver)
+  const [recusado, setRecusado] = React.useState(false)
   // salvou: o rascunho fica na tela até a leitura nova chegar, para nada piscar com o valor de antes
   const [aguardando, setAguardando] = React.useState<{ versao: number; tipo: "salvo" | "incerto" } | null>(null)
   // a trava das gravações é da aba inteira: sair da tela e voltar não a solta, e o Alocar de Contas grava o mesmo cadastro
@@ -344,6 +347,7 @@ export default function Empresas() {
     setApagar(null)
   }
   const descartar = () => {
+    setRecusado(false)
     setRascunho(null)
     setFoto(null)
     setErro(null)
@@ -385,19 +389,47 @@ export default function Empresas() {
     }, t("empresas.op.salvo"))
     setSalvando(false)
     // o banco recusou por leitura velha: o rascunho fica, e a tela lê de novo para o Descartar voltar ao cadastro atual
-    if (mudou) cadastro.recarregar()
+    if (mudou) {
+      setRecusado(true)
+      cadastro.recarregar()
+    }
     if (ok || !recusaConfirmada) {
       const versao = cadastro.recarregar()
       setAguardando({ versao, tipo: ok ? "salvo" : "incerto" })
     }
   }
+  // o projeto já está na nuvem (ou foi criado numa gravação que parou no meio): apagar é uma gravação
+  const salvoNaNuvem = (u: UnidadeRascunho) => criados.current.get(u.id) ?? (u.novo ? null : u.id)
+  // 0.21.2: com mudança sem salvar, apagar um projeto salvo mudaria o cadastro por baixo do rascunho, e o Salvar dele
+  // seria recusado pela revisão velha; a pessoa salva ou descarta antes (no desenho basta o "novo": a gravação em lote é
+  // tudo ou nada, então o projeto novo só ganha id real junto com o fim do rascunho; o clique confere também os criados)
+  const bloqueioApagar = (u: UnidadeRascunho) => (!u.novo && mudanca ? t("empresas.op.apagarComMudanca") : undefined)
   const confirmarApagar = async (u: UnidadeRascunho) => {
     if (!pode) return
-    const id = criados.current.get(u.id) ?? (u.novo ? null : u.id)
+    const id = salvoNaNuvem(u)
     if (id) {
-      const [ok] = await acao(() => fonte.apagarEmpresa(id), t("empresas.op.apagado"))
-      if (!ok) return
-      cadastro.recarregar()
+      if (mudanca) return
+      let recusaConfirmada = false
+      let mudou = false
+      // pela trava da aba e com a revisão da leitura que a tela mostra: a leitura velha é recusada pelo banco
+      const [ok] = await acao(async () => {
+        try {
+          await apagarNoCadastro(fonte, id, foto ? foto.revisao : dados?.revisao)
+        } catch (e) {
+          recusaConfirmada = e instanceof ErroPainel && e.recusaConfirmada
+          mudou = e instanceof ErroPainel && e.codigo === "cadastro_mudou"
+          throw e
+        }
+      }, t("empresas.op.apagado"))
+      setApagar(null)
+      if (mudou) cadastro.recarregar()
+      // apagou (ou não se sabe): a tela volta como depois de salvar, só com a leitura nova
+      if (ok || !recusaConfirmada) {
+        if (aberto === u.id) setAberto(null)
+        const versao = cadastro.recarregar()
+        setAguardando({ versao, tipo: ok ? "salvo" : "incerto" })
+      }
+      return
     }
     setRascunho((r) => r && r.filter((x) => x.id !== u.id && x.pai !== u.id))
     setApagar(null)
@@ -439,7 +471,7 @@ export default function Empresas() {
           <Button size="sm" variant="ghost" disabled={salvando} onClick={descartar}>
             {t("empresas.op.descartar")}
           </Button>
-          <Button size="sm" disabled={salvando || !pode} onClick={() => void salvar()}>
+          <Button size="sm" disabled={salvando || !pode || recusado} onClick={() => void salvar()}>
             {salvando ? <Spinner /> : null}
             {t("empresas.op.salvar")}
           </Button>
@@ -602,7 +634,12 @@ export default function Empresas() {
 
             <div className="flex flex-col gap-4 p-4">
               {apagar === empresa.id ? (
-                <ConfirmaApagar u={empresa} aoCancelar={() => setApagar(null)} aoConfirmar={() => confirmarApagar(empresa)} />
+                <ConfirmaApagar
+                  u={empresa}
+                  bloqueio={bloqueioApagar(empresa)}
+                  aoCancelar={() => setApagar(null)}
+                  aoConfirmar={() => confirmarApagar(empresa)}
+                />
               ) : null}
               <Campos u={empresa} e={edicao} />
               <div className="flex flex-col gap-2">
@@ -624,6 +661,7 @@ export default function Empresas() {
                         aoApagar={() => setApagar(p.id)}
                         aoCancelarApagar={() => setApagar(null)}
                         aoConfirmarApagar={() => confirmarApagar(p)}
+                        bloqueioApagar={bloqueioApagar(p)}
                       />
                     ))}
                   <Button
@@ -837,10 +875,13 @@ function ListaEmpresas({
 
 function ConfirmaApagar({
   u,
+  bloqueio,
   aoCancelar,
   aoConfirmar,
 }: {
   u: UnidadeRascunho
+  /** 0.21.2: por que não dá para apagar agora (mudança sem salvar); o botão fica desligado */
+  bloqueio?: string
   aoCancelar: () => void
   aoConfirmar: () => Promise<void>
 }) {
@@ -854,6 +895,7 @@ function ConfirmaApagar({
     >
       <span className="min-w-0">
         {t(u.pai ? "empresas.op.apagarTitulo" : "empresas.op.apagarComProjetos", { nome })}
+        {bloqueio ? <span className="block text-xs text-muted-foreground">{bloqueio}</span> : null}
       </span>
       <div className="flex gap-1.5">
         <Button size="sm" variant="ghost" disabled={ocupado} onClick={aoCancelar}>
@@ -862,7 +904,7 @@ function ConfirmaApagar({
         <Button
           size="sm"
           variant="destructive"
-          disabled={ocupado}
+          disabled={ocupado || !!bloqueio}
           onClick={async () => {
             setOcupado(true)
             await aoConfirmar()
@@ -886,6 +928,7 @@ function LinhaProjeto({
   aoApagar,
   aoCancelarApagar,
   aoConfirmarApagar,
+  bloqueioApagar,
 }: {
   p: UnidadeRascunho
   e: Edicao
@@ -895,6 +938,7 @@ function LinhaProjeto({
   aoApagar: () => void
   aoCancelarApagar: () => void
   aoConfirmarApagar: () => Promise<void>
+  bloqueioApagar?: string
 }) {
   const { t } = useT()
   const primeira = e.contas.find((c) => c.id === p.contas[0])
@@ -943,7 +987,7 @@ function LinhaProjeto({
           </div>
           <Campos u={p} e={e} />
           {apagando ? (
-            <ConfirmaApagar u={p} aoCancelar={aoCancelarApagar} aoConfirmar={aoConfirmarApagar} />
+            <ConfirmaApagar u={p} bloqueio={bloqueioApagar} aoCancelar={aoCancelarApagar} aoConfirmar={aoConfirmarApagar} />
           ) : (
             <Button
               size="sm"

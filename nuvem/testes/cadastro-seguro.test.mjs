@@ -142,3 +142,73 @@ test("recusa explícita não deixa dados parciais e é a mesma em uma repetiçã
   assert.deepEqual(await gravar(b, admin, id, anterior, passos), primeira);
   assert.equal((await b.sql("select count(*)::int n from public.empresas"))[0].n, 0);
 });
+
+// Revisão de 26/11: o apagar de projeto também confere a revisão (antes ficava fora e a cascata levava a pasta movida)
+const apagar = (b, quem, operacao, revisao, id) =>
+  b.rpc(quem, "painel_empresa_apagar_seguro", { p_operacao: operacao, p_revisao: revisao, p_id: id });
+
+test("apagar a partir de uma leitura velha é recusado e a pasta movida fica no projeto", async () => {
+  const { b, admin } = await cenario();
+  const alfa = (await b.rpc(admin, "painel_unidade", {
+    p_id: null, p_campos: { nome: "Alfa", modo: "desligado", pastas: [pasta("~/Code/suporte")] },
+  })).id;
+  const beta = (await b.rpc(admin, "painel_unidade", { p_id: null, p_campos: { nome: "Beta", modo: "desligado" } })).id;
+  const r0 = await versao(b, admin);
+  // a aba 2 move o Suporte de Alfa para Beta; a aba 1, que leu R0 com Beta vazio, apaga Beta
+  const movida = await gravar(b, admin, randomUUID(), r0, [
+    { ref: alfa, id: alfa, campos: { pastas: [] } },
+    { ref: beta, id: beta, campos: { pastas: [pasta("~/Code/suporte")] } },
+  ]);
+  assert.equal(movida.ok, true, movida.erro);
+  const id = randomUUID();
+  const recusa = await apagar(b, admin, id, r0, beta);
+  assert.equal(recusa.ok, false);
+  assert.equal(recusa.erro, "o cadastro mudou; atualize antes de salvar");
+  assert.deepEqual(await apagar(b, admin, id, r0, beta), recusa, "a repetição devolve a mesma recusa");
+  assert.deepEqual(await nomes(b), ["Alfa", "Beta"]);
+  const regras = await b.sql("select padrao, empresa_id from public.pastas_empresa");
+  assert.deepEqual(regras.map((r) => [r.padrao, r.empresa_id]), [["~/Code/suporte", beta]]);
+});
+
+test("apagar com a revisão atual apaga com a cascata, e a repetição não apaga de novo", async () => {
+  const { b, admin } = await cenario();
+  const beta = (await b.rpc(admin, "painel_unidade", {
+    p_id: null, p_campos: { nome: "Beta", modo: "desligado", pastas: [pasta("~/Code/vendas")] },
+  })).id;
+  await b.rpc(admin, "painel_unidade", { p_id: null, p_campos: { nome: "Filho", pai: beta, modo: null } });
+  const atual = await versao(b, admin);
+  const id = randomUUID();
+  const feito = await apagar(b, admin, id, atual, beta);
+  assert.equal(feito.ok, true, feito.erro);
+  assert.deepEqual(await nomes(b), []);
+  assert.equal((await b.sql("select count(*)::int n from public.pastas_empresa"))[0].n, 0);
+  assert.deepEqual(await apagar(b, admin, id, atual, beta), feito);
+  assert.equal((await b.sql("select count(*)::int n from public.auditoria where acao = 'empresa_apagar'"))[0].n, 1);
+});
+
+test("apagar seguro: operação de outro tipo, quem não é admin e pedido malformado são recusados", async () => {
+  const { b, admin, leitor } = await cenario();
+  const atual = await versao(b, admin);
+  const id = randomUUID();
+  const criada = await gravar(b, admin, id, atual, novo("Alfa"));
+  assert.equal(criada.ok, true);
+  const alfa = criada.ids["novo-1"];
+  const depois = await versao(b, admin);
+  // a mesma operação não serve para outro tipo de pedido
+  await assert.rejects(apagar(b, admin, id, atual, alfa), /operação já usada/);
+  await assert.rejects(apagar(b, leitor, randomUUID(), depois, alfa));
+  await assert.rejects(apagar(b, "anon", randomUUID(), depois, alfa));
+  await assert.rejects(apagar(b, admin, randomUUID(), depois, null), /pedido inválido/);
+  await assert.rejects(apagar(b, admin, randomUUID(), "x", alfa), /pedido inválido/);
+  assert.deepEqual(await nomes(b), ["Alfa"]);
+});
+
+test("reaplicar a 0048 não tira do painel as funções que a 0099 liberou", async () => {
+  const { b, admin } = await cenario();
+  await b.migrarDe("0048", { ate: "0048" });
+  const atual = await versao(b, admin);
+  assert.match(atual, /^[0-9a-f]{64}$/);
+  assert.equal((await gravar(b, admin, randomUUID(), atual, novo("Alfa"))).ok, true);
+  await assert.rejects(b.rpc("anon", "painel_cadastro_revisao"), /permission denied/);
+  await assert.rejects(b.como(admin, "select public.rvz_cadastro_revisao()"), /permission denied/);
+});

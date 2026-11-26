@@ -44,21 +44,33 @@ function mudar(fonte: object, novo: (antes: EstadoGravacao) => EstadoGravacao) {
  * incerto. Sem prova de recusa (rede, 502, 504, PGRST001, resposta sem os IDs), marca a aba como incerta e devolve o
  * erro `resultado_incerto`, cujo texto manda recarregar e conferir, e não tentar de novo.
  */
-export async function gravarCadastro(
+export function gravarCadastro(
   fonte: Pick<Fonte, "salvarUnidades">,
   passos: PassoUnidade[],
   /** 0.21.2: a revisão da leitura de onde a edição saiu; o banco recusa (`cadastro_mudou`) se o cadastro mudou desde ela */
   revisao?: string
 ): Promise<Record<string, string>> {
+  return comTrava(fonte, () => (revisao ? fonte.salvarUnidades(passos, revisao) : fonte.salvarUnidades(passos)))
+}
+
+/**
+ * Apaga um projeto pela mesma trava (revisão de 26/11 da 0.21.2): o apagar também grava o cadastro, e a cascata leva as
+ * pastas do projeto. Sem resposta, a aba fica incerta como depois de um salvar sem resposta.
+ */
+export function apagarNoCadastro(fonte: Pick<Fonte, "apagarEmpresa">, id: string, revisao?: string): Promise<void> {
+  return comTrava(fonte, () => (revisao ? fonte.apagarEmpresa(id, revisao) : fonte.apagarEmpresa(id)))
+}
+
+async function comTrava<T>(fonte: object, gravar: () => Promise<T>): Promise<T> {
   const antes = estadoGravacao(fonte)
   // nada foi enviado nos dois casos: a recusa é certa
   if (antes.incerto) throw new ErroPainel("resultado_incerto", undefined, true)
   if (antes.emCurso > 0) throw new ErroPainel("gravacao_em_curso", undefined, true)
   mudar(fonte, (e) => ({ ...e, emCurso: e.emCurso + 1 }))
   try {
-    const ids = await (revisao ? fonte.salvarUnidades(passos, revisao) : fonte.salvarUnidades(passos))
+    const r = await gravar()
     mudar(fonte, (e) => ({ ...e, emCurso: e.emCurso - 1, confirmadas: e.confirmadas + 1 }))
-    return ids
+    return r
   } catch (erro) {
     const comprovada = erro instanceof ErroPainel && erro.recusaConfirmada
     mudar(fonte, (e) => ({ ...e, emCurso: e.emCurso - 1, incerto: e.incerto || !comprovada }))

@@ -154,8 +154,11 @@ export interface Fonte {
    * 0.21.2: com a `revisao` da leitura que a tela mostra, o banco recusa (`cadastro_mudou`) se o cadastro mudou desde ela.
    */
   salvarUnidades(passos: PassoUnidade[], revisao?: string): Promise<Record<string, string>>
-  /** Apaga a empresa, as marcas das contas nela e as regras das pastas dela. O uso fica, sem dono. */
-  apagarEmpresa(id: string): Promise<void>
+  /**
+   * Apaga a empresa, as marcas das contas nela e as regras das pastas dela. O uso fica, sem dono.
+   * 0.21.2: com a `revisao` da leitura que a tela mostra, o banco recusa (`cadastro_mudou`) se o cadastro mudou desde ela.
+   */
+  apagarEmpresa(id: string, revisao?: string): Promise<void>
   /** As empresas desta conta (a lista troca a de antes); vazia: a conta serve a todas. */
   marcarContaEmpresas(contaId: string, empresaIds: string[]): Promise<void>
   /** Liga uma pasta (ou um título de agente do OpenBot) a uma empresa; a mesma regra com outra empresa troca a empresa. */

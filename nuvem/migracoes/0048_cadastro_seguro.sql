@@ -4,7 +4,7 @@
 -- 0.21.2. Uma gravação feita a partir de uma leitura velha (resposta perdida e página recarregada, outra aba, outro
 -- computador) não pode gravar por cima do que outra já mudou. O painel lê a revisão do cadastro antes das tabelas e a
 -- manda junto com os passos; aqui, com as quatro tabelas trancadas, a revisão é conferida e só então os passos rodam
--- pela painel_unidades de sempre. Cada gravação leva uma operação: a mesma operação repetida devolve o resultado
+-- pela painel_unidades de sempre (o apagar de projeto, pela painel_empresa_apagar). Cada gravação leva uma operação: a mesma operação repetida devolve o resultado
 -- guardado, sem gravar de novo. A painel_unidades segue liberada para o painel antigo.
 
 create table if not exists public.cadastro_operacoes (
@@ -36,7 +36,10 @@ begin
   return jsonb_build_object('revisao', public.rvz_cadastro_revisao());
 end $$;
 
-create or replace function public.painel_unidades_seguro(p_operacao uuid, p_revisao text, p_passos jsonb) returns jsonb
+-- O caminho comum das gravações seguras: valida, guarda a operação, tranca as quatro tabelas, confere a revisão e só
+-- então roda o passo. Todo caminho da tela que grava o cadastro passa por aqui (gravar unidades e apagar projeto).
+create or replace function public.rvz_cadastro_seguro(p_operacao uuid, p_revisao text, p_tipo text, p_dados jsonb)
+returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_hash bytea;
@@ -44,13 +47,12 @@ declare
   v_anterior public.cadastro_operacoes%rowtype;
   v_resultado jsonb;
 begin
-  perform public.rvz_exigir_admin();
-  if p_operacao is null or p_revisao is null or p_revisao !~ '^[0-9a-f]{64}$'
-     or jsonb_typeof(p_passos) is distinct from 'array' or jsonb_array_length(p_passos) not between 1 and 200
-     or pg_column_size(p_passos) > 16777216 then
+  if p_operacao is null or p_revisao is null or p_revisao !~ '^[0-9a-f]{64}$' or p_dados is null
+     or p_tipo is null or p_tipo not in ('unidades', 'apagar') then
     raise exception 'pedido inválido';
   end if;
-  v_hash := sha256(convert_to(jsonb_build_object('revisao', p_revisao, 'passos', p_passos)::text, 'UTF8'));
+  -- o tipo entra no pedido guardado: a operação de uma gravação não serve para um apagar, nem o contrário
+  v_hash := sha256(convert_to(jsonb_build_object('tipo', p_tipo, 'revisao', p_revisao, 'dados', p_dados)::text, 'UTF8'));
   -- a mesma operação ao mesmo tempo espera a primeira terminar (chave primária) e cai no caminho de repetição
   insert into public.cadastro_operacoes (id, autor, pedido)
   values (p_operacao, auth.uid(), v_hash)
@@ -63,20 +65,46 @@ begin
     return v_anterior.resultado;
   end if;
 
-  -- Toda outra escrita nessas tabelas (desta função ou das antigas) espera aqui até o fim da transação; a revisão lida
-  -- depois da tranca já vê o que a gravação anterior deixou.
+  -- Toda outra escrita nessas tabelas (destas funções ou das antigas) espera aqui até o fim da transação; a revisão
+  -- lida depois da tranca já vê o que a gravação anterior deixou.
   lock table public.empresas, public.conta_empresas, public.pastas_empresa, public.empresa_computadores
     in share row exclusive mode;
   if public.rvz_cadastro_revisao() <> p_revisao then
     v_resultado := jsonb_build_object('ok', false, 'erro', 'o cadastro mudou; atualize antes de salvar');
+  elsif p_tipo = 'unidades' then
+    v_resultado := public.painel_unidades(p_dados);
   else
-    v_resultado := public.painel_unidades(p_passos);
+    v_resultado := public.painel_empresa_apagar((p_dados ->> 'id')::uuid);
   end if;
   update public.cadastro_operacoes set resultado = v_resultado where id = p_operacao;
   return v_resultado;
 end $$;
 
--- Fecha a janela entre esta migração e a 0099, que libera só as duas painel_ para o authenticated.
+create or replace function public.painel_unidades_seguro(p_operacao uuid, p_revisao text, p_passos jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform public.rvz_exigir_admin();
+  if jsonb_typeof(p_passos) is distinct from 'array' or jsonb_array_length(p_passos) not between 1 and 200
+     or pg_column_size(p_passos) > 16777216 then
+    raise exception 'pedido inválido';
+  end if;
+  return public.rvz_cadastro_seguro(p_operacao, p_revisao, 'unidades', p_passos);
+end $$;
+
+-- Apagar projeto pela mesma conferência: a aba com leitura velha não apaga um projeto que outra aba acabou de mudar
+-- (a cascata levaria junto a pasta que foi movida para ele).
+create or replace function public.painel_empresa_apagar_seguro(p_operacao uuid, p_revisao text, p_id uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform public.rvz_exigir_admin();
+  if p_id is null then raise exception 'pedido inválido'; end if;
+  return public.rvz_cadastro_seguro(p_operacao, p_revisao, 'apagar', jsonb_build_object('id', p_id));
+end $$;
+
+-- As rvz_ não são do painel: ninguém as executa direto. Das painel_ sai só o público e o anon: o authenticated recebe
+-- o execute na 0099 e precisa mantê-lo quando esta migração roda de novo (senão o painel aberto falharia até a 0099).
 revoke all on function public.rvz_cadastro_revisao() from public, anon, authenticated;
-revoke all on function public.painel_cadastro_revisao() from public, anon, authenticated;
-revoke all on function public.painel_unidades_seguro(uuid, text, jsonb) from public, anon, authenticated;
+revoke all on function public.rvz_cadastro_seguro(uuid, text, text, jsonb) from public, anon, authenticated;
+revoke all on function public.painel_cadastro_revisao() from public, anon;
+revoke all on function public.painel_unidades_seguro(uuid, text, jsonb) from public, anon;
+revoke all on function public.painel_empresa_apagar_seguro(uuid, text, uuid) from public, anon;

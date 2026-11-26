@@ -167,7 +167,13 @@ export default function Contas() {
       if (plano.saem.some((pc) => !saem.includes(pc))) return t("contas.projeto.mudou")
       // pela trava da aba, a mesma da tela Projetos: depois de uma gravação sem resposta, não grava até recarregar
       // com a revisão da leitura de onde o plano saiu: o banco recusa se o cadastro mudou desde ela (0.21.2)
-      await gravarCadastro(fonte, [{ ref: unidade.id, id: unidade.id, campos: { contas: plano.contas } }], lido.revisao)
+      try {
+        await gravarCadastro(fonte, [{ ref: unidade.id, id: unidade.id, campos: { contas: plano.contas } }], lido.revisao)
+      } catch (e) {
+        // o cadastro mudou entre a leitura e a gravação: aqui não há rascunho para descartar, então o texto é o de Contas
+        if (e instanceof ErroPainel && e.codigo === "cadastro_mudou") return t("contas.projeto.mudou")
+        throw e
+      }
       return null
     })
     setGravando(false)

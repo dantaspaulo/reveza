@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { ErroPainel } from "./fonte"
-import { estadoGravacao, gravarCadastro, ouvirGravacao } from "./gravacao"
+import { apagarNoCadastro, estadoGravacao, gravarCadastro, ouvirGravacao } from "./gravacao"
 
 const passos = [{ ref: "u1", id: "u1", campos: { nome: "Alfa" } }]
 const fonteCom = (salvar: () => Promise<Record<string, string>>) => ({ salvarUnidades: vi.fn(salvar) })
@@ -88,5 +88,40 @@ describe("gravação do cadastro nesta aba", () => {
     sair()
     await gravarCadastro(fonte, passos)
     expect(ouvir).toHaveBeenCalledTimes(2)
+  })
+})
+
+// Revisão de 26/11: o apagar de projeto passa pela mesma trava da aba
+describe("apagar projeto pela trava da aba", () => {
+  const fonteApagar = (apagar: () => Promise<void>) => ({ salvarUnidades: vi.fn(), apagarEmpresa: vi.fn(apagar) })
+
+  it("apaga com a revisão e conta como gravação confirmada", async () => {
+    const fonte = fonteApagar(async () => {})
+    await apagarNoCadastro(fonte, "e1", "r0")
+    expect(fonte.apagarEmpresa).toHaveBeenCalledWith("e1", "r0")
+    expect(estadoGravacao(fonte)).toEqual({ emCurso: 0, incerto: false, confirmadas: 1 })
+  })
+
+  it("apagar sem resposta trava a aba, e o salvar seguinte é recusado sem ir à nuvem", async () => {
+    const fonte = fonteApagar(async () => {
+      throw new Error("Failed to fetch")
+    })
+    await expect(apagarNoCadastro(fonte, "e1", "r0")).rejects.toMatchObject({ codigo: "resultado_incerto" })
+    expect(estadoGravacao(fonte).incerto).toBe(true)
+    await expect(gravarCadastro(fonte, passos, "r0")).rejects.toMatchObject({ codigo: "resultado_incerto" })
+    expect(fonte.salvarUnidades).not.toHaveBeenCalled()
+  })
+
+  it("com uma gravação em curso, o apagar é recusado sem ir à nuvem", async () => {
+    let soltar = () => {}
+    const fonte = {
+      salvarUnidades: vi.fn(() => new Promise<Record<string, string>>((ok) => (soltar = () => ok({ u1: "u1" })))),
+      apagarEmpresa: vi.fn(async () => {}),
+    }
+    const salvando = gravarCadastro(fonte, passos, "r0")
+    await expect(apagarNoCadastro(fonte, "e1", "r0")).rejects.toMatchObject({ codigo: "gravacao_em_curso" })
+    expect(fonte.apagarEmpresa).not.toHaveBeenCalled()
+    soltar()
+    await salvando
   })
 })

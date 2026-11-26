@@ -1598,7 +1598,10 @@ export class FonteDemo implements Fonte {
     return novos
   }
 
-  apagarEmpresa(id: string) {
+  apagarEmpresa(id: string, revisao?: string) {
+    // como o banco (0048): o apagar que sai de uma leitura velha é recusado sem mudar nada
+    if (revisao !== undefined && revisao !== this.revisao())
+      return Promise.reject(new ErroPainel("cadastro_mudou", "o cadastro mudou; atualize antes de salvar", true))
     return this.escrever(() => {
       const e = this.d.empresas
       if (!e.empresas.some((x) => x.id === id)) throw new ErroPainel("nao_encontrado")

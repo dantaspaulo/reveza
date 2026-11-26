@@ -267,6 +267,19 @@ function recusaComprovada(e: PostgrestError | Error | null): boolean {
   return /^PGRST\d+$/.test(codigo) || /^[0-9A-Z]{5}$/.test(codigo)
 }
 
+/**
+ * O identificador de uma gravação do cadastro (0.21.2). O crypto.randomUUID só existe em https ou localhost; num painel
+ * servido em http na rede local, o getRandomValues (que existe sempre) monta um UUID v4 do mesmo jeito.
+ */
+function novaOperacao(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID()
+  const b = crypto.getRandomValues(new Uint8Array(16))
+  b[6] = (b[6]! & 0x0f) | 0x40
+  b[8] = (b[8]! & 0x3f) | 0x80
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("")
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+}
+
 function erro(e: PostgrestError | Error | null): never {
   const msg = e?.message ?? ""
   throw new ErroPainel(codigoDoErro(msg, (e as PostgrestError | null)?.code), msg, recusaComprovada(e))
@@ -993,7 +1006,7 @@ export class FonteSupabase implements Fonte {
   async salvarUnidades(passos: PassoUnidade[], revisao?: string): Promise<Record<string, string>> {
     // 0.21.2: com a revisão da leitura, o banco confere que nada mudou; cada gravação leva uma operação nova
     const r = revisao
-      ? await rpc("painel_unidades_seguro", { p_operacao: crypto.randomUUID(), p_revisao: revisao, p_passos: passos })
+      ? await rpc("painel_unidades_seguro", { p_operacao: novaOperacao(), p_revisao: revisao, p_passos: passos })
       : await rpc("painel_unidades", { p_passos: passos })
     const ids = r.ids
     if (r.ok !== true || !ids || typeof ids !== "object" || Array.isArray(ids))
@@ -1004,8 +1017,10 @@ export class FonteSupabase implements Fonte {
     return mapa as Record<string, string>
   }
 
-  async apagarEmpresa(id: string) {
-    await rpc("painel_empresa_apagar", { p_id: id })
+  async apagarEmpresa(id: string, revisao?: string) {
+    // 0.21.2: pela mesma conferência da gravação; a nuvem sem a 0048 apaga como antes
+    if (revisao) await rpc("painel_empresa_apagar_seguro", { p_operacao: novaOperacao(), p_revisao: revisao, p_id: id })
+    else await rpc("painel_empresa_apagar", { p_id: id })
   }
 
   async marcarContaEmpresas(contaId: string, empresaIds: string[]) {

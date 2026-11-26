@@ -31,9 +31,9 @@ class Banco {
     this.db = db;
   }
 
-  // Roda as migrações a partir deste número, sobre os dados que já estão no banco.
-  async migrarDe(inicio) {
-    for (const arq of arquivosDeMigracao().filter((a) => a.slice(0, 4) >= inicio)) {
+  // Roda as migrações a partir deste número (até `ate`, se vier), sobre os dados que já estão no banco.
+  async migrarDe(inicio, { ate = null } = {}) {
+    for (const arq of arquivosDeMigracao().filter((a) => a.slice(0, 4) >= inicio && (ate === null || a.slice(0, 4) <= ate))) {
       await this.db.exec(readFileSync(path.join(migracoes, arq), "utf8"));
     }
   }

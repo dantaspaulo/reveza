@@ -99,3 +99,50 @@ describe("revisão do cadastro (0.21.2)", () => {
     await expect(new FonteSupabase().empresas()).rejects.toBeTruthy()
   })
 })
+
+// Revisão de 26/11: o apagar de projeto também confere a revisão no banco
+describe("apagar projeto com a revisão (0.21.2)", () => {
+  beforeEach(() => {
+    chamada.mockReset()
+    tabela.mockReset()
+  })
+
+  it("com revisão, apaga pela função segura, com operação nova", async () => {
+    chamada.mockResolvedValue({ data: { ok: true }, error: null })
+    await new FonteSupabase().apagarEmpresa("e1", REV)
+    const [[nome, args]] = chamada.mock.calls
+    expect(nome).toBe("painel_empresa_apagar_seguro")
+    expect(args).toMatchObject({ p_revisao: REV, p_id: "e1" })
+    expect(args.p_operacao).toMatch(UUID)
+  })
+
+  it("sem revisão (nuvem sem a 0048), apaga como antes", async () => {
+    chamada.mockResolvedValue({ data: { ok: true }, error: null })
+    await new FonteSupabase().apagarEmpresa("e1")
+    expect(chamada).toHaveBeenCalledWith("painel_empresa_apagar", { p_id: "e1" })
+  })
+
+  it("a recusa por leitura velha vira cadastro_mudou comprovada", async () => {
+    chamada.mockResolvedValue({ data: { ok: false, erro: "o cadastro mudou; atualize antes de salvar" }, error: null })
+    await expect(new FonteSupabase().apagarEmpresa("e1", REV)).rejects.toMatchObject({
+      codigo: "cadastro_mudou",
+      recusaConfirmada: true,
+    })
+  })
+
+  it("sem crypto.randomUUID (página fora de https), a operação ainda sai com um identificador válido", async () => {
+    chamada.mockResolvedValue({ data: { ok: true, ids: { "novo-1": "id-real" } }, error: null })
+    const original = crypto.randomUUID
+    Object.defineProperty(crypto, "randomUUID", { value: undefined, configurable: true })
+    try {
+      await new FonteSupabase().salvarUnidades(passos, REV)
+      await new FonteSupabase().apagarEmpresa("e1", REV)
+    } finally {
+      Object.defineProperty(crypto, "randomUUID", { value: original, configurable: true })
+    }
+    const [[, a1], [, a2]] = chamada.mock.calls
+    expect(a1.p_operacao).toMatch(UUID)
+    expect(a2.p_operacao).toMatch(UUID)
+    expect(a2.p_operacao).not.toBe(a1.p_operacao)
+  })
+})

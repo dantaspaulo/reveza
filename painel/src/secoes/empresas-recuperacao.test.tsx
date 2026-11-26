@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { DadosFixos } from "@/dados/contexto"
 import { FonteDemo } from "@/dados/demo"
 import { ErroPainel } from "@/dados/fonte"
+import { estadoGravacao } from "@/dados/gravacao"
 import { I18nProvider, useT } from "@/i18n"
 import { recarregarPagina } from "@/lib/falha"
 import Empresas from "./empresas"
@@ -139,6 +140,54 @@ describe("cadastro após salvar", () => {
     // o rascunho fica para a pessoa ver, e a tela lê o cadastro de novo para o Descartar voltar ao atual
     expect(nome.value).toBe("Agência alterada")
     expect(ler.mock.calls.length).toBeGreaterThan(chamadasAntes)
+    // salvar de novo daria a mesma recusa: o botão espera o Descartar
+    expect(botao("Salvar").disabled).toBe(true)
+  })
+
+  it("apagar a partir de uma leitura velha é recusado pelo banco e o projeto fica com a pasta que recebeu", async () => {
+    const fonte = await montar()
+    const velha = await fonte.empresas()
+    vi.spyOn(fonte, "empresas").mockResolvedValue(velha)
+    await remontar(fonte)
+    const nome = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    const alvo = fonte.dados.empresas.empresas.find((e) => e.nome === nome.value && !e.pai)!
+    const regra = fonte.dados.empresas.regras.find((r) => r.empresaId !== alvo.id)!
+    // outra aba move uma pasta para o projeto que esta tela vai apagar
+    regra.empresaId = alvo.id
+    const apagar = vi.spyOn(fonte, "apagarEmpresa")
+    await clicar(tela.querySelector<HTMLButtonElement>('button[aria-label="Apagar projeto"]')!)
+    await clicar(botao("Apagar"))
+    expect(apagar).toHaveBeenCalledWith(alvo.id, velha.revisao)
+    await expect(apagar.mock.results[0]!.value).rejects.toMatchObject({ codigo: "cadastro_mudou", recusaConfirmada: true })
+    expect(fonte.dados.empresas.empresas.some((e) => e.id === alvo.id)).toBe(true)
+    expect(fonte.dados.empresas.regras.find((r) => r.id === regra.id)!.empresaId).toBe(alvo.id)
+  })
+
+  it("com mudança sem salvar, apagar um projeto salvo fica bloqueado e nada vai à nuvem", async () => {
+    const fonte = await montar()
+    const apagar = vi.spyOn(fonte, "apagarEmpresa")
+    const nome = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    await digitar(nome, "Agência alterada")
+    await clicar(tela.querySelector<HTMLButtonElement>('button[aria-label="Apagar projeto"]')!)
+    expect(tela.textContent).toContain("Salve ou descarte as mudanças antes de apagar")
+    expect(botao("Apagar").disabled).toBe(true)
+    expect(apagar).not.toHaveBeenCalled()
+    expect(nome.value).toBe("Agência alterada")
+  })
+
+  it("apagar sem rascunho manda a revisão da leitura, passa pela trava da aba e lê de novo", async () => {
+    const fonte = await montar()
+    const lido = await fonte.empresas()
+    const nome = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    const alvo = fonte.dados.empresas.empresas.find((e) => e.nome === nome.value && !e.pai)!
+    const apagar = vi.spyOn(fonte, "apagarEmpresa")
+    const ler = vi.spyOn(fonte, "empresas")
+    await clicar(tela.querySelector<HTMLButtonElement>('button[aria-label="Apagar projeto"]')!)
+    await clicar(botao("Apagar"))
+    expect(apagar).toHaveBeenCalledWith(alvo.id, lido.revisao)
+    expect(fonte.dados.empresas.empresas.some((e) => e.id === alvo.id)).toBe(false)
+    expect(ler).toHaveBeenCalled()
+    expect(estadoGravacao(fonte).confirmadas).toBe(1)
   })
 
   it("recusa confirmada mantém o rascunho editável", async () => {
