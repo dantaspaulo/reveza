@@ -126,7 +126,7 @@ describe("OpenBot", () => {
       execFileSync(SQLITE, [banco, "CREATE TABLE projection_agents (agent_id TEXT, agent_json TEXT);"]);
       assert.deepEqual(new OpenBotLocal({ banco, comando: "/x" }, exec).agentes(), [], "a tabela sem agentes: lista vazia de verdade");
       execFileSync(SQLITE, [banco, `INSERT INTO projection_agents VALUES ('a1', '{"workspacePath":"/x/a1","name":"Um","title":"Projeto"}');`]);
-      assert.deepEqual(new OpenBotLocal({ banco, comando: "/x" }, exec).agentes(), [{ pasta: "/x/a1", nome: "Um", titulo: "Projeto" }]);
+      assert.deepEqual(new OpenBotLocal({ banco, comando: "/x" }, exec).agentes(), [{ id: "a1", pasta: "/x/a1", nome: "Um", titulo: "Projeto" }]);
       // um sqlite3 que responde fora do JSON (outra versão, uma mensagem no lugar da saída)
       const torto = path.join(d, "sqlite3-torto");
       fs.writeFileSync(torto, "#!/bin/sh\necho 'Error: database is locked'\n", { mode: 0o755 });

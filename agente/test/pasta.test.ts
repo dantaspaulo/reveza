@@ -187,7 +187,7 @@ describe("agentes do OpenBot", () => {
       const exec = { rodar: async () => ({ codigo: 0, saida: "", erro: "" }), iniciar: () => { throw new Error(); } };
       const ob = new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec);
       const lista = ob.agentes();
-      assert.deepEqual(lista, [{ pasta: "/Users/x/OpenBot/Agents/a1", nome: "Um", titulo: "O título d'um" }]);
+      assert.deepEqual(lista, [{ id: "a1", pasta: "/Users/x/OpenBot/Agents/a1", nome: "Um", titulo: "O título d'um" }]);
       assert.equal(fs.statSync(banco).mtimeMs, antes, "o banco não foi escrito");
       assert.deepEqual(new OpenBotLocal({ banco: path.join(d, "nao.db"), comando: "/x" }, exec).agentes(), []);
     } finally {

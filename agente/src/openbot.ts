@@ -39,14 +39,118 @@ export interface OpenBot {
 }
 
 export interface AgenteOpenBot {
+  /** O id do agente no OpenBot (0.22.0), quando a consulta trouxe um válido. */
+  id?: string;
   pasta: string;
   nome: string;
   titulo: string;
+  /** As pastas da barra do OpenBot em que o agente está, da raiz até a dele (ids; 0.22.0). Sem pasta: ausente. */
+  secoes?: string[];
 }
 
-/** A consulta dos agentes (só leitura): pasta, nome e título de cada um, em JSON. Linha com JSON estragado fica de fora (senão a consulta inteira falha). */
+/** O arquivo da barra lateral do OpenBot, na pasta do banco dele. */
+export const BARRA_ARQUIVO = "openbot-sidebar-layout-v1.json";
+
+/** Uma pasta da barra lateral do OpenBot (0.22.0). `pai`: a pasta de cima, ou null na raiz. */
+export interface PastaOpenBot {
+  id: string;
+  nome: string;
+  pai: string | null;
+}
+
+/** A barra lateral do OpenBot: as pastas e, de cada agente, a cadeia de pastas da raiz até a dele (ids). */
+export interface BarraOpenBot {
+  pastas: PastaOpenBot[];
+  deAgente: Map<string, string[]>;
+}
+
+const PASTA_VALIDA = /^[\w-]{1,100}$/;
+/** As versões do arquivo da barra que o Reveza conhece (a 2 desde o OpenBot de novembro de 2026). */
+const BARRA_VERSOES = new Set([2]);
+const BARRA_PASTAS_MAX = 500;
+const BARRA_ATRIBUICOES_MAX = 2000;
+const BARRA_NIVEIS_MAX = 10;
+
+/** Texto de fora: sem caracteres de controle, sem espaço nas pontas, curto. */
+function textoCurto(v: unknown, max: number): string {
+  return typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "";
+}
+
+/**
+ * A barra lateral do OpenBot (`openbot-sidebar-layout-v1.json`, ao lado do banco dele), lida só para leitura (0.22.0).
+ * null: o arquivo não existe (barra vazia; pessoa sem pastas). Lança quando o texto não é a barra que o Reveza conhece
+ * (JSON pela metade no meio de uma gravação, versão nova do OpenBot): quem chama mantém a última leitura boa, para não
+ * tirar um agente do projeto dele. Pasta com id estranho fica de fora; pai que não existe vira raiz; ciclo de pais ou
+ * mais de 10 níveis deixam os agentes dali sem pasta, porque o arquivo está fora do que se espera e não se adivinha.
+ */
+export function barraDoLayout(texto: string | null): BarraOpenBot {
+  if (texto === null) return { pastas: [], deAgente: new Map() };
+  let j: unknown;
+  try {
+    j = JSON.parse(texto);
+  } catch {
+    throw new Error("a barra do OpenBot não veio em JSON");
+  }
+  if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("a barra do OpenBot não veio no formato conhecido");
+  const o = j as Record<string, unknown>;
+  if (typeof o.version !== "number" || !BARRA_VERSOES.has(o.version)) {
+    throw new Error(`a barra do OpenBot veio numa versão desconhecida (versão ${String(o.version)})`);
+  }
+  const secoes = o.sections;
+  const atrib = o.agentAssignments;
+  if (!Array.isArray(secoes) || !atrib || typeof atrib !== "object" || Array.isArray(atrib)) {
+    throw new Error("a barra do OpenBot não veio no formato conhecido");
+  }
+  const pastas: PastaOpenBot[] = [];
+  const porId = new Map<string, PastaOpenBot>();
+  for (const s of secoes) {
+    if (pastas.length >= BARRA_PASTAS_MAX) break;
+    if (!s || typeof s !== "object") continue;
+    const x = s as Record<string, unknown>;
+    if (typeof x.id !== "string" || !PASTA_VALIDA.test(x.id) || porId.has(x.id)) continue;
+    const pai = typeof x.parentId === "string" && PASTA_VALIDA.test(x.parentId) ? x.parentId : null;
+    const p: PastaOpenBot = { id: x.id, nome: textoCurto(x.name, 120), pai };
+    pastas.push(p);
+    porId.set(p.id, p);
+  }
+  for (const p of pastas) if (p.pai !== null && !porId.has(p.pai)) p.pai = null;
+  const cadeias = new Map<string, string[] | null>();
+  const cadeiaDe = (id: string): string[] | null => {
+    if (cadeias.has(id)) return cadeias.get(id)!;
+    const ids: string[] = [];
+    const vistos = new Set<string>();
+    let atual = porId.get(id);
+    let r: string[] | null = null;
+    while (atual) {
+      if (vistos.has(atual.id) || ids.length >= BARRA_NIVEIS_MAX) break;
+      vistos.add(atual.id);
+      ids.push(atual.id);
+      if (atual.pai === null) {
+        r = ids.reverse();
+        break;
+      }
+      atual = porId.get(atual.pai);
+    }
+    cadeias.set(id, r);
+    return r;
+  };
+  const deAgente = new Map<string, string[]>();
+  let n = 0;
+  for (const [agente, pasta] of Object.entries(atrib as Record<string, unknown>)) {
+    if (++n > BARRA_ATRIBUICOES_MAX) break;
+    if (!AGENTE_VALIDO.test(agente) || typeof pasta !== "string") continue;
+    const c = cadeiaDe(pasta);
+    if (c) deAgente.set(agente, [...c]);
+  }
+  return { pastas, deAgente };
+}
+
+/**
+ * A consulta dos agentes (só leitura): id (0.22.0, para achar a pasta da barra), pasta, nome e título de cada um, em
+ * JSON. Linha com JSON estragado fica de fora (senão a consulta inteira falha).
+ */
 export const CONSULTA_AGENTES =
-  "SELECT json_extract(agent_json, '$.workspacePath') AS pasta, json_extract(agent_json, '$.name') AS nome, " +
+  "SELECT agent_id AS id, json_extract(agent_json, '$.workspacePath') AS pasta, json_extract(agent_json, '$.name') AS nome, " +
   "json_extract(agent_json, '$.title') AS titulo FROM projection_agents WHERE json_valid(agent_json) LIMIT 500;";
 
 /** As linhas da consulta, conferidas: pasta absoluta, nome e título como texto curto. */
@@ -65,7 +169,9 @@ export function agentesDaSaida(saida: string): AgenteOpenBot[] {
     const o = l as Record<string, unknown>;
     const pasta = texto(o.pasta, 4096);
     if (!pasta.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(pasta)) continue; // só caminho absoluto (macOS, Linux, Windows)
-    r.push({ pasta, nome: texto(o.nome, 120), titulo: texto(o.titulo, 200) });
+    const a: AgenteOpenBot = { pasta, nome: texto(o.nome, 120), titulo: texto(o.titulo, 200) };
+    if (typeof o.id === "string" && AGENTE_VALIDO.test(o.id)) a.id = o.id;
+    r.push(a);
   }
   return r;
 }
@@ -156,7 +262,56 @@ export class OpenBotLocal implements OpenBot {
     } catch {
       throw new Error("a leitura dos agentes do OpenBot não veio em JSON");
     }
-    return agentesDaSaida(saida);
+    const lista = agentesDaSaida(saida);
+    const barra = this.lerBarra();
+    for (const a of lista) {
+      const secoes = a.id ? barra.deAgente.get(a.id) : undefined;
+      if (secoes) a.secoes = [...secoes];
+    }
+    return lista;
+  }
+
+  private barraBoa: BarraOpenBot | null = null;
+  private barraFalhou = false;
+
+  /** As pastas da barra do OpenBot da última leitura boa (vazia sem pastas). */
+  pastas(): PastaOpenBot[] {
+    return (this.barraBoa?.pastas ?? []).map((p) => ({ ...p }));
+  }
+
+  /**
+   * A última leitura da barra: "ok"; "velha" (falhou e vale a anterior; o doctor avisa); "sem_leitura" (falhou e nunca
+   * houve uma boa: ninguém tem pasta, e quem classifica trata como incerto quando há regra de pasta do OpenBot).
+   */
+  barraEstado(): "ok" | "velha" | "sem_leitura" {
+    return !this.barraFalhou ? "ok" : this.barraBoa ? "velha" : "sem_leitura";
+  }
+
+  /**
+   * A barra lateral do OpenBot, só leitura. Sem o arquivo desde o começo: barra vazia. A leitura que falha (JSON pela
+   * metade, versão nova do OpenBot, arquivo que sumiu no meio de uma regravação) mantém a última boa; sem leitura boa
+   * antes, barra vazia e estado "sem_leitura". Nunca lança: a barra estragada não pode derrubar a lista dos agentes de
+   * quem nem usa pastas (a lista que falha deixa o agente sem certeza em todas as conversas).
+   */
+  private lerBarra(): BarraOpenBot {
+    const arquivo = path.join(path.dirname(this.locais.banco), BARRA_ARQUIVO);
+    try {
+      let texto: string | null = null;
+      try {
+        if (fs.statSync(arquivo).size > 4 << 20) throw new Error("a barra do OpenBot está grande demais");
+        texto = fs.readFileSync(arquivo, "utf8");
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`a barra do OpenBot não deu para ler: ${(e as Error).message}`);
+        if (this.barraBoa && this.barraBoa.pastas.length) throw new Error("a barra do OpenBot sumiu depois de uma leitura boa");
+      }
+      const b = barraDoLayout(texto);
+      this.barraBoa = b;
+      this.barraFalhou = false;
+      return b;
+    } catch {
+      this.barraFalhou = true;
+      return this.barraBoa ?? { pastas: [], deAgente: new Map() };
+    }
   }
 
   async continuar(agente: string, texto: string, chave: string): Promise<number> {
