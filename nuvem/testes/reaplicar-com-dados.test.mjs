@@ -61,7 +61,9 @@ function receitas(b, ctx) {
     "empresas.modo": (v) => b.sql("insert into public.empresas (nome, modo) values ($1, $2)", [`modo ${v}`, v]),
     "pastas_empresa.tipo": async (v) => {
       const [{ id }] = await b.sql("insert into public.empresas (nome) values ($1) returning id", [`regra ${v}`]);
-      await b.sql("insert into public.pastas_empresa (tipo, padrao, empresa_id) values ($1, 'x', $2)", [v, id]);
+      // a regra de pasta do OpenBot (0049) vale num computador só
+      await b.sql("insert into public.pastas_empresa (tipo, padrao, empresa_id, computador_id) values ($1, 'x', $2, $3)",
+        [v, id, v === "secao" ? ctx.A.pc : null]);
     },
   };
 }
