@@ -22,6 +22,8 @@ export function motivoEmIngles(motivo: string): string {
     "pedido pela API": "requested through the API",
     "computador sem conta": "computer without an account",
     "conta que já estava no computador": "account already on the computer",
+    "parado: cedeu a conta a um computador no limite": "idle: gave its account to a computer at the limit",
+    "recebeu a conta de um computador parado": "got the account of an idle computer",
   };
   return Object.hasOwn(mapa, m) ? mapa[m]! : m;
 }

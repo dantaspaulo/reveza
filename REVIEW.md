@@ -55,6 +55,17 @@ teste, o CHANGELOG ou a release.
   segura segue segurando. O processo só fica na trava da conta em uso quando a resposta daquela pergunta o pôs lá
   (`largarPrincipal`, em `Trilhas.pedir`: a mesma sessão pode perguntar duas vezes), e o comando que não conversa vai
   com `--sem-conversa` (`Trilhas.semConversa`: sem busca, trava nem gravação).
+- **conta parada cede** (0.21.1): `rvz_ceder_parada` na 0047, chamada pela `decidir` sem candidata. Sempre pela conta do
+  meio (`rvz_conta_do_meio`: sem dono, sem posse de outro, login bom, agenda, teto e modelo do doador, a preferida de
+  outro por último), nunca troca direta; doador (`rvz_pode_doar`, a mesma regra na lista e na contagem) ligado há mais
+  de 60 min (`computadores.ligado_desde`, pelo gatilho), parado (sem sessão, sem limite e com o uso igual em 60 min), com
+  a conta há mais de 30 min e não escolhida à mão; quem pede só trabalhando na conta em uso (a sessão de trilha não
+  conta), com ela cheia ou acima do gatilho (a falta de modelo não é limite) e passada a espera entre trocas; a trava da
+  atribuição tentada sem esperar e a linha do doador com `skip locked`, sem alerta quando uma das duas deixou alguém de
+  fora, e nenhuma trava sem doador (linhas do doador antes da trava das trocas, a ordem da `decidir`); quem pede conta
+  nunca é doador, e o evento `limite` com motivo `sem_modelo` não faz pedir; o doador parado não troca pela regra nem
+  gera o aviso de 90% até pedir conta. Filtro novo na `rvz_candidatas` precisa ir também à
+  `rvz_serve_principal`, e motivo novo de troca entra no `traduzirMotivo` e no `motivoEmIngles`.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

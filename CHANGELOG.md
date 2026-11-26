@@ -7,11 +7,12 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
-## 0.21.1 · 25/11/2026
+## 0.21.2 · 26/11/2026
 
 Melhoria no painel para quem separa as contas por projeto: escolher os agentes do OpenBot de cada computador num
-projeto ou subprojeto, e saber antes de salvar quando ligar um projeto deixa um computador sem conta livre. Só o painel
-muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funcionamento.
+projeto ou subprojeto, e saber antes de salvar quando ligar um projeto deixa um computador sem conta livre. Mudam o
+painel e a nuvem (a gravação do cadastro passa a conferir que nada mudou desde a leitura); o agente e o lançador sobem
+de número, sem mudança no funcionamento.
 
 ### O que muda em Projetos
 
@@ -36,8 +37,11 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
   perder, o cadastro de projetos fica bloqueado para edição nesta aba, também no **Alocar** da tela Contas e depois de
   sair da tela e voltar, e a tela oferece o botão **Recarregar a página**, para conferir o que foi salvo antes de mudar
   de novo. Enquanto uma gravação feita antes não responde, a edição espera por ela. Recusa que o banco comprova, como
-  um campo que falta, continua devolvendo o rascunho para corrigir na hora. A trava vale para a aba em que a gravação
-  foi feita: outra aba ou outro computador não sabem dela.
+  um campo que falta, continua devolvendo o rascunho para corrigir na hora.
+- **A nuvem confere antes de gravar.** O painel lê a revisão do cadastro junto com ele e a manda ao salvar; se o
+  cadastro mudou desde a leitura (uma gravação que se perdeu e terminou depois, outra aba, outro computador), a nuvem
+  recusa sem mudar nada, e a tela pede para recarregar e conferir. Painel aberto de versão anterior continua gravando
+  como antes até a página ser recarregada.
 
 ### Correção na troca manual
 
@@ -48,9 +52,36 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
 ### Fica para depois
 
 - Escolher no projeto uma pasta da barra lateral do OpenBot, com as subpastas, e os agentes que estiverem nela.
-- Conferir na nuvem, ao salvar, que o cadastro não mudou desde a leitura, para proteger também a gravação feita em
-  outra aba ou em outro computador.
-- Os itens que a 0.21.0 deixou para a 0.21.1.
+- Os itens que a 0.21.0 deixou para depois.
+
+## 0.21.1 · 25/11/2026
+
+Correção para quem usa mais de um computador: o computador que bate o limite sem conta livre recebe a conta de outro
+computador que está parado. Muda a nuvem, e o painel ganha os textos da troca nova; o agente e o lançador só sobem de
+número.
+
+### O que muda
+
+- **A conta parada vai para quem trabalha.** Antes, a conta atribuída a um computador ficava com ele mesmo parado, e o
+  computador que batia o limite esperava a própria conta renovar, com uma conta de folga parada no computador ao lado.
+  Agora, sem conta livre, a nuvem procura um computador parado (ligado há mais de 60 minutos, sem sessão e sem limite
+  nesse tempo, com a conta há mais de 30 minutos e o uso dela sem subir), leva esse computador para a conta mais gasta
+  entre as sem dono (a preferida de outro computador só quando não houver outra) e passa a conta dele a quem parou. A
+  conta chega assim que o computador parado a solta, em geral no minuto seguinte.
+- **Sem troca direta entre os dois.** Cada agente pega a conta nova antes de soltar a antiga; por isso a troca passa
+  sempre por uma terceira conta, sem dono. Sem ela, nada muda e sai o alerta de sempre.
+- **Quem pede precisa estar trabalhando:** a conta em uso está cheia, ou acima do ponto de troca e passada a espera
+  entre trocas, e ele bateu o limite (nessa conta, nas últimas 5 horas) ou tem sessão nela com atividade nos últimos 15
+  minutos. A falta do modelo da sessão não conta como limite, e sessão de projeto, que roda em outra conta, também não.
+  Dois computadores parados não trocam entre si, e quem bateu o limite na própria conta não a cede, nem logo depois que
+  ela renova. O computador que cedeu fica nessa conta enquanto estiver parado, sem as trocas da regra (ponto de troca,
+  preferida, rodízio) nem o aviso de 90%; quando volta a trabalhar e bate o limite, troca como sempre.
+- **Fica como estava:** conta escolhida à mão (painel ou API), computador fora do ar, conta presa a uma sessão de
+  projeto e a troca automática desligada.
+- **No painel:** as duas trocas novas aparecem com o motivo nos dois idiomas, também nos alertas em inglês, e o Como
+  funciona diz o que acontece sem conta livre.
+- **Limite conhecido:** uma sessão que espera mais de 60 minutos sem escrever nada parece parada. Ela segue na conta
+  nova e, se bater o limite, troca pelo caminho normal.
 
 ## 0.21.0 · 24/11/2026
 

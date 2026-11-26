@@ -50,6 +50,8 @@ test("em inglês: a troca vem do texto e dos dados", () => {
   assert.equal(textoDoEvento(ev("formato que ninguém previu", "x"), "en"), "formato que ninguém previu", "sem como montar: o texto original");
   assert.equal(motivoEmIngles("pedido pelo painel"), "requested from the panel");
   assert.equal(motivoEmIngles("constructor"), "constructor");
+  assert.equal(motivoEmIngles("parado: cedeu a conta a um computador no limite"), "idle: gave its account to a computer at the limit");
+  assert.equal(motivoEmIngles("recebeu a conta de um computador parado"), "got the account of an idle computer");
 });
 
 test("em inglês: limite, sem conta livre, computador parado e conta que precisa entrar", () => {

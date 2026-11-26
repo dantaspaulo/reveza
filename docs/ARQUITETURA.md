@@ -340,6 +340,51 @@ banco e no código o nome segue `empresa`: renomear tabela em produção seria r
 - **Limite:** a regra de pasta que vale em todos os computadores ainda colide com a de outro projeto, mesmo em
   computadores diferentes. Prenda a regra ao computador.
 
+## 6f. Conta parada cede ao computador no limite (0.21.1)
+
+A conta atribuída a um computador ficava com ele mesmo parado: `rvz_candidatas` não oferece conta atribuída a outro
+computador. Com várias contas cheias, o computador que trabalhava batia o limite e esperava a própria conta renovar,
+enquanto outro computador, ligado e parado, segurava uma conta com folga. A 0047 resolve dentro da `decidir`, no ramo
+"cheia ou bateu o limite" sem candidata, antes do alerta `sem_livre`:
+
+- **Quem pede (`rvz_pede_conta`):** a conta em uso está cheia, ou acima do gatilho e passada a espera entre trocas (a
+  falta do modelo da sessão, que chega com limite pela `agente_sem_modelo`, não basta), e ele bateu o limite agora,
+  bateu nessa conta depois de recebê-la (nas últimas 5 h: a sessão parada no limite espera a conta renovar, e a
+  retomada a continua na conta nova; o evento `limite` com motivo `sem_modelo` não conta) ou tem sessão que usou essa
+  conta com atividade nos últimos 15 min (sessão só de trilha não conta). Dois computadores parados não trocam entre
+  si.
+- **O doador (`rvz_pode_doar`):** outro computador ligado (visto há menos de 2 min) há mais de 60 min
+  (`computadores.ligado_desde`, marcada pelo gatilho `computadores_ligado_desde` quando ele é visto pela primeira vez ou
+  de novo depois de mais de 5 min fora; vazia, de antes da 0047, conta como ligado há tempo), com a conta há mais de 30 min,
+  motivo que não é pedido à mão, sem sessão de projeto segurando a principal, sem atividade nem limite em 60 min
+  (`rvz_computador_ativo`), que não pede conta ele mesmo (quem bateu o limite nessa conta nas últimas 5 h também espera
+  por ela, mesmo logo depois que ela renova e as leituras ainda não mudaram) e com o uso da conta parado (`rvz_uso_parado`: 2 leituras ou mais em 60 min, a janela de 5 h
+  igual). A conta dele precisa servir a quem pede (`rvz_serve_principal`, os filtros da `rvz_candidatas` menos posse e
+  atribuição). Entre vários, a conta com mais folga.
+- **A conta do meio (`rvz_conta_do_meio`):** sem dono, sem posse de outro computador, com cofre, leitura recente (login
+  bom), não pausada, que a principal pode usar, dentro da agenda e do teto da semana, com o modelo no doador; a
+  preferida de outro computador ligado por último (o doador parado não a devolveria), e a mais cheia primeiro. O doador
+  vai para ela e quem pede recebe a dele,
+  que chega quando o doador soltar a posse (o caminho da troca entre computadores pelo painel). Sem conta do meio, nada
+  muda: a troca direta entre os dois travaria (6e).
+- **Sem impasse:** as travas seguem a ordem da `decidir` e nenhuma espera: primeiro as linhas do doador (computador e
+  atribuição, `for update of a, q skip locked`), depois a trava das trocas (`pg_try_advisory_xact_lock(778801)`), só
+  quando há doador e conta do meio (a conta do meio é lida de novo com a trava). Sem doador, nenhuma trava fica presa até
+  o fim da decisão. A `decidir` do doador começa pela linha do computador dele e espera esta terminar. Quem não conseguiu tenta de novo pelo cron, no minuto seguinte, sem o alerta
+  `sem_livre`: a `rvz_ceder_parada` devolve nulo com a trava ocupada ou quando a lista travada saiu menor que a
+  contagem dos doadores (um ficou de fora porque outra decisão segurava a linha dele).
+- **Sem volta:** o computador que cedeu (motivo "parado: cedeu a conta a um computador no limite"), enquanto não pede
+  conta (`rvz_pede_conta`), não troca pela regra (limiar, volta à preferida, devolução da preferida de outro, rodízio)
+  nem gera o aviso de 90%; pausar a conta, perder o login e a troca à mão seguem valendo. Quando volta a trabalhar e
+  bate o limite nessa conta, troca pelo caminho normal, e esse limite vale por 5 h.
+- **Fora da regra:** computador fora do ar (o agente dele não está lá para soltar a posse, e voltar com o login antigo
+  giraria o token), conta escolhida à mão e a troca automática desligada.
+- **Limites:** "parado" vem do que a nuvem vê: a última linha de cada sessão e as leituras de uso. Uma sessão que espera
+  mais de 60 min sem escrever nada (uma tarefa de fundo longa) parece parada; ela segue na conta do meio e, se bater o
+  limite, troca pelo caminho normal. Resolver de vez pede um sinal de sessão viva do agente. E, como em toda troca,
+  se o agente do doador não conseguir instalar a conta do meio, a posse da conta antiga vence em 2 min (a busca só
+  renova a da atribuída): o mesmo risco da troca que falha em qualquer computador, anotado para uma versão do agente.
+
 ## 7. Nuvem: tabelas (todas com RLS ligado)
 
 | Tabela | Quem lê | Quem escreve |

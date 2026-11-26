@@ -109,7 +109,8 @@ export default secao({
           troca_rodizio: "Hora do rodízio: vai para uma conta livre ({ordem}).",
           espera_minima:
             "Precisava trocar, mas a última troca foi há pouco: espera a espera mínima para não ficar trocando à toa.",
-          sem_livre: "Precisava trocar, mas nenhuma conta está livre: fica na atual e a nuvem manda o alerta.",
+          sem_livre:
+            "Precisava trocar, mas nenhuma conta está livre: se outro computador está parado há 60 minutos e há uma conta sem dono para ele ir, recebe a conta dele assim que ele a solta; senão, fica na atual e a nuvem manda o alerta.",
           rodizio_sem_livre: "Hora do rodízio, mas nenhuma outra conta está livre: fica.",
           troca_preferida: "A conta preferida deste computador ficou livre: ele volta para ela.",
           devolve_preferida:
@@ -242,7 +243,8 @@ export default secao({
           troca_rodizio: "Rotation time: it goes to a free account ({ordem}).",
           espera_minima:
             "It should switch, but the last switch was recent: it waits the minimum wait to avoid pointless switching.",
-          sem_livre: "It should switch, but no account is free: it stays and the cloud sends the alert.",
+          sem_livre:
+            "It should switch, but no account is free: if another computer has been idle for 60 minutes and there is an unowned account for it to move to, it gets that computer's account as soon as it lets go; otherwise it stays and the cloud sends the alert.",
           rodizio_sem_livre: "Rotation time, but no other account is free: it stays.",
           troca_preferida: "This computer's preferred account is free again: it goes back to it.",
           devolve_preferida:

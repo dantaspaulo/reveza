@@ -23,6 +23,16 @@ describe("traduzirMotivo", () => {
       expect(traduzirMotivo(m, { t: tr(en) })).not.toBe(m)
     }
   })
+  it("os motivos da conta parada que cede (0.21.1) têm texto nos dois idiomas", async () => {
+    const { en, pt } = await import("@/i18n/dicionario")
+    const { traduzir } = await import("@/i18n/traduzir")
+    const tr = (dic: unknown) => ((k: string, v?: Record<string, string | number>) => traduzir(dic, {}, k, v)) as never
+    for (const m of ["parado: cedeu a conta a um computador no limite", "recebeu a conta de um computador parado"]) {
+      expect(traduzirMotivo(m, { t: tr(pt) })).not.toMatch(/^motivo\./)
+      expect(traduzirMotivo(m, { t: tr(en) })).not.toMatch(/^motivo\./)
+      expect(traduzirMotivo(m, { t: tr(en) })).not.toBe(m)
+    }
+  })
   it("nome de propriedade herdada não vira chave de tradução (não derruba a tela)", () => {
     for (const m of ["constructor", "__proto__", "toString", "hasOwnProperty"]) expect(traduzirMotivo(m, { t })).toBe(m)
   })
