@@ -140,8 +140,33 @@ describe("cadastro após salvar", () => {
     // o rascunho fica para a pessoa ver, e a tela lê o cadastro de novo para o Descartar voltar ao atual
     expect(nome.value).toBe("Agência alterada")
     expect(ler.mock.calls.length).toBeGreaterThan(chamadasAntes)
-    // salvar de novo daria a mesma recusa: o botão espera o Descartar
+    // salvar de novo daria a mesma recusa: o botão espera o Descartar, e a barra diz por quê
     expect(botao("Salvar").disabled).toBe(true)
+    expect(tela.textContent).toContain("O cadastro mudou desde que você começou a editar")
+  })
+
+  it("mexeu e desfez, e o cadastro mudou em outro lugar: o apagar recusado solta a leitura velha e a nova tentativa vai", async () => {
+    const fonte = await montar()
+    const nome = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    const original = nome.value
+    const r0 = (await fonte.empresas()).revisao
+    await digitar(nome, "Agência alterada")
+    await digitar(nome, original)
+    const alvo = fonte.dados.empresas.empresas.find((e) => e.nome === original && !e.pai)!
+    const outra = fonte.dados.empresas.empresas.find((e) => e.id !== alvo.id && !e.pai)!
+    // outro computador renomeia outro projeto: o cadastro muda sem esta tela saber
+    outra.nome = "Renomeado em outro lugar"
+    const apagar = vi.spyOn(fonte, "apagarEmpresa")
+    await clicar(tela.querySelector<HTMLButtonElement>('button[aria-label="Apagar projeto"]')!)
+    await clicar(botao("Apagar"))
+    expect(apagar.mock.calls[0]).toEqual([alvo.id, r0])
+    await expect(apagar.mock.results[0]!.value).rejects.toMatchObject({ codigo: "cadastro_mudou" })
+    expect(fonte.dados.empresas.empresas.some((e) => e.id === alvo.id)).toBe(true)
+    await clicar(tela.querySelector<HTMLButtonElement>('button[aria-label="Apagar projeto"]')!)
+    await clicar(botao("Apagar"))
+    expect(apagar).toHaveBeenCalledTimes(2)
+    expect(apagar.mock.calls[1]![1]).not.toBe(r0)
+    expect(fonte.dados.empresas.empresas.some((e) => e.id === alvo.id)).toBe(false)
   })
 
   it("apagar a partir de uma leitura velha é recusado pelo banco e o projeto fica com a pasta que recebeu", async () => {
@@ -186,7 +211,8 @@ describe("cadastro após salvar", () => {
     await clicar(botao("Apagar"))
     expect(apagar).toHaveBeenCalledWith(alvo.id, lido.revisao)
     expect(fonte.dados.empresas.empresas.some((e) => e.id === alvo.id)).toBe(false)
-    expect(ler).toHaveBeenCalled()
+    // uma leitura só: a gravação é desta tela, e não "uma gravação feita antes"
+    expect(ler).toHaveBeenCalledTimes(1)
     expect(estadoGravacao(fonte).confirmadas).toBe(1)
   })
 

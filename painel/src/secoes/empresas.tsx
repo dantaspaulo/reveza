@@ -403,7 +403,8 @@ export default function Empresas() {
   // 0.21.2: com mudança sem salvar, apagar um projeto salvo mudaria o cadastro por baixo do rascunho, e o Salvar dele
   // seria recusado pela revisão velha; a pessoa salva ou descarta antes (no desenho basta o "novo": a gravação em lote é
   // tudo ou nada, então o projeto novo só ganha id real junto com o fim do rascunho; o clique confere também os criados)
-  const bloqueioApagar = (u: UnidadeRascunho) => (!u.novo && mudanca ? t("empresas.op.apagarComMudanca") : undefined)
+  const bloqueioApagar = (u: UnidadeRascunho) =>
+    !u.novo && mudanca ? t(recusado ? "empresas.op.apagarDepoisDeRecusa" : "empresas.op.apagarComMudanca") : undefined
   const confirmarApagar = async (u: UnidadeRascunho) => {
     if (!pode) return
     const id = salvoNaNuvem(u)
@@ -411,6 +412,8 @@ export default function Empresas() {
       if (mudanca) return
       let recusaConfirmada = false
       let mudou = false
+      // como o salvar: a gravação é desta tela (o aviso de "gravação feita antes" e a leitura dele ficam de fora)
+      setSalvando(true)
       // pela trava da aba e com a revisão da leitura que a tela mostra: a leitura velha é recusada pelo banco
       const [ok] = await acao(async () => {
         try {
@@ -418,11 +421,20 @@ export default function Empresas() {
         } catch (e) {
           recusaConfirmada = e instanceof ErroPainel && e.recusaConfirmada
           mudou = e instanceof ErroPainel && e.codigo === "cadastro_mudou"
+          // sem rascunho para descartar: o aviso diz que a tela foi atualizada e é só apagar de novo
+          if (mudou) throw new ErroPainel("cadastro_mudou_apagar", (e as ErroPainel).message, true)
           throw e
         }
       }, t("empresas.op.apagado"))
+      setSalvando(false)
       setApagar(null)
-      if (mudou) cadastro.recarregar()
+      // recusado por leitura velha, sem mudança na tela: solta a foto velha (que mandaria a mesma revisão de novo) e lê
+      if (mudou) {
+        setRascunho(null)
+        setFoto(null)
+        setTocados(new Set())
+        cadastro.recarregar()
+      }
       // apagou (ou não se sabe): a tela volta como depois de salvar, só com a leitura nova
       if (ok || !recusaConfirmada) {
         if (aberto === u.id) setAberto(null)
@@ -462,8 +474,8 @@ export default function Empresas() {
     mudanca || erro ? (
       <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <p className={cn("text-sm", erro && "text-erro")} role={erro ? "alert" : undefined}>
-            {erro ? textoErro(erro, t) : t("empresas.op.naoSalvas")}
+          <p className={cn("text-sm", (erro || recusado) && "text-erro")} role={erro || recusado ? "alert" : undefined}>
+            {erro ? textoErro(erro, t) : recusado ? t("erros.cadastro_mudou") : t("empresas.op.naoSalvas")}
           </p>
           {aviso && mudanca ? <p className="text-xs text-atencao">{t("empresas.agentes.avisoAoSalvar")}</p> : null}
         </div>

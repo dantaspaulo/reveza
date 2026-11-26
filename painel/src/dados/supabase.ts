@@ -1019,8 +1019,13 @@ export class FonteSupabase implements Fonte {
 
   async apagarEmpresa(id: string, revisao?: string) {
     // 0.21.2: pela mesma conferência da gravação; a nuvem sem a 0048 apaga como antes
-    if (revisao) await rpc("painel_empresa_apagar_seguro", { p_operacao: novaOperacao(), p_revisao: revisao, p_id: id })
-    else await rpc("painel_empresa_apagar", { p_id: id })
+    if (!revisao) {
+      await rpc("painel_empresa_apagar", { p_id: id })
+      return
+    }
+    const r = await rpc("painel_empresa_apagar_seguro", { p_operacao: novaOperacao(), p_revisao: revisao, p_id: id })
+    // como no salvar: só o ok da nuvem prova que apagou; resposta vazia fica incerta
+    if (r.ok !== true) throw new ErroPainel("resultado_incerto")
   }
 
   async marcarContaEmpresas(contaId: string, empresaIds: string[]) {

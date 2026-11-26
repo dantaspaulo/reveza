@@ -130,6 +130,14 @@ describe("apagar projeto com a revisão (0.21.2)", () => {
     })
   })
 
+  it("resposta sem ok:true do apagar seguro não conta como apagado: fica incerta", async () => {
+    chamada.mockResolvedValue({ data: null, error: null })
+    await expect(new FonteSupabase().apagarEmpresa("e1", REV)).rejects.toMatchObject({
+      codigo: "resultado_incerto",
+      recusaConfirmada: false,
+    })
+  })
+
   it("sem crypto.randomUUID (página fora de https), a operação ainda sai com um identificador válido", async () => {
     chamada.mockResolvedValue({ data: { ok: true, ids: { "novo-1": "id-real" } }, error: null })
     const original = crypto.randomUUID

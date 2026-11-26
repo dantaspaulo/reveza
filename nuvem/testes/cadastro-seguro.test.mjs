@@ -208,7 +208,15 @@ test("reaplicar a 0048 não tira do painel as funções que a 0099 liberou", asy
   await b.migrarDe("0048", { ate: "0048" });
   const atual = await versao(b, admin);
   assert.match(atual, /^[0-9a-f]{64}$/);
-  assert.equal((await gravar(b, admin, randomUUID(), atual, novo("Alfa"))).ok, true);
+  const criada = await gravar(b, admin, randomUUID(), atual, novo("Alfa"));
+  assert.equal(criada.ok, true);
+  const apagada = await apagar(b, admin, randomUUID(), await versao(b, admin), criada.ids["novo-1"]);
+  assert.equal(apagada.ok, true, apagada.erro);
   await assert.rejects(b.rpc("anon", "painel_cadastro_revisao"), /permission denied/);
+  await assert.rejects(b.rpc("anon", "painel_empresa_apagar_seguro", {
+    p_operacao: randomUUID(), p_revisao: atual, p_id: randomUUID(),
+  }), /permission denied/);
   await assert.rejects(b.como(admin, "select public.rvz_cadastro_revisao()"), /permission denied/);
+  await assert.rejects(b.como(admin,
+    `select public.rvz_cadastro_seguro('${randomUUID()}', '${atual}', 'apagar', '{"id": null}'::jsonb)`), /permission denied/);
 });
