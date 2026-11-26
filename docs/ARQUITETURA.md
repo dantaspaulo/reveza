@@ -236,13 +236,30 @@ terminado.
 
 A trava é da aba, e não da tela: fica presa à fonte de dados (`painel/src/dados/gravacao.ts`), que nasce de novo só
 quando a página recarrega. Trocar de seção monta a tela de novo sem recarregar, e o Alocar da tela Contas grava o mesmo
-cadastro; por isso toda gravação do cadastro passa por `gravarCadastro`. Com o resultado incerto, ela recusa antes de
+cadastro; por isso toda gravação do cadastro passa por `gravarCadastro` (e o apagar de projeto por `apagarNoCadastro`,
+a mesma trava). Com o resultado incerto, ela recusa antes de
 ir à nuvem, também depois de sair da tela e voltar. Com uma gravação ainda sem resposta, recusa a segunda
 (`gravacao_em_curso`), e a tela montada no meio dela espera a resposta e uma leitura nova antes de liberar a edição.
 
-Fica de fora desta versão: gravar conferindo a revisão do cadastro sob bloqueio no servidor, que é o que falta para
-duas abas, dois computadores ou um painel antigo não gravarem em cima de uma fotografia velha. Esse limite já existia
-antes da 0.21.1.
+**A revisão conferida no banco (0048, 0.21.2).** A trava da aba não alcança outra aba, outro computador nem uma
+gravação perdida que termina depois da recarga. Por isso o banco confere: a `painel_cadastro_revisao` (membro) devolve
+a revisão, um sha256 do conteúdo das quatro tabelas que o cadastro grava (`empresas`, `conta_empresas`,
+`pastas_empresa`, `empresa_computadores`); o painel a lê ANTES das tabelas e a manda ao gravar. As duas gravações da
+tela passam pelo mesmo caminho privado, `rvz_cadastro_seguro`: `painel_unidades_seguro` (salvar) e
+`painel_empresa_apagar_seguro` (apagar projeto), as duas só para admin. Ele guarda a operação (UUID do painel) em
+`cadastro_operacoes` (sem acesso pelo PostgREST), tranca as quatro tabelas em `share row exclusive`, que conflita com
+qualquer escrita nelas, e só então compara a revisão: diferente, devolve "o cadastro mudou; atualize antes de salvar"
+(`cadastro_mudou` no painel) sem mudar nada; igual, roda o passo de sempre (`painel_unidades` ou
+`painel_empresa_apagar`). A mesma operação repetida devolve o resultado guardado; com outro pedido, outro tipo ou outra
+pessoa, "operação já usada". Na tela, apagar um projeto salvo fica bloqueado enquanto houver mudança sem salvar
+(apagaria por baixo do rascunho), e depois de uma recusa por leitura velha o Salvar espera o Descartar. Nuvem sem a
+0048: o painel lê sem revisão e grava pelas funções antigas. Painel aberto de versão anterior grava pelas antigas até
+recarregar; a revisão dele não existe, mas a tranca do caminho novo espera por ele.
+
+Limites conhecidos: a revisão resume o conteúdo, então uma mudança e a volta exata dela entre a leitura da revisão e a
+das tabelas (frações de segundo) passariam (um contador por gatilho resolveria); `cadastro_operacoes` cresce uma
+linha por gravação, sem limpeza; e o apagar confere as trilhas abertas (`atribuicao_trilhas`) sem trancá-las, então
+uma sessão aberta no mesmo instante perde a trilha pela cascata (já existia antes da 0048).
 
 - **Só as contas dela (`empresas.so_contas_dela`, 0043):** nasce falso, e a tela nova grava verdadeiro. Unidade assim
   (estrita) não usa transbordo (`rvz_serve_trilha`), e a conta marcada para ela, com a unidade ligada, não fica na

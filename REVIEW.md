@@ -38,7 +38,12 @@ teste, o CHANGELOG ou a release.
   isso e oferece só Recarregar a página. Recusa comprovada é só SQLSTATE ou código do PostgREST, menos o PGRST001
   (conexão caída no meio do pedido); 502 ou 504 sem código é incerto. A trava é da aba (`painel/src/dados/gravacao.ts`),
   não da tela: sair e voltar não solta, e todo caminho que grava o cadastro (Projetos e o Alocar de Contas) passa por
-  `gravarCadastro`. Confira também os IDs novos e o texto da tela.
+  `gravarCadastro`, e o apagar de projeto por `apagarNoCadastro`. Confira também os IDs novos e o texto da tela.
+- **revisão do cadastro** (0.21.2, 0048): toda gravação do cadastro pela tela (salvar, Alocar, apagar projeto) leva a
+  revisão da leitura de onde saiu e passa pela `rvz_cadastro_seguro` (tranca as quatro tabelas, compara, depois grava).
+  Caminho novo que grave `empresas`, `conta_empresas`, `pastas_empresa` ou `empresa_computadores` pela tela precisa do
+  mesmo caminho e de um teste com leitura velha (`nuvem/testes/cadastro-seguro.test.mjs`). As `rvz_` não recebem execute
+  de ninguém; as `painel_` novas entram na 0099 e não perdem o authenticated quando a 0048 roda de novo.
 - **projeto por computador** (0.20.1): a 0045 e a 0046. Toda função que entrega regra, classifica pasta, abre trilha ou
   decide a principal olha `rvz_roda_em`, para valer também no agente antigo; o projeto antigo segue em todos; a
   trilha aberta segue até as sessões fecharem; nada de troca cruzada direta entre dois computadores (a posse trava); o

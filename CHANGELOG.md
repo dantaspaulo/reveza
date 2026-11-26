@@ -38,10 +38,12 @@ de número, sem mudança no funcionamento.
   sair da tela e voltar, e a tela oferece o botão **Recarregar a página**, para conferir o que foi salvo antes de mudar
   de novo. Enquanto uma gravação feita antes não responde, a edição espera por ela. Recusa que o banco comprova, como
   um campo que falta, continua devolvendo o rascunho para corrigir na hora.
-- **A nuvem confere antes de gravar.** O painel lê a revisão do cadastro junto com ele e a manda ao salvar; se o
-  cadastro mudou desde a leitura (uma gravação que se perdeu e terminou depois, outra aba, outro computador), a nuvem
-  recusa sem mudar nada, e a tela pede para recarregar e conferir. Painel aberto de versão anterior continua gravando
-  como antes até a página ser recarregada.
+- **A nuvem confere antes de gravar.** O painel lê a revisão do cadastro junto com ele e a manda ao salvar, no Alocar
+  e ao apagar um projeto; se o cadastro mudou desde a leitura (uma gravação que se perdeu e terminou depois, outra aba,
+  outro computador), a nuvem recusa sem mudar nada. No salvar, a tela mantém o rascunho para você ver e pede para
+  descartar e fazer de novo; no apagar, a tela é atualizada e basta conferir e apagar de novo. Apagar um projeto salvo
+  pede antes salvar ou descartar as mudanças em aberto. Painel aberto de versão anterior continua gravando como antes
+  até a página ser recarregada.
 
 ### Correção na troca manual
 
