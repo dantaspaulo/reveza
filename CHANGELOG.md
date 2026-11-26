@@ -7,6 +7,35 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.21.1 · 25/11/2026
+
+Correção para quem usa mais de um computador: o computador que bate o limite sem conta livre recebe a conta de outro
+computador que está parado. Muda a nuvem, e o painel ganha os textos da troca nova; o agente e o lançador só sobem de
+número.
+
+### O que muda
+
+- **A conta parada vai para quem trabalha.** Antes, a conta atribuída a um computador ficava com ele mesmo parado, e o
+  computador que batia o limite esperava a própria conta renovar, com uma conta de folga parada no computador ao lado.
+  Agora, sem conta livre, a nuvem procura um computador parado (ligado há mais de 60 minutos, sem sessão e sem limite
+  nesse tempo, com a conta há mais de 30 minutos e o uso dela sem subir), leva esse computador para a conta mais gasta
+  entre as sem dono (a preferida de outro computador só quando não houver outra) e passa a conta dele a quem parou. A
+  conta chega assim que o computador parado a solta, em geral no minuto seguinte.
+- **Sem troca direta entre os dois.** Cada agente pega a conta nova antes de soltar a antiga; por isso a troca passa
+  sempre por uma terceira conta, sem dono. Sem ela, nada muda e sai o alerta de sempre.
+- **Quem pede precisa estar trabalhando:** a conta em uso está cheia, ou acima do ponto de troca e passada a espera
+  entre trocas, e ele bateu o limite (nessa conta, nas últimas 5 horas) ou tem sessão nela com atividade nos últimos 15
+  minutos. A falta do modelo da sessão não conta como limite, e sessão de projeto, que roda em outra conta, também não.
+  Dois computadores parados não trocam entre si, e quem bateu o limite na própria conta não a cede, nem logo depois que
+  ela renova. O computador que cedeu fica nessa conta enquanto estiver parado, sem as trocas da regra (ponto de troca,
+  preferida, rodízio) nem o aviso de 90%; quando volta a trabalhar e bate o limite, troca como sempre.
+- **Fica como estava:** conta escolhida à mão (painel ou API), computador fora do ar, conta presa a uma sessão de
+  projeto e a troca automática desligada.
+- **No painel:** as duas trocas novas aparecem com o motivo nos dois idiomas, também nos alertas em inglês, e o Como
+  funciona diz o que acontece sem conta livre.
+- **Limite conhecido:** uma sessão que espera mais de 60 minutos sem escrever nada parece parada. Ela segue na conta
+  nova e, se bater o limite, troca pelo caminho normal.
+
 ## 0.21.0 · 24/11/2026
 
 Melhoria para quem separa as contas por projeto: a conversa de um projeto sem conta livre espera a conta dele em vez de

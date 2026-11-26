@@ -235,6 +235,8 @@ export default secao({
       pausada: "a conta em uso foi pausada",
       semLogin: "a conta em uso precisa entrar de novo",
       removida: "a conta em uso foi removida",
+      cedeu: "parado: cedeu a conta a um computador no limite",
+      recebeu: "recebeu a conta de um computador parado",
     },
     erros: {
       falha: "Não deu certo. Tente de novo em instantes.",
@@ -546,6 +548,8 @@ export default secao({
       pausada: "the account in use was paused",
       semLogin: "the account in use needs to sign in again",
       removida: "the account in use was removed",
+      cedeu: "idle: gave its account to a computer at the limit",
+      recebeu: "got the account of an idle computer",
     },
     erros: {
       falha: "That didn't work. Try again in a moment.",
