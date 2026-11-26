@@ -35,6 +35,11 @@ export function recarregarUmaVez(agora = Date.now()): boolean {
   return true
 }
 
+/** Recarrega a página quando a pessoa pede (botão). Função à parte para o teste da tela poder conferir a chamada. */
+export function recarregarPagina(): void {
+  window.location.reload()
+}
+
 /**
  * O carregador de um pedaço do build que, se o pedaço sumiu (versão nova publicada com a aba aberta), recarrega a
  * página uma vez e fica esperando, em vez de devolver a falha. Outros erros passam adiante.

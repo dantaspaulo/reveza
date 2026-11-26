@@ -38,6 +38,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { useAcao, useAgora, useConsulta, useDados, useEstado, usePermissao } from "@/dados/contexto"
 import { estadoComputador, estadoConta, p5, p7, resetDe } from "@/dados/derivados"
 import { ErroPainel } from "@/dados/fonte"
+import { estadoGravacao, gravarCadastro, ouvirGravacao } from "@/dados/gravacao"
 import type { AgenteOpenBot, Computador, Conta, DadosEmpresas, SessaoUso, TrilhaEmUso } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import {
@@ -55,6 +56,7 @@ import {
   type LinhaAgente,
   type Usado,
 } from "@/lib/agentes"
+import { recarregarPagina } from "@/lib/falha"
 import {
   alteradas,
   alternarComputador,
@@ -181,8 +183,18 @@ export default function Empresas() {
   const [salvando, setSalvando] = React.useState(false)
   // salvou: o rascunho fica na tela até a leitura nova chegar, para nada piscar com o valor de antes
   const [aguardando, setAguardando] = React.useState<{ versao: number; tipo: "salvo" | "incerto" } | null>(null)
+  // a trava das gravações é da aba inteira: sair da tela e voltar não a solta, e o Alocar de Contas grava o mesmo cadastro
+  const gravacao = React.useSyncExternalStore(
+    React.useCallback((ouvir: () => void) => ouvirGravacao(fonte, ouvir), [fonte]),
+    () => estadoGravacao(fonte),
+    // o desenho fora do navegador (os testes das telas) pede a mesma leitura
+    () => estadoGravacao(fonte)
+  )
+  const incerto = gravacao.incerto || aguardando?.tipo === "incerto"
+  // a gravação foi começada antes de a tela montar de novo (saiu e voltou com o Salvar girando): espera a resposta
+  const gravandoAntes = gravacao.emCurso > 0 && !salvando
   // enquanto grava, a tela não edita: o que entrasse agora sumiria quando a leitura nova chegasse
-  const pode = podeEscrever && !salvando && !aguardando
+  const pode = podeEscrever && !salvando && !aguardando && !gravacao.incerto && gravacao.emCurso === 0
   // o que já foi criado numa gravação que parou no meio: tentar de novo não cria em dobro
   const criados = React.useRef(new Map<string, string>())
   // cadastro novo: marcar a primeira conta já liga, até a pessoa mexer na chave
@@ -229,6 +241,17 @@ export default function Empresas() {
     setFoto(null)
     setAguardando(null)
   }, [aguardando, leituraAtualizada])
+
+  // terminou bem uma gravação começada antes de a tela montar de novo: a leitura daqui pode ser de antes dela, então a
+  // edição só volta com uma leitura nova (o mesmo caminho de depois de salvar)
+  const confirmadasVistas = React.useRef(gravacao.confirmadas)
+  React.useEffect(() => {
+    if (gravacao.confirmadas === confirmadasVistas.current) return
+    confirmadasVistas.current = gravacao.confirmadas
+    if (salvando || aguardando) return
+    const versao = cadastro.recarregar()
+    setAguardando({ versao, tipo: "salvo" })
+  }, [gravacao.confirmadas, salvando, aguardando, cadastro])
 
   // 0.20.2 (pedido do Paulo, 24/11/2026): o botão diz em qual computador o projeto novo nasce (o da aba)
   const rotuloNovo =
@@ -346,7 +369,8 @@ export default function Empresas() {
       })
       // numa transação só: mover uma pasta entre empresas não deixa a pasta sem dono se o segundo passo for recusado
       try {
-        const novos = await fonte.salvarUnidades(passos)
+        // pela trava da aba: sem resposta comprovada, nada mais grava o cadastro aqui até recarregar a página
+        const novos = await gravarCadastro(fonte, passos)
         for (const [ref, id] of Object.entries(novos)) criados.current.set(ref, id)
       } catch (e) {
         recusaConfirmada = e instanceof ErroPainel && e.recusaConfirmada
@@ -430,10 +454,17 @@ export default function Empresas() {
       }
     >
       <AvisoPermissao />
-      {aguardando ? (
+      {aguardando || incerto || gravandoAntes ? (
         <Alert role="status">
-          <AlertTitle>{t(aguardando.tipo === "salvo" ? "empresas.op.salvoAtualizar" : "empresas.op.incertoAtualizar")}</AlertTitle>
-          {cadastro.erro && !cadastro.carregando ? (
+          <AlertTitle>{t(
+            incerto ? "empresas.op.incertoAtualizar" : aguardando ? "empresas.op.salvoAtualizar" : "empresas.op.gravandoAntes"
+          )}</AlertTitle>
+          {incerto ? (
+            // incerto não volta a editar nesta aba (nem com a leitura de volta): a saída é recarregar e conferir
+            <AlertDescription><Button size="sm" variant="outline" onClick={() => recarregarPagina()}>
+              {t("app.recarregar")}
+            </Button></AlertDescription>
+          ) : aguardando && cadastro.erro && !cadastro.carregando ? (
             <AlertDescription><Button size="sm" variant="outline" onClick={() => {
               const versao = cadastro.recarregar()
               setAguardando((a) => a && { ...a, versao })

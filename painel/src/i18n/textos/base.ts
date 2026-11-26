@@ -238,6 +238,9 @@ export default secao({
     },
     erros: {
       falha: "Não deu certo. Tente de novo em instantes.",
+      resultado_incerto:
+        "Não deu para confirmar se a gravação foi salva. Recarregue a página e confira o cadastro antes de mudar de novo.",
+      gravacao_em_curso: "Uma gravação do cadastro ainda está sem resposta. Espere terminar e tente de novo.",
       sem_conexao: "Sem conexão com a nuvem.",
       sem_permissao: "Só quem administra a instalação pode fazer isso.",
       precisa_aal2: "Confirme a verificação em duas etapas para continuar.",
@@ -552,6 +555,9 @@ export default secao({
     },
     erros: {
       falha: "That didn't work. Try again in a moment.",
+      resultado_incerto:
+        "We could not confirm whether the save went through. Reload the page and check the project list before changing anything again.",
+      gravacao_em_curso: "A save to the project list has not answered yet. Wait for it to finish and try again.",
       sem_conexao: "No connection to the cloud.",
       sem_permissao: "Only the installation's admins can do this.",
       precisa_aal2: "Confirm two-step verification to continue.",

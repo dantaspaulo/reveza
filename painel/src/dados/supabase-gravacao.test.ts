@@ -25,12 +25,14 @@ describe("resposta da gravação de projetos", () => {
       chamada.mockResolvedValueOnce({ data: null, error: { message: "projeto desconhecido", code } })
       await expect(new FonteSupabase().salvarUnidades(passos)).rejects.toMatchObject({ recusaConfirmada: true, codigo: expect.any(String) })
     }
-    // sem código do banco não há prova de recusa: a gravação ainda pode estar em curso do outro lado
+    // sem código do banco não há prova de recusa: a gravação ainda pode estar em curso do outro lado. O PGRST001 também
+    // não prova: é a conexão com o banco que caiu no meio do pedido, e a gravação pode ter terminado
     for (const error of [
       { message: "Failed to fetch", code: "" },
       { message: "NetworkError when attempting to fetch resource" },
       { message: "Gateway Timeout", code: "504" },
       { message: "Bad Gateway", code: "502" },
+      { message: "Database client error. Retrying the connection.", code: "PGRST001" },
     ]) {
       chamada.mockResolvedValueOnce({ data: null, error })
       await expect(new FonteSupabase().salvarUnidades(passos)).rejects.toMatchObject({ recusaConfirmada: false })

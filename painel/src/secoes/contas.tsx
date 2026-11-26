@@ -83,6 +83,7 @@ import {
   resetDe,
 } from "@/dados/derivados"
 import { ErroPainel, type CamposConta } from "@/dados/fonte"
+import { gravarCadastro } from "@/dados/gravacao"
 import type { Conta, Instantaneo } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import {
@@ -163,7 +164,8 @@ export default function Contas() {
       if (plano.erro) return textoDoErro(plano.erro, atual, t)
       // outro computador passou a usar a conta depois da confirmação: a pessoa confere de novo
       if (plano.saem.some((pc) => !saem.includes(pc))) return t("contas.projeto.mudou")
-      await fonte.salvarUnidades([{ ref: unidade.id, id: unidade.id, campos: { contas: plano.contas } }])
+      // pela trava da aba, a mesma da tela Projetos: depois de uma gravação sem resposta, não grava até recarregar
+      await gravarCadastro(fonte, [{ ref: unidade.id, id: unidade.id, campos: { contas: plano.contas } }])
       return null
     })
     setGravando(false)

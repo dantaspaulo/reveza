@@ -33,9 +33,11 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
   sozinho.
 - **Recuperação depois de salvar.** A edição espera uma leitura nova do cadastro, começada depois da gravação. Se a
   leitura falhar, a tela deixa tentar de novo, só a leitura, sem repetir a gravação. Se a resposta da gravação se
-  perder, a edição fica bloqueada nesta aba: o painel nunca volta a gravar em cima de um cadastro que pode estar velho,
-  e a saída é recarregar a página e conferir o que foi salvo. Recusa que o banco comprova, como um campo que falta,
-  continua devolvendo o rascunho para corrigir na hora.
+  perder, o cadastro de projetos fica bloqueado para edição nesta aba, também no **Alocar** da tela Contas e depois de
+  sair da tela e voltar, e a tela oferece o botão **Recarregar a página**, para conferir o que foi salvo antes de mudar
+  de novo. Enquanto uma gravação feita antes não responde, a edição espera por ela. Recusa que o banco comprova, como
+  um campo que falta, continua devolvendo o rascunho para corrigir na hora. A trava vale para a aba em que a gravação
+  foi feita: outra aba ou outro computador não sabem dela.
 
 ### Correção na troca manual
 
@@ -46,6 +48,8 @@ muda: o agente, a nuvem e o lançador sobem de número, sem mudança no funciona
 ### Fica para depois
 
 - Escolher no projeto uma pasta da barra lateral do OpenBot, com as subpastas, e os agentes que estiverem nela.
+- Conferir na nuvem, ao salvar, que o cadastro não mudou desde a leitura, para proteger também a gravação feita em
+  outra aba ou em outro computador.
 - Os itens que a 0.21.0 deixou para a 0.21.1.
 
 ## 0.21.0 · 24/11/2026

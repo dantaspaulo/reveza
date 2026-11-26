@@ -11,7 +11,13 @@ import { DadosFixos } from "@/dados/contexto"
 import { FonteDemo } from "@/dados/demo"
 import { ErroPainel } from "@/dados/fonte"
 import { I18nProvider, useT } from "@/i18n"
+import { recarregarPagina } from "@/lib/falha"
 import Empresas from "./empresas"
+
+vi.mock("@/lib/falha", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/falha")>()),
+  recarregarPagina: vi.fn(),
+}))
 
 let raiz: Root | undefined
 let tela: HTMLDivElement
@@ -37,10 +43,7 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-async function montar(preparar?: (fonte: FonteDemo) => void) {
-  localStorage.setItem("reveza.idioma", "pt-BR")
-  const fonte = new FonteDemo({ atrasoMs: 0, relogio: false })
-  preparar?.(fonte)
+async function renderizar(fonte: FonteDemo) {
   const estado = await fonte.carregar()
   tela = document.createElement("div")
   document.body.append(tela)
@@ -52,7 +55,21 @@ async function montar(preparar?: (fonte: FonteDemo) => void) {
       </SessaoProvider></TooltipProvider></I18nProvider></ThemeProvider>
     )
   })
+}
+
+async function montar(preparar?: (fonte: FonteDemo) => void) {
+  localStorage.setItem("reveza.idioma", "pt-BR")
+  const fonte = new FonteDemo({ atrasoMs: 0, relogio: false })
+  preparar?.(fonte)
+  await renderizar(fonte)
   return fonte
+}
+
+/** Sair da tela e voltar, na mesma aba: o painel monta a seção de novo com a mesma fonte, sem recarregar a página. */
+async function remontar(fonte: FonteDemo) {
+  if (raiz) await act(async () => raiz?.unmount())
+  tela?.remove()
+  await renderizar(fonte)
 }
 
 function botao(nome: string): HTMLButtonElement {
@@ -111,7 +128,8 @@ describe("cadastro após salvar", () => {
     expect(ler).not.toHaveBeenCalled()
   })
 
-  it("resultado incerto mantém o rascunho bloqueado mesmo quando a leitura retorna", async () => {
+  it("resultado incerto bloqueia a edição nesta aba e oferece só recarregar a página", async () => {
+    vi.mocked(recarregarPagina).mockClear()
     const fonte = await montar()
     const salvarDeVerdade = fonte.salvarUnidades.bind(fonte)
     const salvar = vi.spyOn(fonte, "salvarUnidades").mockImplementation(async (passos) => {
@@ -119,26 +137,114 @@ describe("cadastro após salvar", () => {
       throw new Error("resposta perdida")
     })
     const ler = fonte.empresas.bind(fonte)
-    let falha = true
-    vi.spyOn(fonte, "empresas").mockImplementation(async () => {
-      if (falha) throw new Error("sem leitura")
-      return ler()
-    })
+    vi.spyOn(fonte, "empresas").mockRejectedValue(new Error("sem leitura"))
     const nome = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
     await digitar(nome, "Agência alterada")
     await clicar(botao("Salvar"))
     expect(salvar).toHaveBeenCalledTimes(1)
     expect(nome.disabled).toBe(true)
     expect(tela.textContent).toContain("Não deu para confirmar se as mudanças foram salvas")
+    expect(tela.textContent).toContain("recarregue a página")
+    // o texto não promete que a edição volta sozinha: aqui ela não volta
+    expect(tela.textContent).not.toContain("até o cadastro voltar")
     expect((await ler()).empresas.some((e) => e.nome === "Agência alterada")).toBe(true)
-    falha = false
-    await clicar(botao("Tentar atualizar"))
-    expect(nome.disabled).toBe(true)
+    // ler de novo não resolve: a gravação sem resposta pode terminar depois da leitura
+    expect([...tela.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Tentar atualizar")).toBe(false)
+    expect([...tela.querySelectorAll("button")].some((b) => b.textContent?.includes("Descartar rascunho e ver cadastro"))).toBe(false)
+    await clicar(botao("Recarregar a página"))
+    expect(recarregarPagina).toHaveBeenCalledTimes(1)
     expect(salvar).toHaveBeenCalledTimes(1)
+  })
+
+  it("resultado incerto continua bloqueado quando a leitura nova volta", async () => {
+    const fonte = await montar()
+    const salvarDeVerdade = fonte.salvarUnidades.bind(fonte)
+    vi.spyOn(fonte, "salvarUnidades").mockImplementation(async (passos) => {
+      await salvarDeVerdade(passos)
+      throw new Error("resposta perdida")
+    })
+    const ler = vi.spyOn(fonte, "empresas")
+    const nome = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    await digitar(nome, "Agência alterada")
+    await clicar(botao("Salvar"))
+    expect(ler).toHaveBeenCalled()
+    await expect(ler.mock.results.at(-1)?.value).resolves.toBeTruthy()
+    await act(async () => {})
     const atualizado = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
     expect(atualizado.disabled).toBe(true)
     expect(atualizado.value).toBe("Agência alterada")
-    expect([...tela.querySelectorAll("button")].some((b) => b.textContent?.includes("Descartar rascunho e ver cadastro"))).toBe(false)
+    expect(tela.textContent).toContain("Não deu para confirmar se as mudanças foram salvas")
+    expect(botao("Recarregar a página").disabled).toBe(false)
+  })
+
+  it("a trava do resultado incerto continua depois de sair da tela e voltar", async () => {
+    const fonte = await montar()
+    const salvarDeVerdade = fonte.salvarUnidades.bind(fonte)
+    const salvar = vi.spyOn(fonte, "salvarUnidades").mockImplementation(async (passos) => {
+      await salvarDeVerdade(passos)
+      throw new Error("resposta perdida")
+    })
+    await digitar(tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!, "Agência alterada")
+    await clicar(botao("Salvar"))
+    expect(salvar).toHaveBeenCalledTimes(1)
+    await remontar(fonte)
+    const depois = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    expect(depois.disabled).toBe(true)
+    expect(tela.textContent).toContain("Não deu para confirmar se as mudanças foram salvas")
+    expect(botao("Recarregar a página").disabled).toBe(false)
+    expect([...tela.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Salvar")).toBe(false)
+    expect(salvar).toHaveBeenCalledTimes(1)
+  })
+
+  it("sair com a gravação em curso e voltar: a edição só volta depois da resposta e de uma leitura nova", async () => {
+    const fonte = await montar()
+    const gravar = fonte.salvarUnidades.bind(fonte)
+    let soltar!: () => void
+    const salvar = vi.spyOn(fonte, "salvarUnidades").mockImplementation(async (passos) => {
+      await new Promise<void>((r) => {
+        soltar = r
+      })
+      return gravar(passos)
+    })
+    await digitar(tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!, "Alfa em curso")
+    await clicar(botao("Salvar"))
+    expect(salvar).toHaveBeenCalledTimes(1)
+    await remontar(fonte)
+    expect(tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!.disabled).toBe(true)
+    expect(tela.textContent).toContain("Uma gravação feita antes ainda está sem resposta")
+    const ler = vi.spyOn(fonte, "empresas")
+    await act(async () => {
+      soltar()
+    })
+    await act(async () => {})
+    expect(ler).toHaveBeenCalled()
+    const campo = tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!
+    expect(campo.disabled).toBe(false)
+    expect(campo.value).toBe("Alfa em curso")
+    expect(salvar).toHaveBeenCalledTimes(1)
+  })
+
+  it("sair com a gravação em curso e ela terminar sem resposta: a tela de volta fica travada", async () => {
+    const fonte = await montar()
+    const gravar = fonte.salvarUnidades.bind(fonte)
+    let soltar!: () => void
+    vi.spyOn(fonte, "salvarUnidades").mockImplementation(async (passos) => {
+      await new Promise<void>((r) => {
+        soltar = r
+      })
+      await gravar(passos)
+      throw new Error("resposta perdida")
+    })
+    await digitar(tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!, "Alfa em curso")
+    await clicar(botao("Salvar"))
+    await remontar(fonte)
+    await act(async () => {
+      soltar()
+    })
+    await act(async () => {})
+    expect(tela.querySelector<HTMLInputElement>('input[aria-label="Nome do projeto"]')!.disabled).toBe(true)
+    expect(tela.textContent).toContain("Não deu para confirmar se as mudanças foram salvas")
+    expect(botao("Recarregar a página").disabled).toBe(false)
   })
 
   it("não libera edição quando a escrita sem resposta ainda pode terminar depois da leitura", async () => {

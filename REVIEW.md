@@ -34,7 +34,11 @@ teste, o CHANGELOG ou a release.
   trava precisa sobreviver a computador que dorme, agente que religa, processo com número reaproveitado e nuvem lenta;
   `painel_unidades` grava tudo ou nada. Trilha dividida só troca para conta que sirva a todas as unidades anotadas nela.
 - **releitura após salvar** (0.21.1): leitura iniciada antes da gravação não libera o editor; falha ou resposta incerta
-  nunca repete a gravação. Confira IDs novos, recuperação da leitura e a diferença entre recusa explícita e rede incerta.
+  nunca repete a gravação. Resposta incerta não devolve a edição naquela aba, nem com a leitura de volta: a tela diz
+  isso e oferece só Recarregar a página. Recusa comprovada é só SQLSTATE ou código do PostgREST, menos o PGRST001
+  (conexão caída no meio do pedido); 502 ou 504 sem código é incerto. A trava é da aba (`painel/src/dados/gravacao.ts`),
+  não da tela: sair e voltar não solta, e todo caminho que grava o cadastro (Projetos e o Alocar de Contas) passa por
+  `gravarCadastro`. Confira também os IDs novos e o texto da tela.
 - **projeto por computador** (0.20.1): a 0045 e a 0046. Toda função que entrega regra, classifica pasta, abre trilha ou
   decide a principal olha `rvz_roda_em`, para valer também no agente antigo; o projeto antigo segue em todos; a
   trilha aberta segue até as sessões fecharem; nada de troca cruzada direta entre dois computadores (a posse trava); o
