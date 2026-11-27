@@ -77,6 +77,7 @@ import {
   type ErroCadastro,
   type UnidadeRascunho,
 } from "@/lib/cadastro"
+import { checarLigar, type AvisoLigar, type ContextoChecagem, type RecusaLigar } from "@/lib/checagem"
 import { N_CORES } from "@/lib/cores"
 import { comDemo } from "@/lib/demo"
 import {
@@ -195,6 +196,8 @@ export default function Empresas() {
   const [aberto, setAberto] = React.useState<string | null>(null)
   const [apagar, setApagar] = React.useState<string | null>(null)
   const [erro, setErro] = React.useState<ErroCadastro | null>(null)
+  // 0.22.1 (item 5): por que o Salvar não ligou um projeto (a checagem automática, no lugar do ensaio manual)
+  const [recusas, setRecusas] = React.useState<RecusaLigar[] | null>(null)
   const [salvando, setSalvando] = React.useState(false)
   // 0.21.2: o banco recusou a gravação por leitura velha; salvar de novo daria a mesma recusa, então o Salvar espera o
   // Descartar (o rascunho fica para a pessoa ver)
@@ -243,6 +246,21 @@ export default function Empresas() {
       trilhasConhecidas: dados?.trilhasNaNuvem === true,
     }),
     [lista, estado.contas, estado.config, estado.computadores, dados?.trilhas, dados?.trilhasNaNuvem, agora, usados, classificar]
+  )
+  // 0.22.1: a checagem olha as contas e os computadores da última leitura completa (a tela só monta com ela, e uma
+  // leitura que falha não troca o estado por uma lista vazia); o Salvar repete a conta na hora do clique
+  const contextoChecagem = React.useCallback(
+    (momento: Date): ContextoChecagem => ({
+      contas: estado.contas,
+      estadoDe: (c) => estadoConta(c, estado.config, momento),
+      computadores: estado.computadores,
+      agora: momento,
+    }),
+    [estado.contas, estado.config, estado.computadores]
+  )
+  const avisosLigar = React.useMemo(
+    () => checarLigar(referencia, lista, contextoChecagem(agora)).avisos,
+    [referencia, lista, contextoChecagem, agora]
   )
 
   const leituraAtualizada = !!aguardando && !cadastro.carregando && !cadastro.erro && !!dados &&
@@ -293,6 +311,7 @@ export default function Empresas() {
 
   const editar = (fazer: (atual: UnidadeRascunho[]) => UnidadeRascunho[]) => {
     setErro(null)
+    setRecusas(null)
     setFoto((f) => f ?? { lista: base, revisao: dados?.revisao })
     setRascunho((r) => fazer(r ?? base))
   }
@@ -365,6 +384,7 @@ export default function Empresas() {
     setRascunho(null)
     setFoto(null)
     setErro(null)
+    setRecusas(null)
     setApagar(null)
     setTocados(new Set())
   }
@@ -372,9 +392,19 @@ export default function Empresas() {
     if (!pode) return
     const problema = validar(lista, alteradas(referencia, lista))
     setErro(problema)
+    setRecusas(null)
     if (problema) {
       const u = lista.find((x) => x.id === problema.id)
       setSelecionada(u?.pai ?? problema.id)
+      if (u?.pai) setAberto(u.id)
+      return
+    }
+    // 0.22.1: ligar um projeto que não teria como rodar não grava; a barra diz o motivo e a tela abre o projeto
+    const { recusas: novas } = checarLigar(referencia, lista, contextoChecagem(new Date()))
+    if (novas.length) {
+      setRecusas(novas)
+      const u = lista.find((x) => x.id === novas[0]!.unidade)
+      setSelecionada(u?.pai ?? novas[0]!.unidade)
       if (u?.pai) setAberto(u.id)
       return
     }
@@ -487,12 +517,20 @@ export default function Empresas() {
       : null
 
   const barraSalvar =
-    mudanca || erro ? (
+    mudanca || erro || recusas ? (
       <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <p className={cn("text-sm", (erro || recusado) && "text-erro")} role={erro || recusado ? "alert" : undefined}>
-            {erro ? textoErro(erro, t, dados?.secoes) : recusado ? t("erros.cadastro_mudou") : t("empresas.op.naoSalvas")}
-          </p>
+          {recusas ? (
+            <div role="alert" className="flex flex-col gap-0.5 text-sm text-erro">
+              {recusas.map((r, i) => (
+                <p key={i}>{textoRecusa(r, lista, estado.contas, t)}</p>
+              ))}
+            </div>
+          ) : (
+            <p className={cn("text-sm", (erro || recusado) && "text-erro")} role={erro || recusado ? "alert" : undefined}>
+              {erro ? textoErro(erro, t, dados?.secoes) : recusado ? t("erros.cadastro_mudou") : t("empresas.op.naoSalvas")}
+            </p>
+          )}
           {aviso && mudanca ? <p className="text-xs text-atencao">{t("empresas.agentes.avisoAoSalvar")}</p> : null}
         </div>
         <div className="ml-auto flex gap-1.5">
@@ -543,6 +581,7 @@ export default function Empresas() {
       {dados ? <Avisos dados={dados} /> : null}
       {dados ? <AvisoEmTodos lista={base} ativos={ativos} /> : null}
       {aviso ? <AvisoContasLivres aviso={aviso} /> : null}
+      {mudanca && avisosLigar.length ? <AvisoAoLigar avisos={avisosLigar} lista={lista} contas={estado.contas} /> : null}
 
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
@@ -727,6 +766,54 @@ function textoErro(erro: ErroCadastro, t: Traduzir, secoes: SecaoOpenBot[] = [])
   const pasta =
     erro.chave === "erroSecao" && erro.pasta ? caminhoDaSecao(erro.pasta, secoes, t("empresas.op.secaoSemNome")) : (erro.pasta ?? "")
   return t(`empresas.op.${erro.chave}`, { nome: erro.nome ?? "", pasta, dono: erro.dono ?? "" })
+}
+
+function nomeDaUnidade(id: string, lista: UnidadeRascunho[], t: Traduzir): string {
+  return lista.find((x) => x.id === id)?.nome.trim() || t("empresas.op.novoProjeto")
+}
+
+function nomeDaConta(id: string, contas: Conta[]): string {
+  return contas.find((c) => c.id === id)?.email ?? id.slice(0, 8)
+}
+
+/** 0.22.1: o motivo de o Salvar não ligar, com o nome do projeto, as contas e o computador. */
+function textoRecusa(r: RecusaLigar, lista: UnidadeRascunho[], contas: Conta[], t: Traduzir): string {
+  const nome = nomeDaUnidade(r.unidade, lista, t)
+  if (r.tipo === "computadorSemEspera") {
+    const versao = r.versao?.trim() || t("empresas.op.versaoDesconhecida")
+    return t("empresas.op.recusaComputador", { nome, computador: r.computador, versao })
+  }
+  const lidas = r.contas
+    .map((x) => {
+      const motivo = x.motivo === "sumiu" ? t("empresas.op.contaRemovida") : t(`estadoConta.${x.motivo}`)
+      return `${nomeDaConta(x.id, contas)} (${motivo})`
+    })
+    .join(", ")
+  return t("empresas.op.recusaSemConta", { nome, contas: lidas })
+}
+
+function textoAvisoLigar(a: AvisoLigar, lista: UnidadeRascunho[], contas: Conta[], t: Traduzir): string {
+  const nome = nomeDaUnidade(a.unidade, lista, t)
+  if (a.tipo === "esperam") return t("empresas.op.ligarEsperam", { nome })
+  return t("empresas.op.ligarTrocam", { nome, computador: a.computador, conta: nomeDaConta(a.contaId, contas) })
+}
+
+/** 0.22.1: o que muda para as conversas ao ligar, antes de salvar (sem ninguém rodar ensaio). */
+export function AvisoAoLigar({ avisos, lista, contas }: { avisos: AvisoLigar[]; lista: UnidadeRascunho[]; contas: Conta[] }) {
+  const { t } = useT()
+  return (
+    <Alert role="status">
+      <InfoIcon />
+      <AlertTitle>{t("empresas.op.ligarTitulo")}</AlertTitle>
+      <AlertDescription>
+        <ul className="list-disc pl-4">
+          {avisos.map((a, i) => (
+            <li key={i}>{textoAvisoLigar(a, lista, contas, t)}</li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  )
 }
 
 function rotuloModo(u: UnidadeRascunho, lista: UnidadeRascunho[], t: Traduzir): string {

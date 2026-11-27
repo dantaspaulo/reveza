@@ -88,6 +88,16 @@ export default secao({
         erroSecao: "A pasta do OpenBot \"{pasta}\" já está em {dono}",
         erroRegras: "{nome} aceita até 100 regras de pastas e agentes. Use uma regra por nome para agrupar agentes.",
         erroComputador: "Escolha ao menos um computador para {nome}",
+        recusaSemConta:
+          "Não dá para ligar {nome}: nenhuma conta dele pode rodar agora ({contas}). Entre de novo numa delas ou marque outra conta.",
+        recusaComputador:
+          "Não dá para ligar {nome}: {computador} está na versão {versao}, que ainda não espera uma conta voltar. Atualize esse computador em Computadores ou tire-o de \"Roda em\".",
+        versaoDesconhecida: "desconhecida",
+        contaRemovida: "removida do Reveza",
+        ligarTitulo: "O que muda ao ligar",
+        ligarTrocam: "Em {computador}, as conversas de {nome} saem de {conta} e passam para uma conta do projeto.",
+        ligarEsperam:
+          "Todas as contas de {nome} estão no limite ou perto dele agora: as conversas dele esperam uma conta voltar.",
         rodaEm: "Roda em",
         rodaEmDica: "Nos outros computadores, este projeto não aparece.",
         rodaEmDicaTodos:
@@ -451,6 +461,16 @@ export default secao({
         erroSecao: "The OpenBot folder \"{pasta}\" is already in {dono}",
         erroRegras: "{nome} accepts up to 100 folder and agent rules. Use a name rule to group agents.",
         erroComputador: "Choose at least one computer for {nome}",
+        recusaSemConta:
+          "Can't turn on {nome}: none of its accounts can run right now ({contas}). Sign in to one of them again or choose another account.",
+        recusaComputador:
+          "Can't turn on {nome}: {computador} is on version {versao}, which doesn't wait for an account to come back yet. Update that computer in Computers or remove it from \"Runs on\".",
+        versaoDesconhecida: "unknown",
+        contaRemovida: "removed from Reveza",
+        ligarTitulo: "What changes when you turn it on",
+        ligarTrocam: "On {computador}, {nome} conversations move from {conta} to an account of the project.",
+        ligarEsperam:
+          "Every account of {nome} is at or near its limit right now: its conversations wait for an account to come back.",
         rodaEm: "Runs on",
         rodaEmDica: "On other computers, this project doesn't show up.",
         rodaEmDicaTodos:
