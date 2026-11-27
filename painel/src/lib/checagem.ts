@@ -110,7 +110,10 @@ export function checarLigar(antes: UnidadeRascunho[], lista: UnidadeRascunho[], 
     // todos os computadores); a empresa que não veio na leitura não entra (não se sabe onde ela roda)
     const raiz = un.pai ? pai : un
     if (nova && raiz && Array.isArray(raiz.computadores) && !ondeRoda(un, lista, ctx.computadores).length) {
-      recusas.push({ tipo: "semComputador", unidade: un.id })
+      // como no computador atrasado: a empresa que liga junto já diz o motivo, e o projeto dela não repete
+      const chaveRaiz = `${raiz.id}|semComputador`
+      if (!recusados.has(chaveRaiz)) recusas.push({ tipo: "semComputador", unidade: un.id })
+      if (!un.pai) recusados.add(chaveRaiz)
       continue
     }
     const vistos = olhar.filter((p) => vistoHaPouco(p, ctx.agora))

@@ -526,6 +526,8 @@ export default function Empresas() {
               {recusas.map((r, i) => (
                 <p key={i}>{textoRecusa(r, lista, estado.contas, t)}</p>
               ))}
+              {/* a recusa não grava nada: diz isso junto, para ninguém achar que o resto foi salvo */}
+              <p className="text-xs text-muted-foreground">{t("empresas.op.naoSalvas")}</p>
             </div>
           ) : (
             <p className={cn("text-sm", (erro || recusado) && "text-erro")} role={erro || recusado ? "alert" : undefined}>

@@ -114,8 +114,25 @@ describe("Projetos: a checagem antes de ligar (0.22.1)", () => {
     const alerta = alertas()
     expect(alerta).toContain("Não dá para rodar Agência em Desktop")
     expect(alerta).toContain("0.20.2")
-    // diz em qual projeto fica o "Roda em" (o subprojeto não tem o seu)
-    expect(alerta).toContain("tire-o de \"Roda em\" em Agência")
+    // diz em qual projeto fica o "Roda em" (o subprojeto não tem o seu) e que nada foi gravado
+    expect(alerta).toContain("tire-o do \"Roda em\" de Agência")
+    expect(alerta).toContain("Alterações não salvas")
+  })
+
+  it("recusa ligar quando o \"Roda em\" só tem computadores removidos, e não grava", async () => {
+    const fonte = await montar((f) => {
+      const agencia = f.dados.empresas.empresas.find((e) => e.id === "empresa-agencia")
+      if (!agencia) throw new Error("Agência ausente")
+      agencia.emTodosComputadores = false
+      f.dados.empresas.computadores.push({ empresaId: "empresa-agencia", computadorId: "pc-removido" })
+    })
+    const salvar = vi.spyOn(fonte, "salvarUnidades")
+    await clicar(chave("Agência"))
+    await clicar(botao("Salvar"))
+    expect(salvar).not.toHaveBeenCalled()
+    const alerta = alertas()
+    expect(alerta).toContain("Não dá para ligar Agência: os computadores escolhidos no \"Roda em\" de Agência foram removidos")
+    expect(alerta).not.toContain("empresas.op.")
   })
 
   it("a recusa sai da tela quando a pessoa muda o rascunho", async () => {
@@ -133,10 +150,10 @@ describe("Projetos: a checagem antes de ligar (0.22.1)", () => {
     const fonte = await montar()
     const salvar = vi.spyOn(fonte, "salvarUnidades")
     // sem mudança, nada de relatório
-    expect(tela.textContent).not.toContain("O que muda ao salvar")
+    expect(tela.textContent).not.toContain("O que muda para as conversas ao salvar")
     await clicar(chave("Agência"))
     // o Desktop usa a conta pessoal, que não é da Agência; o Notebook já usa a de trabalho
-    expect(tela.textContent).toContain("O que muda ao salvar")
+    expect(tela.textContent).toContain("O que muda para as conversas ao salvar")
     expect(tela.textContent).toContain("Em Desktop, as conversas de Agência saem de pessoal@exemplo.com")
     expect(tela.textContent).not.toContain("Em Notebook, as conversas de Agência")
     await clicar(botao("Salvar"))

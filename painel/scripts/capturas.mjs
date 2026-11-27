@@ -144,7 +144,7 @@ const INTERACOES = [
     "/projetos",
     async (p) => {
       await p.getByRole("switch", { name: L("Ligar Agência", "Turn on Agency") }).first().click()
-      const titulo = p.getByText(L("O que muda ao salvar", "What changes when you save")).first()
+      const titulo = p.getByText(L("O que muda para as conversas ao salvar", "What changes for conversations when you save")).first()
       await titulo.waitFor()
       await titulo.scrollIntoViewIfNeeded()
     },

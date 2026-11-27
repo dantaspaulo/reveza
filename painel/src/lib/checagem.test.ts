@@ -270,6 +270,14 @@ describe("checarLigar: computador sem a espera da 0.21.0 recusa", () => {
     expect(checar(ligada, renomeada, [c("c1")], {}, pcs).recusas).toEqual([])
   })
 
+  it("Roda em só com removidos, empresa e projeto com conta própria ligando juntos: a recusa sai uma vez, na empresa", () => {
+    const p1 = u("p1", { pai: "alfa", modo: null, contas: ["c2"] })
+    const a = [u("alfa", { contas: ["c1"], computadores: ["pc-removido"] }), p1]
+    const l = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: ["pc-removido"] }), p1]
+    const pcs = [pc(MAC), pc("pc-removido", { revogado: true })]
+    expect(checar(a, l, [c("c1"), c("c2")], {}, pcs).recusas).toEqual([{ tipo: "semComputador", unidade: "alfa" }])
+  })
+
   it("projeto cuja empresa não veio na leitura: sem a recusa de computador (não se sabe onde roda)", () => {
     const l = [u("p1", { pai: "sumida", modo: "ligado", contas: ["c1"] })]
     expect(checar([u("p1", { pai: "sumida", contas: ["c1"] })], l, [c("c1")]).recusas).toEqual([])
