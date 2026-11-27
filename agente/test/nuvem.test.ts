@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { aadConta, aadRegistro, cifrarLogin, decifrarLogin } from "../src/cofre/cifra.js";
+import { SEM_NUVEM_TENTAR_S } from "../src/config.js";
 import { lerChave } from "../src/ligar.js";
 import { ativaEm, BancoFalso, blob, contaEstacionada, montar, NuvemFalsa, OpenBotFalso, type Montado } from "./falsos.js";
 
@@ -38,6 +39,38 @@ async function abrir(contaId: string) {
 }
 
 const fns = (fn: string) => banco.chamadas.filter((c) => c.fn === fn);
+
+describe("partida sem nuvem", () => {
+  test("a identidade lida depois (chaveiro que abriu) traz a nuvem, sem reiniciar o agente", async () => {
+    banco = new BancoFalso();
+    nuvem = new NuvemFalsa(banco, "pc-1");
+    let tentativas = 0;
+    m = await montar({ nuvem: null, abrirNuvem: async () => (++tentativas >= 2 ? nuvem : null) });
+    banco.agora = () => m.relogio.agora();
+    assert.equal(m.agente.comNuvem, false);
+    assert.equal(m.agente.posse, null);
+
+    // a partida já tentou: antes dos 5 minutos não insiste no chaveiro
+    await m.agente.ciclo();
+    assert.equal(tentativas, 0);
+    await m.relogio.avancar(SEM_NUVEM_TENTAR_S * 1000);
+    await m.agente.ciclo();
+    assert.equal(tentativas, 1);
+    assert.equal(m.agente.comNuvem, false);
+
+    // passados mais 5 minutos, a identidade aparece e o agente segue com a nuvem
+    await m.relogio.avancar(SEM_NUVEM_TENTAR_S * 1000);
+    await m.agente.ciclo();
+    assert.equal(tentativas, 2);
+    assert.equal(m.agente.comNuvem, true);
+    assert.ok(m.agente.posse);
+
+    // a busca seguinte já fala com a nuvem: é ela que traz a configuração de atualização
+    await m.agente.busca();
+    assert.equal(fns("registrar").length, 1);
+    assert.equal(fns("ola").length, 1);
+  });
+});
 
 describe("partida com nuvem", () => {
   test("registra o computador, a nuvem atribui a conta que já estava nele e o agente pega a posse de uso", async () => {

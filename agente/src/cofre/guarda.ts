@@ -116,7 +116,8 @@ export class GuardaSecretTool implements Guarda {
 
   async ler(nome: string): Promise<string | null> {
     conferirNome(nome);
-    const r = await this.exec.rodar(["secret-tool", "lookup", "servico", "reveza", "nome", nome]);
+    // com o chaveiro trancado o secret-tool pode ficar esperando o pedido de senha: não segura a partida nem a nova tentativa
+    const r = await this.exec.rodar(["secret-tool", "lookup", "servico", "reveza", "nome", nome], { timeoutMs: 5000 });
     return r.codigo === 0 && r.saida ? r.saida.replace(/\n$/, "") : null;
   }
 

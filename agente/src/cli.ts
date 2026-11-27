@@ -1115,7 +1115,9 @@ async function cmdRodar(amb: Ambiente, a: Args): Promise<number> {
   const sombra = a.flags.sombra === true;
   const porta = typeof a.flags.porta === "string" ? Number(a.flags.porta) : sombra ? PORTA_SOMBRA : PORTA_PADRAO;
   const p = await pecas(amb);
-  const nuvem = a.flags["sem-nuvem"] ? null : await nuvemDe(amb, p.guarda, true).catch((e) => {
+  // o chaveiro pode estar trancado na partida (o serviço sobe antes de a pessoa entrar): a identidade é tentada de novo
+  const abrirNuvem = () => nuvemDe(amb, p.guarda, true);
+  const nuvem = a.flags["sem-nuvem"] ? null : await abrirNuvem().catch((e) => {
     amb.erro(t(`nuvem indisponível agora (${(e as Error).message}); sigo sem ela`, `cloud unavailable right now (${(e as Error).message}); carrying on without it`));
     return null;
   });
@@ -1131,6 +1133,8 @@ async function cmdRodar(amb: Ambiente, a: Args): Promise<number> {
     log,
     guarda: p.guarda,
     nuvem,
+    // sem nuvem na partida, o agente lê a identidade de novo e volta sozinho quando o chaveiro abrir
+    abrirNuvem: a.flags["sem-nuvem"] ? undefined : abrirNuvem,
     sombra,
     porta,
     exec: amb.exec,

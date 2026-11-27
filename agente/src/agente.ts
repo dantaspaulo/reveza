@@ -15,7 +15,7 @@ import { ClaudeJson } from "./claudejson.js";
 import { tocarSom } from "./som.js";
 import { pedirConfirmacao } from "./confirmar.js";
 import type { Executor } from "./util/executor.js";
-import { CICLO_S, COMANDO_VALIDO_S, FATOR_LEITURA_SOMBRA, FILA_VALIDA_OPENBOT_S, FILA_VALIDA_S, OPENBOT_APOS_TROCA_S, OPENBOT_INTERVALO_S, LEITURA_VALIDA_S, LER_ATIVA_PERTO_S, LER_ATIVA_S, LER_ESTACIONADA_AVISO_S, LER_ESTACIONADA_S, MEDIDA_FRESCA_S, POSSE_S, VERSAO, VENCIDO_EM_S, type Caminhos, type Sistema } from "./config.js";
+import { CICLO_S, COMANDO_VALIDO_S, FATOR_LEITURA_SOMBRA, FILA_VALIDA_OPENBOT_S, FILA_VALIDA_S, OPENBOT_APOS_TROCA_S, OPENBOT_INTERVALO_S, LEITURA_VALIDA_S, LER_ATIVA_PERTO_S, LER_ATIVA_S, LER_ESTACIONADA_AVISO_S, LER_ESTACIONADA_S, MEDIDA_FRESCA_S, POSSE_S, SEM_NUVEM_TENTAR_S, VERSAO, VENCIDO_EM_S, type Caminhos, type Sistema } from "./config.js";
 import { expiraEm, hashToken, temRenovacao } from "./credenciais/blob.js";
 import { PRINCIPAL } from "./credenciais/tipos.js";
 import { CredenciaisSombra } from "./credenciais/sombra.js";
@@ -82,6 +82,11 @@ export interface Dependencias {
   log: Log;
   guarda: Guarda;
   nuvem: Nuvem | null;
+  /**
+   * Tenta a identidade de novo quando o agente subiu sem nuvem (o chaveiro do sistema ainda estava trancado, por
+   * exemplo): devolve a nuvem quando ela aparecer. Sem isto, o agente fica sem nuvem até reiniciar.
+   */
+  abrirNuvem?: () => Promise<Nuvem | null>;
   sombra: boolean;
   porta: number;
   sorteio?: (xs: string[]) => string;
@@ -201,6 +206,10 @@ export class Agente {
   private parado = false;
   private emCiclo = false;
   private emBusca = false;
+  /** A partida pediu os laços (os testes chamam `iniciar({ laços: false })`): a nuvem que chega depois também os liga. */
+  private lacosLigados = false;
+  /** Quando a identidade foi tentada de novo pela última vez (sem nuvem na partida). */
+  private semNuvemTentadoEm = 0;
   private emRegistro = false;
   private aviso: string | null = null;
   private semLivre: string | null = null;
@@ -343,50 +352,68 @@ export class Agente {
     });
     this.contador = new Contador(d.c.registro, d.c.projetos, (ts, sessao) => this.trocador.contaEm(ts, sessao), () => d.relogio.agora(), this.pastas);
     this.logins = new Logins(this.trocador, this.cred, d.cli, d.relogio, (login, id) => this.loginTerminou(login, id));
-    if (d.nuvem) {
-      this.posse = new PosseCofre(() => this.estado, this.trocador, this.cred, d.nuvem, () => this.chave, this.cj, d.relogio, d.log, () =>
-        this.salvar(),
-      );
-      this.posse.semEscrita = () => (this.chaveDaInstalacao === false ? "a chave do cofre deste computador não é a da instalação" : null);
-      // Uma conta parada subiu ao cofre com a posse curta: se o login dela vale aqui e a nuvem a tinha como "precisa
-      // entrar de novo", a marca sai agora, enquanto a posse dá direito a isso (fora dela, a nuvem recusava).
-      this.posse.aposDevolver = async (id) => {
+    this.prepararNuvem();
+  }
+
+  /** A posse e as trilhas só existem com nuvem; ela pode chegar depois de o agente ligar (o chaveiro abriu). */
+  private prepararNuvem(): void {
+    const nuvem = this.d.nuvem;
+    if (!nuvem || this.posse) return;
+    this.posse = new PosseCofre(() => this.estado, this.trocador, this.cred, nuvem, () => this.chave, this.cj, this.d.relogio, this.d.log, () =>
+      this.salvar(),
+    );
+    this.posse.semEscrita = () => (this.chaveDaInstalacao === false ? "a chave do cofre deste computador não é a da instalação" : null);
+    // Uma conta parada subiu ao cofre com a posse curta: se o login dela vale aqui e a nuvem a tinha como "precisa
+    // entrar de novo", a marca sai agora, enquanto a posse dá direito a isso (fora dela, a nuvem recusava).
+    this.posse.aposDevolver = async (id) => {
+      const c = this.estado.contas[id];
+      if (!c || c.precisaLogin || this.loginInformado.get(id) === false) return;
+      if (!this.loginProvado(c, this.d.relogio.agora())) return;
+      await this.informarLogin(c);
+    };
+    this.trilhas = new Trilhas({
+      estado: () => this.estado,
+      trocador: this.trocador,
+      posse: () => this.posse,
+      cred: this.cred,
+      cj: this.cj,
+      nuvem: () => this.d.nuvem ?? null,
+      pastaTrilhas: this.d.c.trilhas,
+      claudeJson: this.d.c.claudeJson,
+      relogio: this.d.relogio,
+      log: this.d.log,
+      salvar: () => this.salvar(),
+      sombra: this.d.sombra,
+      pastaDe: (cwd) => this.pastas.de(cwd),
+      agentes: () => this.agentesNaNuvem(),
+      agentesFalhou: () => this.agentesFalhou,
+      barraIncertaHa: () => {
+        const ms = this.d.openbot?.barraFalhaHaMs?.();
+        return typeof ms === "number" ? ms / 1000 : null;
+      },
+      vivo: processoVivo,
+      inicioDoProcesso,
+      renovar: async (pasta) => void (await this.d.cli.renovar(pasta, 0)),
+      aoTrocar: (empresa) => this.retomarHeadless(undefined, false, empresa),
+      atribuida: () => this.ultimaAtribuicao?.conta_id ?? null,
+      loginMorto: async (id) => {
         const c = this.estado.contas[id];
-        if (!c || c.precisaLogin || this.loginInformado.get(id) === false) return;
-        if (!this.loginProvado(c, this.d.relogio.agora())) return;
-        await this.informarLogin(c);
-      };
-      this.trilhas = new Trilhas({
-        estado: () => this.estado,
-        trocador: this.trocador,
-        posse: () => this.posse,
-        cred: this.cred,
-        cj: this.cj,
-        nuvem: () => this.d.nuvem ?? null,
-        pastaTrilhas: d.c.trilhas,
-        claudeJson: d.c.claudeJson,
-        relogio: d.relogio,
-        log: d.log,
-        salvar: () => this.salvar(),
-        sombra: d.sombra,
-        pastaDe: (cwd) => this.pastas.de(cwd),
-        agentes: () => this.agentesNaNuvem(),
-        agentesFalhou: () => this.agentesFalhou,
-        barraIncertaHa: () => {
-          const ms = this.d.openbot?.barraFalhaHaMs?.();
-          return typeof ms === "number" ? ms / 1000 : null;
-        },
-        vivo: processoVivo,
-        inicioDoProcesso,
-        renovar: async (pasta) => void (await this.d.cli.renovar(pasta, 0)),
-        aoTrocar: (empresa) => this.retomarHeadless(undefined, false, empresa),
-        atribuida: () => this.ultimaAtribuicao?.conta_id ?? null,
-        loginMorto: async (id) => {
-          const c = this.estado.contas[id];
-          if (c) await this.informarLogin(c);
-        },
-      });
-    }
+        if (c) await this.informarLogin(c);
+      },
+    });
+  }
+
+  /**
+   * A nuvem que não estava na partida chegou (o chaveiro do sistema abriu): monta a posse e as trilhas, liga a busca e
+   * diz no log. Sem isto o agente ficava "sem nuvem" até reiniciar, e sem nuvem não recebe a configuração de atualização
+   * nem confere versão nova.
+   */
+  private adotarNuvem(nuvem: Nuvem): void {
+    if (this.d.nuvem) return;
+    this.d.nuvem = nuvem;
+    this.prepararNuvem();
+    this.d.log.info("nuvem: a identidade deste computador foi lida agora; sigo com a nuvem");
+    if (this.lacosLigados) this.laco(() => this.busca(), () => Math.max(2, Math.min(60, this.estado.config.intervaloS || 5)) * 1000);
   }
 
   /** Os agentes do OpenBot com a pasta como a nuvem guarda (a mesma lista enquanto a leitura não muda). */
@@ -526,10 +553,14 @@ export class Agente {
   async iniciar(opcoes: { laços?: boolean; ponte?: boolean } = {}): Promise<void> {
     fs.mkdirSync(this.d.c.contas, { recursive: true, mode: 0o700 });
     this.iniciadoEm = this.d.relogio.agora();
+    this.lacosLigados = opcoes.laços !== false;
+    // a partida já tentou a identidade (o cmdRodar): a próxima tentativa é daqui a 5 min, não no primeiro ciclo
+    if (!this.d.nuvem) this.semNuvemTentadoEm = this.iniciadoEm;
     const k = await this.d.guarda.ler(SEGREDO_COFRE).catch(() => null);
     this.chave = k ? Buffer.from(k, "base64") : null;
     if (this.chave && this.chave.length !== 32) this.chave = null;
-    this.d.log.info(`agente ${VERSAO} ${this.d.sombra ? "em modo sombra " : ""}${this.comNuvem ? "com nuvem" : "sem nuvem"}`);
+    const semNuvem = this.lacosLigados && this.d.abrirNuvem ? `sem nuvem; leio a identidade de novo a cada ${Math.round(SEM_NUVEM_TENTAR_S / 60)} min` : "sem nuvem";
+    this.d.log.info(`agente ${VERSAO} ${this.d.sombra ? "em modo sombra " : ""}${this.comNuvem ? "com nuvem" : semNuvem}`);
     this.avisarRecuperacao();
     if (opcoes.ponte !== false) await this.abrirPonte();
     this.aplicarResumo();
@@ -649,10 +680,24 @@ export class Agente {
     }
   }
 
+  /**
+   * Sem nuvem na partida, a identidade pode chegar depois (o chaveiro do sistema foi destrancado, ou o `reveza ligar`
+   * rodou em outro processo): tenta de novo de 5 em 5 minutos, sem segurar o ciclo quando o chaveiro não responde.
+   */
+  private async tentarNuvemDeNovo(): Promise<void> {
+    if (this.d.nuvem || !this.d.abrirNuvem) return;
+    const t = this.d.relogio.agora();
+    if (t - this.semNuvemTentadoEm < SEM_NUVEM_TENTAR_S) return;
+    this.semNuvemTentadoEm = t;
+    const nuvem = await this.d.abrirNuvem().catch(() => null);
+    if (nuvem) this.adotarNuvem(nuvem);
+  }
+
   async ciclo(): Promise<void> {
     if (this.emCiclo) return;
     this.emCiclo = true;
     try {
+      await this.tentarNuvemDeNovo();
       this.conferirLoginDoWindows(this.d.relogio.agora());
       const pendentes = await this.trocador.geral.com(async () => {
         const t = this.d.relogio.agora();

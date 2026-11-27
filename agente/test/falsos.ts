@@ -822,6 +822,8 @@ export interface Montado {
 export async function montar(
   opcoes: {
     nuvem?: Nuvem | null;
+    /** A identidade tentada de novo quando o agente sobe sem nuvem (o teste diz quando ela aparece). */
+    abrirNuvem?: () => Promise<Nuvem | null>;
     sombra?: boolean;
     chave?: Buffer | null;
     cred?: CredenciaisFalsas;
@@ -861,6 +863,7 @@ export async function montar(
     log,
     guarda,
     nuvem: opcoes.nuvem ?? null,
+    abrirNuvem: opcoes.abrirNuvem,
     sombra: !!opcoes.sombra,
     porta: 0,
     sorteio: (xs) => xs[xs.length - 1]!,

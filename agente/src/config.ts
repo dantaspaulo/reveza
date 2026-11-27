@@ -72,6 +72,8 @@ export function caminhos(home = os.homedir(), env: NodeJS.ProcessEnv = process.e
 // Tempos (segundos), herdados do roteador que já roda.
 export const CICLO_S = 15;
 export const BUSCA_S = 5;
+/** Sem nuvem na partida (chaveiro do sistema trancado), a identidade é lida de novo a cada 5 min: o agente volta sozinho. */
+export const SEM_NUVEM_TENTAR_S = 300;
 export const LER_ATIVA_S = 60;
 /** Sessão na fila há mais que isso não é retomada sozinha (a do terminal também tem prazo, como a interativa). */
 export const FILA_VALIDA_S = 2 * 3600;
