@@ -23,7 +23,10 @@ export interface UnidadeRascunho {
   modo: ModoUnidade | null
   contas: string[]
   pastas: PastaRascunho[]
-  /** As regras por título de agente: aparecem como etiqueta junto da pasta e podem ser removidas. */
+  /**
+   * As regras de agente: por título ("titulo") e, desde a 0.22.0, pela pasta da barra do OpenBot ("secao", o padrão é o
+   * id exato da pasta). Aparecem como etiqueta junto da pasta e podem ser removidas.
+   */
   titulos: { tipo: RegraPasta["tipo"]; padrao: string; computador: string | null }[]
   /** 0.20.1. null: roda em todos; lista: só nesses; undefined: nuvem antiga ou subprojeto (segue o projeto). */
   computadores?: string[] | null
@@ -72,7 +75,7 @@ export function rascunhoDe(
         .filter((r) => r.tipo === "pasta")
         .map((r) => ({ computador: r.computadorId ?? null, padrao: r.padrao })),
       titulos: regras
-        .filter((r) => r.tipo === "titulo")
+        .filter((r) => r.tipo === "titulo" || r.tipo === "secao")
         .map((r) => ({ tipo: r.tipo, padrao: r.padrao, computador: r.computadorId ?? null })),
       computadores:
         !d.computadoresNaNuvem || e.pai
@@ -316,7 +319,8 @@ function textosValidos(u: UnidadeRascunho): UnidadeRascunho["titulos"] {
   const r: UnidadeRascunho["titulos"] = []
   for (const t of u.titulos) {
     const padrao = t.padrao.trim()
-    const chave = `${t.tipo}|${t.computador ?? ""}|${normalizarPasta(padrao)}`
+    // 0.22.0: o id da pasta do OpenBot é exato (como na nuvem); maiúscula diferente é outra pasta
+    const chave = `${t.tipo}|${t.computador ?? ""}|${t.tipo === "secao" ? padrao : normalizarPasta(padrao)}`
     if (!padrao || vistos.has(chave)) continue
     vistos.add(chave)
     r.push({ tipo: t.tipo, padrao, computador: t.computador })
@@ -336,7 +340,7 @@ function assinatura(u: UnidadeRascunho): string {
     pastasValidas(u)
       .map((p) => `${p.computador ?? ""}|${p.padrao}`)
       .sort(),
-    u.titulos.map((r) => `${r.computador ?? ""}|${r.padrao}`).sort(),
+    u.titulos.map((r) => `${r.tipo}|${r.computador ?? ""}|${r.padrao}`).sort(),
     chaveComputadores(u),
   ])
 }
@@ -350,6 +354,14 @@ export function alteradas(base: UnidadeRascunho[], lista: UnidadeRascunho[]): Un
 const colidem = (a: PastaRascunho, b: PastaRascunho) =>
   normalizarPasta(a.padrao) === normalizarPasta(b.padrao) &&
   (a.computador === null || b.computador === null || a.computador === b.computador)
+
+type Texto = UnidadeRascunho["titulos"][number]
+/** A mesma regra de agente: o texto não liga para maiúsculas; o id da pasta do OpenBot (0.22.0) é exato. */
+const mesmoTexto = (a: Texto, b: Texto) =>
+  a.tipo === b.tipo &&
+  (a.tipo === "secao" ? a.padrao.trim() === b.padrao.trim() : normalizarPasta(a.padrao) === normalizarPasta(b.padrao))
+const textosColidem = (a: Texto, b: Texto) =>
+  mesmoTexto(a, b) && (a.computador === null || b.computador === null || a.computador === b.computador)
 
 /**
  * Confere só o que mudou (e os projetos da empresa que mudou): um cadastro antigo com problema não impede de salvar
@@ -373,7 +385,7 @@ export function validar(lista: UnidadeRascunho[], mudou: UnidadeRascunho[] = lis
     }
     // 0.21.1: a nuvem recusa o mesmo texto em dois projetos que se cruzam num computador ("a pasta X já é de Y")
     for (const p of textosValidos(u)) {
-      const dono = lista.find((x) => x.id !== u.id && textosValidos(x).some((q) => q.tipo === p.tipo && colidem(p, q)))
+      const dono = lista.find((x) => x.id !== u.id && textosValidos(x).some((q) => textosColidem(p, q)))
       if (dono) return { id: u.id, chave: "erroTexto", pasta: p.padrao, dono: dono.nome.trim() }
     }
   }
@@ -416,13 +428,12 @@ export function planoDeGravar(base: UnidadeRascunho[], lista: UnidadeRascunho[])
     const titulosAgora = textosValidos(u)
     const fica = (p: PastaRascunho) =>
       agora.some((q) => q.computador === p.computador && normalizarPasta(q.padrao) === normalizarPasta(p.padrao))
-    const ficaTitulo = (p: UnidadeRascunho["titulos"][number]) =>
-      titulosAgora.some((q) => q.tipo === p.tipo && q.computador === p.computador && normalizarPasta(q.padrao) === normalizarPasta(p.padrao))
+    const ficaTitulo = (p: Texto) => titulosAgora.some((q) => q.computador === p.computador && mesmoTexto(q, p))
     const sai = antes.pastas.filter((p) => !fica(p))
     const saiTitulo = textosValidos(antes).filter((p) => !ficaTitulo(p))
     const outroQuer =
       sai.some((p) => lista.some((x) => x.id !== u.id && pastasValidas(x).some((q) => colidem(p, q)))) ||
-      saiTitulo.some((p) => lista.some((x) => x.id !== u.id && textosValidos(x).some((q) => q.tipo === p.tipo && colidem(p, q))))
+      saiTitulo.some((p) => lista.some((x) => x.id !== u.id && textosValidos(x).some((q) => textosColidem(p, q))))
     if (outroQuer)
       passos.push({
         id: u.id,

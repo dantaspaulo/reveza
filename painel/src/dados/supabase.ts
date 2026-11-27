@@ -52,6 +52,7 @@ import type {
   PontoHistorico,
   RegistroAuditoria,
   RegraPasta,
+  SecaoOpenBot,
   SessaoAberta,
   SessaoUso,
   TrocaUso,
@@ -810,18 +811,21 @@ export class FonteSupabase implements Fonte {
     // 0.21.2: a revisão ANTES das tabelas. Assim ela nunca é mais nova que o que a tela mostra: se o cadastro mudar entre
     // as duas leituras, a gravação seguinte é recusada pelo banco (seguro), em vez de gravar por cima
     const revisao = await this.revisaoDoCadastro()
-    const [e, m, r, a, t, s, c] = await Promise.all([
+    const [e, m, r, a, t, s, c, x] = await Promise.all([
       // "*": a coluna separar só existe desde a 0038 (0.18.0) e pai, modo e herdar_transbordo desde a 0040 (0.19.0);
       // com a nuvem de antes elas faltam e valem como antes
       sb.from("empresas").select("*").order("nome"),
       sb.from("conta_empresas").select("conta_id,empresa_id"),
       // "*": computador_id só existe desde a 0043 (0.20.0)
       sb.from("pastas_empresa").select("*").order("padrao"),
-      sb.from("agentes_openbot").select("computador_id,pasta,nome,titulo,visto_em").order("pasta").limit(5000),
+      // "*": secoes (as pastas da barra do OpenBot) só existe desde a 0049 (0.22.0)
+      sb.from("agentes_openbot").select("*").order("pasta").limit(5000),
       sb.from("atribuicao_trilhas").select("computador_id,empresa_id,conta_id,motivo,decidido_em,pedida_em"),
       sb.from("trilhas_sombra").select("computador_id,empresa_id,conta_id,em_uso,motivo,sessoes,trocas,decidido_em,visto_em"),
       // só existe desde a 0045 (0.20.1)
       sb.from("empresa_computadores").select("empresa_id,computador_id"),
+      // só existe desde a 0049 (0.22.0)
+      sb.from("secoes_openbot").select("computador_id,id,nome,pai,visto_em").order("id").limit(5000),
     ])
     const semTabela = (x: { code?: string; message: string }) =>
       x.code === "42P01" || x.code === "PGRST205" || /does not exist|could not find the table/i.test(x.message)
@@ -833,6 +837,10 @@ export class FonteSupabase implements Fonte {
     const computadoresNaNuvem = !c.error
     // falha passageira não vira "nuvem antiga": mostraria todos os projetos em todos os computadores
     if (c.error && !semTabela(c.error)) erro(c.error)
+    // nuvem de antes da 0049: sem as pastas do OpenBot, a escolha some da tela; falha passageira não vira "nuvem antiga"
+    // (mostraria toda regra de pasta do OpenBot como uma pasta que sumiu)
+    const secoesNaNuvem = !x.error
+    if (x.error && !semTabela(x.error)) erro(x.error)
     for (const x of [e, m, r, a]) {
       if (!x.error) continue
       // nuvem de antes da 0036: a tela pede para atualizar a nuvem
@@ -857,7 +865,8 @@ export class FonteSupabase implements Fonte {
       marcas: (m.data ?? []).map((l) => ({ contaId: String(l.conta_id), empresaId: String(l.empresa_id) })),
       regras: (r.data ?? []).map((l): RegraPasta => ({
         id: String(l.id),
-        tipo: l.tipo === "titulo" ? "titulo" : "pasta",
+        // 0.22.0: "secao" não pode virar regra de nome de pasta (o painel a gravaria de volta como pasta)
+        tipo: l.tipo === "titulo" || l.tipo === "secao" ? l.tipo : "pasta",
         padrao: String(l.padrao),
         empresaId: String(l.empresa_id),
         computadorId: l.computador_id ? String(l.computador_id) : null,
@@ -868,6 +877,7 @@ export class FonteSupabase implements Fonte {
         nome: String(l.nome ?? ""),
         titulo: String(l.titulo ?? ""),
         vistoEm: String(l.visto_em),
+        secoes: Array.isArray(l.secoes) ? l.secoes.map(String) : [],
       })),
       trilhasNaNuvem,
       trilhas: (t.data ?? []).map((l) => ({
@@ -896,6 +906,16 @@ export class FonteSupabase implements Fonte {
         computadorId: String(l.computador_id),
       })),
       ...(revisao ? { revisao } : {}),
+      secoesNaNuvem,
+      secoes: (x.data ?? []).map(
+        (l): SecaoOpenBot => ({
+          computadorId: String(l.computador_id),
+          id: String(l.id),
+          nome: String(l.nome ?? ""),
+          pai: l.pai ? String(l.pai) : null,
+          vistoEm: String(l.visto_em),
+        })
+      ),
     }
   }
 

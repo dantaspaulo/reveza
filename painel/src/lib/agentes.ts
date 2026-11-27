@@ -114,11 +114,21 @@ function regraQuePega(u: UnidadeRascunho, agente: AgenteOpenBot, computador: str
   }
   if (caminho) return caminho.padrao
   if (nome) return nome
+  // 0.22.0: a pasta do OpenBot (id exato, só no computador dela) vem antes do texto; a mais funda da cadeia ganha
+  const cadeia = agente.secoes ?? []
+  let secao: { padrao: string; fundo: number } | null = null
+  for (const r of u.titulos) {
+    const padrao = r.padrao.trim()
+    if (r.tipo !== "secao" || !padrao || r.computador !== computador) continue
+    const fundo = cadeia.indexOf(padrao) + 1
+    if (fundo > (secao?.fundo ?? 0)) secao = { padrao, fundo }
+  }
+  if (secao) return secao.padrao
   const nomeAg = agente.nome.toLowerCase()
   const tituloAg = agente.titulo.toLowerCase()
   const texto = u.titulos
     .map((r) => ({ r, t: r.padrao.trim().toLowerCase() }))
-    .filter(({ r, t }) => t && vale(r.computador) && (nomeAg.includes(t) || tituloAg.includes(t)))
+    .filter(({ r, t }) => r.tipo === "titulo" && t && vale(r.computador) && (nomeAg.includes(t) || tituloAg.includes(t)))
     .sort((a, b) => b.t.length - a.t.length)[0]
   return texto ? texto.r.padrao.trim() : null
 }

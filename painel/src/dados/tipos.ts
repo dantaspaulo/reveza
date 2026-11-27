@@ -509,11 +509,13 @@ export interface MarcaConta {
 
 /**
  * Regra que liga pastas a uma empresa. "pasta": com ~/ ou / no começo, a pasta e tudo dentro dela; sem, qualquer pasta
- * com esse nome no caminho. "titulo": a pasta de um agente do OpenBot cujo título ou nome tem esse texto.
+ * com esse nome no caminho. "titulo": a pasta de um agente do OpenBot cujo título ou nome tem esse texto. "secao"
+ * (0.22.0): os agentes de uma pasta da barra do OpenBot (e das subpastas dela); o padrão é o id exato da pasta, e a
+ * regra vale só no computador dela.
  */
 export interface RegraPasta {
   id: string
-  tipo: "pasta" | "titulo"
+  tipo: "pasta" | "titulo" | "secao"
   padrao: string
   empresaId: string
   /** 0.20.0: a regra vale só neste computador; null ou ausente, em todos. */
@@ -526,6 +528,18 @@ export interface AgenteOpenBot {
   pasta: string
   nome: string
   titulo: string
+  vistoEm: string
+  /** 0.22.0: as pastas da barra do OpenBot em que ele está, da raiz até a dele (ids); vazia ou ausente, nenhuma. */
+  secoes?: string[]
+}
+
+/** 0.22.0: uma pasta da barra do OpenBot de um computador (tabela secoes_openbot). O id só vale naquele computador. */
+export interface SecaoOpenBot {
+  computadorId: string
+  id: string
+  nome: string
+  /** A pasta de cima; null na raiz. */
+  pai: string | null
   vistoEm: string
 }
 
@@ -551,6 +565,10 @@ export interface DadosEmpresas {
    * se o cadastro mudou desde então. Falta com a nuvem antes da 0.21.2: aí a gravação segue como antes.
    */
   revisao?: string
+  /** 0.22.0: a nuvem já guarda as pastas da barra do OpenBot (a 0049 está lá). Sem ela, a escolha some da tela. */
+  secoesNaNuvem?: boolean
+  /** 0.22.0: as pastas da barra do OpenBot de cada computador; vazio com a nuvem antes da 0.22.0. */
+  secoes?: SecaoOpenBot[]
 }
 
 /** 0.20.1: um computador em que o projeto roda (tabela empresa_computadores). */

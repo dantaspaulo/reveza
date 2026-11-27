@@ -4,6 +4,8 @@
 //   - "pasta" sem barra no começo: qualquer pasta com esse nome no caminho (a mais funda ganha);
 //   - "titulo": a pasta de um agente do OpenBot cujo título ou nome tem esse texto. Ganha de uma pasta mais larga que
 //     a do agente, e perde para uma regra da própria pasta dele.
+//   - "secao" (0.22.0): a pasta de um agente que está numa pasta da barra do OpenBot (ou numa subpasta dela), só no
+//     computador da regra. Fica entre o nome de pasta e o título; a pasta mais funda da barra ganha.
 // Linha de antes da 0.17.0 (sem pasta): só a regra de nome, comparada com o nome curto do projeto.
 // Tudo aqui roda no navegador, na hora de ler: mudar uma regra muda também o passado.
 
@@ -110,16 +112,31 @@ export function criarClassificador(
     .filter((r) => r.texto)
     // o texto mais comprido é o mais específico
     .sort((a, b) => b.texto.length - a.texto.length)
-  const agentes = new Map<string, Map<string, { nome: string; titulo: string }>>()
-  const agentesSemComputador = new Map<string, { nome: string; titulo: string }>()
+  // 0.22.0: o padrão é o id exato da pasta do OpenBot (sem minúsculas, como na nuvem e no agente); o id é do OpenBot de
+  // um computador, então a regra sem computador não vale
+  const secoes = regras
+    .filter((r) => r.tipo === "secao" && r.padrao && r.computadorId)
+    .map((r) => ({ id: r.padrao, empresa: r.empresaId, pc: r.computadorId ?? null }))
+  type InfoAgente = { nome: string; titulo: string; secoes: string[] }
+  const agentes = new Map<string, Map<string, InfoAgente>>()
+  const agentesSemComputador = new Map<string, InfoAgente>()
   for (const a of dados.agentes) {
     const p = normalizarPasta(a.pasta)
     if (!p) continue
-    const info = { nome: a.nome.toLowerCase(), titulo: a.titulo.toLowerCase() }
-    const doComputador = agentes.get(a.computadorId) ?? new Map()
-    if (!doComputador.has(p)) doComputador.set(p, info)
+    const cadeia = a.secoes ?? []
+    const doComputador = agentes.get(a.computadorId) ?? new Map<string, InfoAgente>()
+    const antes = doComputador.get(p)
+    if (!antes) doComputador.set(p, { nome: a.nome.toLowerCase(), titulo: a.titulo.toLowerCase(), secoes: cadeia })
+    else {
+      // agentes na mesma pasta de trabalho do mesmo computador: a conversa é de todos, vale a parte comum do começo das
+      // cadeias (como rvz_secoes_comuns na nuvem e o classificador do agente)
+      let i = 0
+      while (i < antes.secoes.length && i < cadeia.length && antes.secoes[i] === cadeia[i]) i++
+      antes.secoes = antes.secoes.slice(0, i)
+    }
     agentes.set(a.computadorId, doComputador)
-    if (!agentesSemComputador.has(p)) agentesSemComputador.set(p, info)
+    // sem computador conhecido, a regra de pasta do OpenBot nunca vale: a cadeia não importa
+    if (!agentesSemComputador.has(p)) agentesSemComputador.set(p, { nome: a.nome.toLowerCase(), titulo: a.titulo.toLowerCase(), secoes: [] })
   }
   const dentro = (p: string, base: string) => p === base || (base === "/" ? p.startsWith("/") : p.startsWith(base + "/"))
 
@@ -146,12 +163,26 @@ export function criarClassificador(
           break
         }
       }
-      if (titulos.length) {
+      if (titulos.length || secoes.length) {
         const agentesAqui = computador === undefined ? agentesSemComputador : agentes.get(computador)
         let pastaAgente: string | null = null
         for (const a of agentesAqui?.keys() ?? []) if (dentro(p, a) && (!pastaAgente || a.length > pastaAgente.length)) pastaAgente = a
         if (pastaAgente && agentesAqui) {
           const ag = agentesAqui.get(pastaAgente)!
+          // pasta do OpenBot (0.22.0): entre o nome de pasta e o título; a mais funda da cadeia ganha
+          if (ag.secoes.length) {
+            let fundo = 0
+            let empresa: string | null = null
+            for (const x of secoes) {
+              if (!vale(x)) continue
+              const i = ag.secoes.indexOf(x.id) + 1
+              if (i > fundo) {
+                fundo = i
+                empresa = x.empresa
+              }
+            }
+            if (empresa) propor(pastaAgente.length - 0.49 + 0.01 * Math.min(fundo, 9), empresa)
+          }
           const r = titulos.find((x) => vale(x) && (ag.titulo.includes(x.texto) || ag.nome.includes(x.texto)))
           if (r) propor(pastaAgente.length - 0.5, r.empresa)
         }
