@@ -82,6 +82,11 @@ teste, o CHANGELOG ou a release.
   computador no "Roda em" de um projeto ligado, passa por ela; onde o projeto roda segue `rvz_roda_em` (escolha só
   com computadores removidos não roda em lugar nenhum), não o `rodaNoComputador` da tela; o aviso de espera vale só
   com todas as contas que rodam esgotadas, porque a nuvem escolhe conta abaixo de 100%.
+- **momento calmo e saídas de conta** (0.22.2): `motivoSemCalma` em `agente/src/agente.ts` e a lista de saída em
+  `agente/src/posse.ts`. Nenhuma conta segura a calma para sempre: a cópia sem login renovável sai da lista sem ir ao
+  cofre, a saída presa deixa de segurar em `SAIDA_SEGURA_CALMA_S`; a posse curta (`com`) e a saída da mesma conta não
+  correm juntas; leitura do chaveiro que falha não mexe em nada; a lista no estado (`saidasPendentes`) volta na partida;
+  o evento `calma` não leva e-mail nem login.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

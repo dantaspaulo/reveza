@@ -694,6 +694,17 @@ a dele, pelo instalador da própria versão nova, num processo separado, com a c
   andamento nem sessão no limite) e um por vez (`atualizacao_vez`, 0018 e 0020); se um volta para a anterior, os
   outros param e sai um alerta. O agente da 0.2.1 conta no diagnóstico que entende o "assim que sair"
   (`assimQueSair`); os de antes só vão sozinhos de madrugada, e o painel deixa o Atualizar todos para eles.
+- **O momento calmo** (0.22.2, `motivoSemCalma` em `agente/src/agente.ts`): a atualização sozinha, a publicação e a
+  conferência do assistente só andam quando ele é nulo. Os motivos, na ordem: conta saindo de uso ainda não devolvida
+  ao cofre (lista de saída de `posse.ts`), troca esperando memória livre, sessão esperando conta na fila, conta em uso
+  no limite, troca há menos de 5 min e o ciclo das contas ocupado. Uma conta da lista segura a calma só nos primeiros
+  30 min (`SAIDA_SEGURA_CALMA_S`); depois segue tentando sair a cada 5 min sem segurar nada. A cópia sem login
+  renovável (renovação recusada, login esvaziado) não tem o que devolver: a saída solta a posse e tira a conta da lista
+  sem ir ao cofre. A lista fica também no estado (`saidasPendentes`) e volta na partida. Episódio sem calma acima de
+  10 min vai ao registro com o motivo; o diagnóstico leva `calma: { motivo, desde }`; a atualização sozinha esperando
+  6 h somadas (lacunas acima de 5 min entre passagens não contam) gera um evento `calma: "sem_calma"`, uma vez por
+  espera. O Atualizar do painel não passa por esse portão. Antes da 0.22.2, a conta parada com o login esvaziado
+  ficava na lista para sempre, e os computadores paravam de se atualizar sozinhos sem dizer por quê.
 - **Trava de compatibilidade**: uma versão nova pode trazer migração da nuvem. Antes de rodar o instalador, o agente
   compara as migrações do pacote baixado (`nuvem/migracoes`) com as que a nuvem já aplicou (`agente_migracoes()`: os
   nomes e, desde a 0.3.1, o resumo sha256 de cada uma em `reveza_migracoes`; o computador não lê a tabela). Falta a que

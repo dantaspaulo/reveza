@@ -7,6 +7,38 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.22.2 · 27/11/2026
+
+Correção no agente: uma conta parada que perdeu o login não segura mais a atualização do computador. Nada muda na
+nuvem, no painel nem nas trocas de conta.
+
+### O que muda
+
+- **Conta sem login renovável sai da lista de saída.** Quando a renovação de uma conta parada é recusada, o login dela
+  fica vazio no computador. O agente tentava devolver esse login ao cofre a cada busca, a devolução era recusada em
+  silêncio e a conta ficava para sempre na lista de saída. Com ela lá, o computador nunca achava um momento calmo: a
+  atualização sozinha, a publicação e a conferência do assistente paravam sem aviso. Agora o agente vê que não há login
+  renovável para devolver, anota isso no registro uma vez, solta a conta e a tira da lista. O cofre segue com a cópia
+  dele.
+- **Saída presa segura a calma só por 30 minutos.** Uma conta que outro computador está usando continua tentando sair
+  a cada 5 minutos, como antes, mas deixa de segurar a atualização depois de 30 minutos.
+- **A lista de saída sobrevive a um reinício.** As contas que estavam saindo quando o agente parou voltam à lista na
+  partida, e o agente pede a posse de verdade para devolvê-las.
+- **O agente diz por que espera.** Um momento sem calma que passa de 10 minutos vai ao registro com o motivo (conta
+  saindo de uso, troca esperando memória, sessão na fila, conta em uso no limite, troca recente ou agente ocupado), e a
+  volta também. O diagnóstico leva o motivo (`calma`).
+- **Aviso na nuvem.** A atualização sozinha que espera um momento calmo por 6 horas somadas gera um evento do
+  computador, com o motivo, uma vez por espera.
+
+### Para quem já está preso
+
+O computador na 0.21.2 ou anterior que parou de se atualizar sozinho por esse defeito só chega a esta versão pelo
+Atualizar do painel (Computadores), porque a trava antiga ainda o segura.
+
+### Fica para depois
+
+- O painel ainda não mostra o motivo da espera nem o evento da calma.
+
 ## 0.22.1 · 27/11/2026
 
 Melhoria só no painel, para quem separa as contas por projeto: ligar um projeto passa por uma checagem automática, no
