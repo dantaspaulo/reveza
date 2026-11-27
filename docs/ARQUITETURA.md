@@ -402,6 +402,45 @@ enquanto outro computador, ligado e parado, segurava uma conta com folga. A 0047
   se o agente do doador não conseguir instalar a conta do meio, a posse da conta antiga vence em 2 min (a busca só
   renova a da atribuída): o mesmo risco da troca que falha em qualquer computador, anotado para uma versão do agente.
 
+## 6g. Projeto pelas pastas da barra do OpenBot (0.22.0)
+
+O OpenBot organiza os agentes em pastas na barra lateral, com subpastas. A regra `secao` põe num projeto as conversas
+dos agentes de uma pasta e das de dentro, num computador. Regra central: nenhuma conversa muda de projeto sem que alguém
+tenha escolhido uma pasta do OpenBot, e uma leitura da barra que falha nunca tira um agente do projeto em que estava.
+
+- **Leitura (agente, só macOS, só leitura):** `openbot-sidebar-layout-v1.json`, ao lado do `openbot.db` (`sections` com
+  id, nome e pai; `agentAssignments` com a pasta de cada agente). Para cada agente, a cadeia de ids da raiz até a pasta
+  dele (até 10 níveis), mandada em `agente_relatar_agentes` (`secoes`); a lista das pastas vai por
+  `agente_relatar_secoes`, para o painel mostrar o nome. Agentes na mesma pasta de trabalho ficam com a parte comum das
+  cadeias, porque a conversa é de todos eles.
+- **Nuvem (0049 só acrescenta; 0050 só funções):** `agentes_openbot.secoes` (vazia por padrão), `secoes_openbot` (RLS,
+  leitura para membro, escrita só pela função, só no computador autenticado) e o tipo `secao` em `pastas_empresa`
+  (padrão = id da pasta; exige computador, porque o id é do OpenBot daquele computador). `secoes` null no relato (a
+  barra não foi lida agora) mantém a cadeia que estava. `rvz_classificar`, `agente_empresas` e `painel_unidade`
+  conhecem o tipo, com portão de versão: computador antes da 0.22.0 não recebe a regra e a nuvem não a aplica a ele.
+- **Precedência (igual em `trilhas.ts`, na nuvem e no painel):** para a pasta de trabalho do agente que contém a
+  conversa (comprimento L), caminho exato ou mais fundo (L ou mais) > nome de pasta (L menos 0,25) > pasta do OpenBot
+  (L menos 0,49, mais 0,01 por nível, até 9; a mais funda ganha) > título (L menos 0,5) > caminho de uma pasta acima.
+  Sem agente que contenha a conversa, a regra não vale. Sem regra `secao`, o resultado é o de antes (tabela comum
+  `casos-pasta-openbot.json`).
+- **Barra sem leitura (`OpenBotLocal`):** a última barra boa fica em `~/.reveza/openbot-barra.json` (0600, gravada só
+  quando muda; estragada vale como ausente), e o agente começa por ela ao ligar. Barra ilegível agora: só os agentes
+  fora da última leitura boa ficam sem pastas (null). Arquivo ausente com pastas na última boa: ela vale, "velha", sem
+  prazo (o `reveza doctor` avisa); sem pastas guardadas, barra vazia na hora. Relógio único `barraFalhaHaMs` (desde a
+  primeira leitura ruim depois da boa, ou desde ligar). Nova leitura em 30 s só nos primeiros 10 min de falha.
+- **Conversa incerta (`criarClassificadorComIncerto`):** um agente que contém a conversa está sem pastas conhecidas,
+  nenhuma regra mais forte que a pasta do OpenBot decide, e o resultado é um projeto estrito ou alguma regra `secao` é
+  de projeto estrito. A conversa espera enquanto o relógio está abaixo de
+  `BARRA_ESPERA_S` (180 s); depois abre pelas outras regras, com o evento de aviso uma vez por hora. A retomada depois do
+  limite espera do mesmo jeito.
+- **Painel:** no editor, por computador, a lista das pastas com o caminho e os agentes de cada uma (`lib/secoes.ts`,
+  `PastasOpenBot`), só para o computador onde o projeto roda, na 0.22.0 ou mais nova e com a nuvem na 0049; a pasta que
+  está em outro projeto no mesmo computador aparece desabilitada; a regra cuja pasta sumiu aparece marcada, para tirar.
+- **Limites conhecidos:** a espera pode segurar até 3 min uma conversa cujo projeto não mudaria com a pasta; o OpenBot
+  pode passar a gravar a barra em outro arquivo, e o Reveza leria a antiga como boa; agente cuja pasta de trabalho é a
+  pasta pessoal contém toda sessão no classificador; a lista dos agentes que falha desde ligar não fica guardada. Fora do
+  macOS, nada muda.
+
 ## 7. Nuvem: tabelas (todas com RLS ligado)
 
 | Tabela | Quem lê | Quem escreve |
@@ -418,9 +457,10 @@ enquanto outro computador, ligado e parado, segurava uma conta com folga. A 0047
 | `sessoes(id, computador_id, projeto, pasta, inicio, fim, agentes, usd, contas)` | membro | computador |
 | `empresas(id, nome, cor, transbordo, transbordo_contas, separar, pai, modo, herdar_transbordo)` (0.17.0; `separar` na 0.18.0; projeto, modo e transbordo herdado na 0.19.0) | membro | admin, pela função |
 | `conta_empresas(conta_id, empresa_id)` as empresas que cada conta atende; sem linha, a conta atende todas | membro | admin, pela função |
-| `pastas_empresa(id, tipo, padrao, empresa_id)` tipo `pasta` (caminho ou nome) ou `titulo` (agente do OpenBot) | membro | admin, pela função |
+| `pastas_empresa(id, tipo, padrao, empresa_id)` tipo `pasta` (caminho ou nome), `titulo` (agente do OpenBot) ou `secao` (pasta da barra do OpenBot, sempre com computador; 0.22.0) | membro | admin, pela função |
 | `empresa_computadores(empresa_id, computador_id)` (0.20.1) os computadores do projeto com `empresas.em_todos_computadores` falso | membro | admin, pela função |
-| `agentes_openbot(computador_id, pasta, nome, titulo, visto_em)` | membro | computador, pela função |
+| `agentes_openbot(computador_id, pasta, nome, titulo, secoes, visto_em)` (`secoes` na 0.22.0: a cadeia de pastas da barra, da raiz até a do agente) | membro | computador, pela função |
+| `secoes_openbot(computador_id, id, nome, pai, visto_em)` (0.22.0) as pastas da barra do OpenBot de cada computador | membro | computador, só por `agente_relatar_secoes` |
 | `atribuicao_trilhas(computador_id, empresa_id, conta_id, motivo, versao, decidido_em, pedida_em)` (0.18.0) | membro | só as funções das trilhas |
 | `trilhas_sombra(computador_id, empresa_id, conta_id, em_uso, motivo, sessoes, trocas, versao, decidido_em, visto_em)` (0.19.0) | membro | só `rvz_rodar_sombra` |
 | `eventos(em, tipo, texto, dados)` | membro | funções e computador |

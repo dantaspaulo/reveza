@@ -71,6 +71,13 @@ teste, o CHANGELOG ou a release.
   nunca é doador, e o evento `limite` com motivo `sem_modelo` não faz pedir; o doador parado não troca pela regra nem
   gera o aviso de 90% até pedir conta. Filtro novo na `rvz_candidatas` precisa ir também à
   `rvz_serve_principal`, e motivo novo de troca entra no `traduzirMotivo` e no `motivoEmIngles`.
+- **pastas da barra do OpenBot** (0.22.0): a 0049 e a 0050, `agente/src/openbot.ts` (`OpenBotLocal`),
+  `criarClassificadorComIncerto` em `agente/src/trilhas.ts`, `painel/src/lib/secoes.ts` e `PastasOpenBot`. Os três
+  classificadores (agente, nuvem e painel) dão o mesmo resultado na tabela comum `casos-pasta-openbot.json`, e sem
+  regra `secao` dão o de antes. Leitura que falha nunca tira pasta: `secoes` null mantém a cadeia na nuvem; não saber é
+  por agente, nunca de todos; a espera tem um relógio só e prazo (`BARRA_ESPERA_S`), também na retomada; a barra boa
+  guardada em disco não é apagada por um arquivo ausente. A regra `secao` sempre leva computador e respeita o portão de
+  versão nos dois lados.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

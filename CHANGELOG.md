@@ -7,6 +7,47 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.22.0 · 27/11/2026
+
+Recurso novo para quem separa as contas por projeto e usa o OpenBot no Mac: o projeto pode pegar os agentes de uma
+pasta da barra lateral do OpenBot, com as subpastas dela. Mudam o agente, a nuvem e o painel. Quem não escolher
+nenhuma pasta do OpenBot num projeto não vê mudança no que cada conversa recebe.
+
+### O que muda em Projetos
+
+- **Escolher uma pasta do OpenBot.** No editor do projeto e do subprojeto, em cada computador, a lista das pastas da
+  barra lateral do OpenBot daquele computador, com o caminho (pasta e subpasta) e quantos agentes caem em cada uma.
+  Escolher uma pasta põe no projeto as conversas dos agentes dela e das subpastas, só naquele computador. Agente que
+  muda de pasta no OpenBot segue a pasta nova sem mexer no projeto.
+- **Uma pasta, um projeto.** A pasta que já está em outro projeto no mesmo computador aparece na lista com o nome dele
+  e não pode ser escolhida de novo.
+- **Pasta que sumiu.** Se a pasta for apagada no OpenBot, a regra continua no projeto, marcada como pasta que sumiu,
+  para você tirar.
+- **Quando a lista aparece.** Só para o computador onde o projeto roda e que já está na 0.22.0. Computador ainda em
+  versão anterior mostra o aviso de que precisa atualizar, e a nuvem não aplica a regra a ele até ele subir.
+
+### Qual regra vale
+
+Regras mais específicas continuam na frente: a pasta de trabalho do agente (exata ou mais funda) e o nome da pasta vêm
+antes da pasta do OpenBot; a pasta do OpenBot vem antes do texto do título e da pasta de trabalho de um nível acima.
+Entre uma pasta e a subpasta dela, vale a subpasta. O agente, a nuvem e o painel seguem a mesma ordem.
+
+### Quando a barra do OpenBot não pode ser lida
+
+- **Nenhuma leitura que falha tira um agente do projeto.** A nuvem guarda as pastas que estavam; o agente guarda a
+  última leitura boa no disco (`~/.reveza/openbot-barra.json`) e, ao ligar de novo, já sabe as pastas.
+- **A dúvida vale só para quem ela atinge.** Se a barra não pode ser lida agora, só o agente cuja pasta o Reveza não
+  conhece fica em dúvida. A conversa dele espera no máximo 3 minutos por uma leitura boa e depois abre pelas outras
+  regras do projeto, com um aviso no painel no máximo uma vez por hora. A retomada depois do limite espera do mesmo
+  jeito.
+- **O `reveza doctor`** avisa quando o arquivo da barra sumiu e o Reveza segue com as pastas guardadas.
+
+### Fica para depois
+
+- Criar projetos a partir das pastas do OpenBot de uma vez.
+- Ler a barra do OpenBot fora do macOS.
+- Os itens que a 0.21.0 deixou para depois.
+
 ## 0.21.2 · 26/11/2026
 
 Melhoria no painel para quem separa as contas por projeto: escolher os agentes do OpenBot de cada computador num
