@@ -113,12 +113,19 @@ describe("checarLigar: nenhuma conta que rode recusa", () => {
     ])
   })
 
-  it("todas esgotadas ou perto do limite: não recusa, avisa que as conversas esperam", () => {
+  it("uma esgotada e uma só perto do limite: a conversa abre na de perto (a nuvem escolhe abaixo de 100%), sem aviso", () => {
     const antes = [u("alfa", { contas: ["c1", "c2"] })]
     const lista = [u("alfa", { modo: "ligado", contas: ["c1", "c2"] })]
-    const r = checar(antes, lista, [c("c1"), c("c2")], { c1: "esgotada", c2: "aviso" })
-    expect(r.recusas).toEqual([])
-    expect(r.avisos).toEqual([{ tipo: "esperam", unidade: "alfa" }])
+    expect(checar(antes, lista, [c("c1"), c("c2")], { c1: "esgotada", c2: "aviso" })).toEqual({ recusas: [], avisos: [] })
+  })
+
+  it("as que rodam esgotadas e uma sem login: não recusa, avisa que as conversas esperam", () => {
+    const antes = [u("alfa", { contas: ["c1", "c2"] })]
+    const lista = [u("alfa", { modo: "ligado", contas: ["c1", "c2"] })]
+    expect(checar(antes, lista, [c("c1"), c("c2")], { c1: "esgotada", c2: "precisa_login" })).toEqual({
+      recusas: [],
+      avisos: [{ tipo: "esperam", unidade: "alfa" }],
+    })
   })
 
   it("só esgotadas: não recusa (voltam sozinhas), avisa que as conversas esperam", () => {
@@ -176,6 +183,13 @@ describe("checarLigar: projetos dentro da empresa", () => {
       { tipo: "semContaQueRode", unidade: "novo-2", contas: [{ id: "c1", motivo: "precisa_login" }] },
     ])
     expect(checar(antes, lista, [c("c1")]).recusas).toEqual([])
+  })
+
+  it("projeto cuja empresa não veio na leitura: a recusa de conta vale mesmo assim", () => {
+    const lista = [u("p1", { pai: "sumida", modo: "ligado", contas: ["c1"] })]
+    expect(checar([u("p1", { pai: "sumida", contas: ["c1"] })], lista, [c("c1")], { c1: "precisa_login" }).recusas).toEqual([
+      { tipo: "semContaQueRode", unidade: "p1", contas: [{ id: "c1", motivo: "precisa_login" }] },
+    ])
   })
 
   it("projeto que liga sozinho, empresa desligada, sem conta própria: usa as contas da empresa", () => {
@@ -239,6 +253,38 @@ describe("checarLigar: computador sem a espera da 0.21.0 recusa", () => {
     ])
   })
 
+  it("Roda em só com computadores removidos: não roda em lugar nenhum (como a nuvem), sem recusa nem troca", () => {
+    const a = [u("alfa", { contas: ["c1"], computadores: ["pc-removido"] })]
+    const l = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: ["pc-removido"] })]
+    const pcs = [pc(MAC, { versao: "0.20.2", atribuicao: usa("c2") }), pc("pc-removido", { revogado: true, versao: "0.19.0" })]
+    expect(checar(a, l, [c("c1"), c("c2")], {}, pcs)).toEqual({ recusas: [], avisos: [] })
+  })
+
+  it("empresa já ligada que ganha no Roda em um computador atrasado: recusa só por ele, sem olhar as contas", () => {
+    const a = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC] })]
+    const l = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC, VPS] })]
+    const pcs = [pc(MAC, { versao: "0.20.2" }), pc(VPS, { versao: "0.20.2" })]
+    expect(checar(a, l, [c("c1")], { c1: "precisa_login" }, pcs).recusas).toEqual([
+      { tipo: "computadorSemEspera", unidade: "alfa", computador: "VPS", versao: "0.20.2" },
+    ])
+  })
+
+  it("empresa já ligada que passa a rodar em todos: o computador atrasado que entra recusa", () => {
+    const a = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC] })]
+    const l = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: null })]
+    expect(checar(a, l, [c("c1")], {}, [pc(MAC), pc(VPS, { versao: "0.20.2" })]).recusas).toEqual([
+      { tipo: "computadorSemEspera", unidade: "alfa", computador: "VPS", versao: "0.20.2" },
+    ])
+  })
+
+  it("projeto já ligado numa empresa já ligada que ganha um computador atrasado: sai uma vez só, na empresa", () => {
+    const a = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC] }), u("p1", { pai: "alfa", modo: null, contas: ["c2"] })]
+    const l = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC, VPS] }), u("p1", { pai: "alfa", modo: null, contas: ["c2"] })]
+    expect(checar(a, l, [c("c1"), c("c2")], {}, [pc(MAC), pc(VPS, { versao: "0.20.2" })]).recusas).toEqual([
+      { tipo: "computadorSemEspera", unidade: "alfa", computador: "VPS", versao: "0.20.2" },
+    ])
+  })
+
   it("duas recusas na mesma unidade saem as duas, conta antes de computador", () => {
     const r = checar(antes, lista, [c("c1")], { c1: "saindo" }, [pc(VPS, { versao: "0.20.0" }), pc(MAC, { versao: "0.19.0" })])
     expect(r.recusas.map((x) => x.tipo === "computadorSemEspera" ? x.computador : x.tipo)).toEqual([
@@ -265,6 +311,20 @@ describe("checarLigar: o relatório de quem troca de conta", () => {
     expect(checar(antes, lista, [c("c1"), c("c2")], {}, pcs).avisos).toEqual([])
     const so = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC] })]
     expect(checar([u("alfa", { contas: ["c1"], computadores: [MAC] })], so, [c("c1"), c("c2")], {}, [pc(MAC), pc(VPS, { atribuicao: usa("c2") })]).avisos).toEqual([])
+  })
+
+  it("computador parado há mais de um dia ou nunca visto: fora do relatório (lá não roda conversa)", () => {
+    const pcs = [pc(MAC, { atribuicao: usa("c2"), vistoEm: tresDias }), pc(VPS, { atribuicao: usa("c2"), vistoEm: null })]
+    expect(checar(antes, lista, [c("c1"), c("c2")], {}, pcs).avisos).toEqual([])
+  })
+
+  it("empresa já ligada que ganha um computador: a troca aparece só nele", () => {
+    const a = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC] })]
+    const l = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC, VPS] })]
+    const pcs = [pc(MAC, { atribuicao: usa("c2") }), pc(VPS, { atribuicao: usa("c2") })]
+    expect(checar(a, l, [c("c1"), c("c2")], {}, pcs).avisos).toEqual([
+      { tipo: "trocam", unidade: "alfa", computador: "VPS", contaId: "c2" },
+    ])
   })
 
   it("com recusa de conta, não promete troca nem espera", () => {

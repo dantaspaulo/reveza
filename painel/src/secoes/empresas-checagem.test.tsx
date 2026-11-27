@@ -99,6 +99,8 @@ describe("Projetos: a checagem antes de ligar (0.22.1)", () => {
     expect(alerta).toContain("trabalho@exemplo.com")
     expect(alerta).toContain("laboratorio@exemplo.com")
     expect(alerta).toContain("Precisa entrar de novo")
+    // cada conta com o motivo depois de dois-pontos, sem parêntese dentro do parêntese
+    expect(alerta).toContain("(laboratorio@exemplo.com: Precisa entrar de novo; trabalho@exemplo.com: Precisa entrar de novo)")
   })
 
   it("recusa ligar quando um computador visto há pouco onde ele roda está abaixo da 0.21.0", async () => {
@@ -113,6 +115,8 @@ describe("Projetos: a checagem antes de ligar (0.22.1)", () => {
     expect(alerta).toContain("Não dá para ligar Agência")
     expect(alerta).toContain("Desktop")
     expect(alerta).toContain("0.20.2")
+    // diz em qual projeto fica o "Roda em" (o subprojeto não tem o seu)
+    expect(alerta).toContain("tire-o de \"Roda em\" em Agência")
   })
 
   it("a recusa sai da tela quando a pessoa muda o rascunho", async () => {
@@ -148,6 +152,6 @@ describe("Projetos: a checagem antes de ligar (0.22.1)", () => {
       c.janelas = [{ tipo: "five_hour", pct: 100, resetEm: new Date(Date.now() + 3 * 3600_000).toISOString() }]
     })
     await clicar(chave("Agência"))
-    expect(tela.textContent).toContain("Todas as contas de Agência estão no limite ou perto dele agora")
+    expect(tela.textContent).toContain("Todas as contas de Agência que podem rodar agora estão no limite")
   })
 })

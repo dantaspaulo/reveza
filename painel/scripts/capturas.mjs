@@ -139,6 +139,33 @@ const INTERACOES = [
     },
   ],
   [
+    // 0.22.1: ligar a Agência mostra, antes de salvar, o computador que troca de conta
+    "i-projetos-ligar-o-que-muda",
+    "/projetos",
+    async (p) => {
+      await p.getByRole("switch", { name: L("Ligar Agência", "Turn on Agency") }).first().click()
+      const titulo = p.getByText(L("O que muda ao ligar", "What changes when you turn it on")).first()
+      await titulo.waitFor()
+      await titulo.scrollIntoViewIfNeeded()
+    },
+  ],
+  [
+    // 0.22.1: sem a conta de trabalho, a Agência fica só com a do laboratório (sem login na demonstração): o Salvar
+    // recusa, não grava e diz o motivo. Falha se a recusa não aparecer.
+    "i-projetos-ligar-recusado",
+    "/projetos",
+    async (p) => {
+      await p.getByRole("switch", { name: L("Ligar Agência", "Turn on Agency") }).first().click()
+      const trabalho = p.getByRole("checkbox", { name: L("trabalho@exemplo.com", "work@example.com"), exact: true }).first()
+      await trabalho.scrollIntoViewIfNeeded()
+      await trabalho.click()
+      await p.getByRole("button", { name: L("Salvar", "Save"), exact: true }).first().click()
+      const recusa = p.getByText(L("Não dá para ligar Agência", "Can't turn on Agency"), { exact: false }).first()
+      await recusa.waitFor()
+      await recusa.scrollIntoViewIfNeeded()
+    },
+  ],
+  [
     "i-contas-editar",
     "/contas",
     async (p) => {

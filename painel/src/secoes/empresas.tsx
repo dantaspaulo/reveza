@@ -487,7 +487,8 @@ export default function Empresas() {
       }
       return
     }
-    setRascunho((r) => r && r.filter((x) => x.id !== u.id && x.pai !== u.id))
+    // pelo editar: a recusa e o erro do rascunho de antes saem junto com o projeto novo
+    editar((r) => r.filter((x) => x.id !== u.id && x.pai !== u.id))
     setApagar(null)
     if (aberto === u.id) setAberto(null)
   }
@@ -769,7 +770,8 @@ function textoErro(erro: ErroCadastro, t: Traduzir, secoes: SecaoOpenBot[] = [])
 }
 
 function nomeDaUnidade(id: string, lista: UnidadeRascunho[], t: Traduzir): string {
-  return lista.find((x) => x.id === id)?.nome.trim() || t("empresas.op.novoProjeto")
+  const u = lista.find((x) => x.id === id)
+  return u?.nome.trim() || t(u?.pai ? "empresas.op.novoProjeto" : "empresas.op.novaEmpresa")
 }
 
 function nomeDaConta(id: string, contas: Conta[]): string {
@@ -781,14 +783,18 @@ function textoRecusa(r: RecusaLigar, lista: UnidadeRascunho[], contas: Conta[], 
   const nome = nomeDaUnidade(r.unidade, lista, t)
   if (r.tipo === "computadorSemEspera") {
     const versao = r.versao?.trim() || t("empresas.op.versaoDesconhecida")
-    return t("empresas.op.recusaComputador", { nome, computador: r.computador, versao })
+    // o "Roda em" é o da empresa: o subprojeto não tem o seu
+    const pai = lista.find((x) => x.id === r.unidade)?.pai
+    const empresa = pai ? nomeDaUnidade(pai, lista, t) : nome
+    return t("empresas.op.recusaComputador", { nome, computador: r.computador, versao, empresa })
   }
   const lidas = r.contas
     .map((x) => {
       const motivo = x.motivo === "sumiu" ? t("empresas.op.contaRemovida") : t(`estadoConta.${x.motivo}`)
-      return `${nomeDaConta(x.id, contas)} (${motivo})`
+      // "conta: motivo", sem parêntese dentro do parêntese do texto da recusa
+      return `${nomeDaConta(x.id, contas)}: ${motivo}`
     })
-    .join(", ")
+    .join("; ")
   return t("empresas.op.recusaSemConta", { nome, contas: lidas })
 }
 
