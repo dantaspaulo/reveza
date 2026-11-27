@@ -856,6 +856,105 @@ describe("atualizar sozinho assim que sair", () => {
     assert.equal(a.exec.iniciados.length, 1, "calmo: segue");
   });
 
+  test("sem calma, o agente diz o motivo: na pergunta, no registro (uma vez, depois de 10 min) e no diagnóstico", async () => {
+    const banco = bancoCom("desligada");
+    const a = await computador(banco, "pc-1");
+    const ag = a.m.agente;
+    assert.equal(ag.motivoSemCalma(), null);
+    assert.equal(ag.infoCalma(), null);
+    ag.estado.trocadaEm = TARDE_SP - 60;
+    assert.match(ag.motivoSemCalma() ?? "", /troca de conta há menos de 5 min/);
+    ag.estado.trocadaEm = 0;
+    ag.estado.fila.unshift({ sessao: "s1", cwd: "/x", tipo: "interativa", em: TARDE_SP - 30, estado: "aguardando", conta: null });
+    assert.match(ag.motivoSemCalma() ?? "", /sessão esperando conta na fila/);
+    ag.estado.fila = [];
+    ag.posse!.soltarDepois.set("qualquer", TARDE_SP + 20); // a troca de agora: a conta de antes volta ao cofre em 20 s
+    assert.equal(ag.motivoSemCalma(), "1 conta saindo de uso ainda não devolvida ao cofre");
+    ag.posse!.soltarDepois.clear();
+    ag.estado.saidasPendentes = {};
+    ag.estado.trocadaEm = TARDE_SP - 60;
+    await ag.busca();
+    const calma = ag.infoCalma();
+    assert.ok(calma, "o diagnóstico leva o motivo");
+    assert.equal(calma.motivo, "troca de conta há menos de 5 min");
+    assert.equal(calma.desde, new Date(TARDE_SP * 1000).toISOString());
+    const linhas = () => a.m.log.linhas.filter((l) => /sem momento calmo/.test(l));
+    await a.m.relogio.avancar(15_000);
+    await ag.busca();
+    assert.equal(linhas().length, 0, "episódio curto não vai ao registro");
+    ag.estado.trocadaEm = TARDE_SP + 590; // outra troca: o episódio segue sem parar
+    await a.m.relogio.avancar(601_000);
+    await ag.busca();
+    assert.equal(linhas().length, 1, "passou de 10 min: uma linha");
+    assert.match(linhas()[0]!, /troca de conta há menos de 5 min/);
+    await a.m.relogio.avancar(15_000);
+    await ag.busca();
+    assert.equal(linhas().length, 1, "não repete na busca seguinte");
+    ag.estado.trocadaEm = 0;
+    await a.m.relogio.avancar(15_000);
+    await ag.busca();
+    assert.ok(a.m.log.linhas.some((l) => /momento calmo de volta depois de 10 min/.test(l)));
+    assert.equal(ag.infoCalma(), null);
+  });
+
+  test("6 h sem calma com versão nova: um evento na nuvem com o motivo, uma vez por versão; desligada, nenhum", async () => {
+    // a chave é "calma", e não "atualizacao": o evento não entra no andamento da atualização que o painel acompanha
+    const semCalma = (banco: BancoFalso) => banco.eventos.filter((e) => (e.dados as { calma?: string }).calma === "sem_calma");
+    for (const valor of ["assim_que_sair", "desligada"]) {
+      const banco = bancoCom(valor);
+      const a = await computador(banco, "pc-1");
+      const ag = a.m.agente;
+      // trocas seguidas, sem parar: nunca um momento calmo (uma busca a cada 4 min)
+      const ate = async (min: number) => {
+        for (let feito = 0; feito < min; feito += 4) {
+          ag.estado.trocadaEm = a.m.relogio.agora() - 60;
+          await ag.busca();
+          await a.m.relogio.avancar(240_000);
+        }
+      };
+      await ate(5 * 60);
+      assert.equal(semCalma(banco).length, 0, `${valor}: 5 h, ainda não`);
+      await ate(64);
+      const ev = semCalma(banco);
+      if (valor === "desligada") {
+        assert.equal(ev.length, 0, "desligada: nenhum evento");
+        continue;
+      }
+      assert.equal(ev.length, 1, "uma vez");
+      assert.equal(doTipo(banco, "sem_calma").length, 0, "fora do andamento da atualização");
+      assert.equal((ev[0]!.dados as { para?: string }).para, NOVA);
+      assert.match(ev[0]!.texto, new RegExp(`${NOVA.replace(/\./g, "\\.")}.*6 h.*troca de conta há menos de 5 min`));
+      assert.equal(a.exec.iniciados.length, 0, "e não atualizou no meio das trocas");
+    }
+  });
+
+  test("de madrugada, o aviso de 6 h soma as janelas das noites seguidas sem calma (a lacuna do dia não conta)", async () => {
+    const banco = bancoCom("madrugada");
+    banco.agora = () => Date.UTC(2026, 9, 13, 6, 0) / 1000;
+    const relogio = new RelogioFalso();
+    relogio.t = Date.UTC(2026, 9, 13, 6, 0) / 1000; // 03:00 em São Paulo
+    const exec = new ExecutorFalso();
+    const mm = await montar({ nuvem: new NuvemFalsa(banco, "pc-1"), exec, versoes: new VersoesFalsas(), relogio });
+    montados.push(mm);
+    await mm.agente.conferirVersaoNova();
+    banco.config = { ...banco.config, fuso: "America/Sao_Paulo" };
+    const semCalma = () => banco.eventos.filter((e) => (e.dados as { calma?: string }).calma === "sem_calma");
+    const noite = async () => {
+      for (let min = 0; min < 116; min += 4) {
+        mm.agente.estado.trocadaEm = mm.relogio.agora() - 60;
+        await mm.agente.busca();
+        await mm.relogio.avancar(240_000);
+      }
+      await mm.relogio.avancar((24 * 60 - 116) * 60_000); // o dia: a próxima noite, às 03:00
+    };
+    for (let n = 1; n <= 3; n++) await noite();
+    assert.equal(semCalma().length, 0, "3 noites de quase 2 h: ainda não chegou a 6 h somadas");
+    await noite();
+    assert.equal(semCalma().length, 1, "na 4ª noite passa de 6 h somadas: um evento");
+    assert.match(semCalma()[0]!.texto, /há 6 h: troca de conta há menos de 5 min/);
+    assert.equal(exec.iniciados.length, 0);
+  });
+
   test("um computador por vez: o segundo só começa quando o primeiro voltou na versão nova", async () => {
     const banco = bancoCom("assim_que_sair");
     const a = await computador(banco, "pc-1");

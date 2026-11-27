@@ -956,7 +956,7 @@ export class Trilhas {
       const x = daNuvem.get(t.empresa);
       if (t.conta && !x) {
         const saiu = await this.d.trocador.liberarTrilha(t, "nenhuma sessão dela há 10 minutos, ou a nuvem tirou a conta");
-        if (saiu) posse.soltarDepois.set(saiu, this.agora() + 20);
+        if (saiu) posse.marcarParaSair(saiu, this.agora() + 20);
       }
     }
     for (const x of r.trilhas) {
@@ -1035,7 +1035,7 @@ export class Trilhas {
     this.falhas.delete(chave);
     t.versaoNuvem = x.versao;
     // a que saiu volta ao cofre depois da conferência da troca (5 s, até 3 refeitas)
-    if (res.de && res.de !== id) posse.soltarDepois.set(res.de, this.agora() + 20);
+    if (res.de && res.de !== id) posse.marcarParaSair(res.de, this.agora() + 20);
     this.subidas.set(t.empresa, { hash: hashToken(await this.d.cred.ler(t.pasta).catch(() => null)), em: this.agora() });
     this.d.salvar();
     this.d.aoTrocar(t.empresa);

@@ -25,6 +25,12 @@ import { POSSE_CURTA_S, POSSE_S } from "./config.js";
 
 /** Conta que saiu de uso e o cofre ainda não aceitou (outro computador está com ela): de quanto em quanto tentar. */
 export const SAIDA_DE_NOVO_S = 300;
+/**
+ * Conta presa na saída há mais que isto deixa de segurar o momento calmo (atualização, publicação, conferência do
+ * assistente). Ela segue na lista, tentando; no reinício, o login dela fica na pasta e a próxima posse sobe a cópia mais
+ * nova. Antes, uma saída presa segurava a atualização para sempre (27/11/2026).
+ */
+export const SAIDA_SEGURA_CALMA_S = 1800;
 
 export function nivelDoTier(tier: string | null | undefined): string | null {
   const m = /(\d+x)\b/i.exec(tier ?? "");
@@ -84,6 +90,12 @@ export class PosseCofre {
   private recusaAvisada = new Set<string>();
   /** Contas que saíram de uso e o cofre ainda não aceitou porque outro computador está com elas (avisadas no log). */
   private saidaPresaAvisada = new Set<string>();
+  /** Contas cuja cópia daqui saiu de uso sem login renovável (avisadas no log uma vez; sai quando uma devolução dá certo). */
+  private semLoginAvisada = new Set<string>();
+  /** Contas cuja saída deu erro (avisadas no log uma vez; sai quando a conta sai da lista). */
+  private erroSaidaAvisado = new Set<string>();
+  /** Posses curtas (`com`) rodando agora, por conta. */
+  private emCom = new Map<string, number>();
 
   constructor(
     private estado: () => EstadoLocal,
@@ -104,8 +116,102 @@ export class PosseCofre {
   /** A conta saiu deste computador (removida pelo painel): nada dela fica para devolver ou soltar. */
   esquecer(id: string): void {
     this.posses.delete(id);
-    this.soltarDepois.delete(id);
+    this.tirarDaSaida(id);
+    this.semLoginAvisada.delete(id);
     this.versaoServidor.delete(id);
+  }
+
+  /**
+   * Quando cada conta da lista de saída foi vista pela primeira vez. Fica no estado, e não só na memória, para a lista
+   * se refazer depois de um reinício (`retomarSaidas`).
+   */
+  private get saidas(): Record<string, number> {
+    const e = this.estado();
+    return (e.saidasPendentes ??= {});
+  }
+
+  private marcarSaida(id: string, t: number): boolean {
+    const s = this.saidas;
+    if (s[id] !== undefined) return false;
+    s[id] = t;
+    return true;
+  }
+
+  /**
+   * A conta saiu de uso agora (troca, trilha, posse curta que não devolveu): entra na lista a partir de `quando`, com o
+   * horário de entrada de agora (uma saída nova segura a calma, mesmo de uma conta que já estava na lista) gravado no
+   * estado na hora, para sobreviver a uma queda antes da busca seguinte.
+   */
+  marcarParaSair(id: string, quando = this.relogio.agora(), { novaSaida = true }: { novaSaida?: boolean } = {}): void {
+    this.soltarDepois.set(id, quando);
+    // a posse curta que não devolveu (de 5 em 5 min, na leitura das paradas) não é uma saída nova: mantém o horário de
+    // entrada, senão a conta seguraria a calma para sempre
+    if (novaSaida || this.saidas[id] === undefined) this.saidas[id] = this.relogio.agora();
+    this.salvar();
+  }
+
+  private tirarDaSaida(id: string): void {
+    this.soltarDepois.delete(id);
+    this.saidaPresaAvisada.delete(id);
+    this.erroSaidaAvisado.delete(id);
+    const s = this.saidas;
+    if (s[id] !== undefined) {
+      delete s[id];
+      this.salvar();
+    }
+  }
+
+  /**
+   * Quantas contas da lista de saída seguram o momento calmo agora: as recém-marcadas (uma troca de agora) seguram; a
+   * presa há mais de `SAIDA_SEGURA_CALMA_S` já não. A primeira vez que uma conta é vista aqui conta como a entrada dela,
+   * mesmo que o ciclo de saída ainda não tenha passado por ela. Conta também as do estado que a partida ainda não pôs de
+   * volta na lista (`retomarSaidas` roda na primeira conversa com a nuvem, depois do portão).
+   */
+  saidasSegurandoCalma(t = this.relogio.agora()): number {
+    let mudou = false;
+    for (const id of this.soltarDepois.keys()) mudou = this.marcarSaida(id, t) || mudou;
+    if (mudou) this.salvar();
+    let n = 0;
+    for (const [id, desde] of Object.entries(this.saidas)) {
+      // horário à frente do relógio (a hora do computador foi acertada para trás): conta a partir de agora
+      if (desde > t) {
+        this.saidas[id] = t;
+        this.salvar();
+      }
+      if (t - Math.min(desde, t) < SAIDA_SEGURA_CALMA_S) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Na partida: as contas que estavam saindo quando o agente parou voltam à lista, com o horário de entrada de antes, e
+   * o ciclo de saída pede a posse de verdade para devolver. Devolve quem voltou (a faxina da partida não mexe nelas).
+   */
+  retomarSaidas(): Set<string> {
+    const s = this.saidas;
+    const voltaram = new Set<string>();
+    let mudou = false;
+    for (const id of Object.keys(s)) {
+      if (!this.conta(id)) {
+        delete s[id];
+        mudou = true;
+        continue;
+      }
+      if (!this.soltarDepois.has(id)) this.soltarDepois.set(id, this.relogio.agora());
+      voltaram.add(id);
+    }
+    if (mudou) this.salvar();
+    return voltaram;
+  }
+
+  /** A cópia do login que esta conta tem aqui; undefined quando a leitura falhou (chaveiro sem resposta). */
+  private async lerCopia(id: string): Promise<Blob | null | undefined> {
+    const entrada = this.trocador.entradaDe(id);
+    try {
+      return this.cred.lerEstrito ? await this.cred.lerEstrito(entrada) : await this.cred.ler(entrada);
+    } catch {
+      return undefined;
+    }
   }
 
   porContaId(contaId: string): string | null {
@@ -207,6 +313,7 @@ export class PosseCofre {
       return false;
     }
     this.recusaAvisada.delete(id);
+    this.semLoginAvisada.delete(id);
     if (r.versao !== nova) this.log.erro(`o cofre gravou ${c.email} na versão ${r.versao}, e não ${nova}: o cifrado não vai abrir`);
     c.versaoCofre = r.versao ?? nova;
     this.versaoServidor.set(id, c.versaoCofre);
@@ -228,6 +335,23 @@ export class PosseCofre {
     fn: () => Promise<T>,
     opcoes: { sincronizar?: boolean; devolverSempre?: boolean } = {},
   ): Promise<T | null> {
+    // enquanto uma posse curta roda, a saída da mesma conta não solta a posse dela (processarSaida)
+    this.emCom.set(id, (this.emCom.get(id) ?? 0) + 1);
+    try {
+      return await this.comDentro(id, motivo, fn, opcoes);
+    } finally {
+      const n = (this.emCom.get(id) ?? 1) - 1;
+      if (n > 0) this.emCom.set(id, n);
+      else this.emCom.delete(id);
+    }
+  }
+
+  private async comDentro<T>(
+    id: string,
+    motivo: MotivoPosse,
+    fn: () => Promise<T>,
+    opcoes: { sincronizar?: boolean; devolverSempre?: boolean },
+  ): Promise<T | null> {
     const jaTinha = this.posses.has(id);
     let subir = false;
     if (!jaTinha) {
@@ -246,7 +370,7 @@ export class PosseCofre {
         // a cópia daqui é mais nova que a do cofre: sobe já, mesmo sem mudar agora
         if (opcoes.devolverSempre || subir || antes !== depois) pode = await this.devolver(id).catch(() => false);
         if (pode) await this.soltar(id).catch(() => undefined);
-        else this.soltarDepois.set(id, this.relogio.agora()); // tenta devolver de novo na próxima busca
+        else this.marcarParaSair(id, this.relogio.agora(), { novaSaida: false }); // tenta devolver de novo na próxima busca
       }
     }
   }
@@ -335,47 +459,87 @@ export class PosseCofre {
   /** Contas que saíram de uso: devolve ao cofre e solta, quando passou a hora (e se não voltaram a ser a ativa). */
   async processarSaidas(): Promise<void> {
     const t = this.relogio.agora();
+    const s = this.saidas;
+    let mudou = false;
+    for (const id of Object.keys(s)) {
+      if (this.soltarDepois.has(id)) continue;
+      delete s[id];
+      mudou = true;
+    }
+    for (const id of this.soltarDepois.keys()) mudou = this.marcarSaida(id, t) || mudou;
+    if (mudou) this.salvar();
     for (const [id, desde] of [...this.soltarDepois]) {
-      if (t < desde) continue;
+      // a que voltou a ser a ativa (ou foi para uma trilha) sai da lista já, sem esperar a hora da próxima tentativa
       const c = this.conta(id);
       if (id === this.estado().ativa || this.trocador.trilhaDe(id) || !c?.contaId) {
-        this.soltarDepois.delete(id);
-        this.saidaPresaAvisada.delete(id);
+        this.tirarDaSaida(id);
         continue;
       }
-      if (!this.posses.has(id)) {
-        // Saiu de uso sem posse (a nuvem não a tinha atribuído aqui, ou a posse curta venceu): posse curta só para
-        // devolver. Com outro computador usando a conta, tenta de novo daqui a pouco, sem desistir: a cópia daqui pode
-        // ser a única viva (um login feito agora), e desistir a deixava fora do cofre para sempre (16/11/2026).
-        const p = await this.pegar(id, "renovacao", 60).catch(() => null);
-        if (!p?.ok) {
-          if (!this.saidaPresaAvisada.has(id)) {
-            this.log.erro(`${c.email} saiu de uso sem posse e o cofre não aceitou a cópia daqui (${p?.erro ?? "sem resposta"}); tento de novo a cada ${SAIDA_DE_NOVO_S / 60} min`);
-            this.saidaPresaAvisada.add(id);
-          }
-          this.soltarDepois.set(id, t + SAIDA_DE_NOVO_S);
-          continue;
-        }
-        // Com a posse de novo, vale a mais nova: se a do cofre é a mais nova (outro computador entrou de novo nela
-        // ou a renovou), ela fica aqui e não há o que devolver.
-        const versao = c.versaoCofre;
-        const subir = await this.sincronizar(id, p.cofre);
-        if (!subir && c.versaoCofre !== versao) {
-          await this.soltar(id).catch(() => undefined);
-          this.soltarDepois.delete(id);
-          this.saidaPresaAvisada.delete(id);
-          continue;
+      if (t < desde) continue;
+      try {
+        await this.processarSaida(id, t);
+      } catch (e) {
+        // uma conta com erro (o chaveiro recusou gravar, por exemplo) não segura as outras: tenta na próxima busca
+        if (!this.erroSaidaAvisado.has(id)) {
+          this.log.erro(`a saída de ${this.conta(id)?.email ?? id} falhou: ${(e as Error).message}; tento de novo na próxima busca`);
+          this.erroSaidaAvisado.add(id);
         }
       }
-      if (await this.devolver(id).catch(() => false)) {
-        // ainda com a posse: a nuvem só aceita a marca de login de quem está com a conta
-        await this.aposDevolver(id).catch(() => undefined);
-        await this.soltar(id).catch(() => undefined);
-        this.soltarDepois.delete(id);
-        this.saidaPresaAvisada.delete(id);
-      }
-      // devolução recusada: fica na lista; sem posse (venceu na nuvem), a próxima volta pede outra
     }
+  }
+
+  private async processarSaida(id: string, t: number): Promise<void> {
+    const c = this.conta(id)!;
+    // uma posse curta da mesma conta rodando agora: a posse e o login são dela; tenta na próxima busca
+    if (this.emCom.has(id)) return;
+    const copia = await this.lerCopia(id);
+    if (copia === undefined) return; // a leitura falhou: tenta na próxima busca, sem mexer no cofre
+    // a posse curta pode ter começado durante a leitura (e trazido o login do cofre): a cópia lida já não vale
+    if (this.emCom.has(id)) return;
+    if (!oauth(copia).refreshToken) {
+      // A cópia daqui não tem login renovável (a renovação foi recusada e o assistente esvaziou o login): não há o que
+      // devolver. Antes, a devolução saía calada a cada busca e a conta ficava na lista para sempre, segurando a
+      // atualização deste computador (27/11/2026). O cofre segue com a cópia dele.
+      if (!this.semLoginAvisada.has(id)) {
+        this.log.info(`${c.email} saiu de uso sem login renovável aqui: nada a devolver ao cofre`);
+        this.semLoginAvisada.add(id);
+      }
+      // a posse segue na mão se a nuvem não respondeu: fica na lista e solta na próxima busca
+      if (this.posses.has(id)) await this.soltar(id);
+      this.tirarDaSaida(id);
+      return;
+    }
+    if (!this.posses.has(id)) {
+      // Saiu de uso sem posse (a nuvem não a tinha atribuído aqui, ou a posse curta venceu): posse curta só para
+      // devolver. Com outro computador usando a conta, tenta de novo daqui a pouco, sem desistir: a cópia daqui pode
+      // ser a única viva (um login feito agora), e desistir a deixava fora do cofre para sempre (16/11/2026).
+      const p = await this.pegar(id, "renovacao", 60).catch(() => null);
+      if (!p?.ok) {
+        if (!this.saidaPresaAvisada.has(id)) {
+          this.log.erro(`${c.email} saiu de uso sem posse e o cofre não aceitou a cópia daqui (${p?.erro ?? "sem resposta"}); tento de novo a cada ${SAIDA_DE_NOVO_S / 60} min`);
+          this.saidaPresaAvisada.add(id);
+        }
+        this.soltarDepois.set(id, t + SAIDA_DE_NOVO_S);
+        return;
+      }
+      // Com a posse de novo, vale a mais nova: se a do cofre é a mais nova (outro computador entrou de novo nela
+      // ou a renovou), ela fica aqui e não há o que devolver.
+      const versao = c.versaoCofre;
+      const subir = await this.sincronizar(id, p.cofre);
+      if (!subir && c.versaoCofre !== versao) {
+        await this.soltar(id).catch(() => undefined);
+        this.tirarDaSaida(id);
+        return;
+      }
+    }
+    if (await this.devolver(id).catch(() => false)) {
+      // ainda com a posse: a nuvem só aceita a marca de login de quem está com a conta
+      await this.aposDevolver(id).catch(() => undefined);
+      await this.soltar(id).catch(() => undefined);
+      this.tirarDaSaida(id);
+      this.semLoginAvisada.delete(id);
+    }
+    // devolução recusada: fica na lista; sem posse (venceu na nuvem), a próxima volta pede outra
   }
 
   /** Depois que uma conta parada subiu ao cofre (o agente usa para dizer à nuvem que o login dela voltou a valer). */

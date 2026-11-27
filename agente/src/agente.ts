@@ -138,6 +138,12 @@ export const ESPERA_CONTA_S = 120;
 export const BARRA_DEPRESSA_MS = 600_000;
 /** O assistente saiu da conta em uso: a busca a repõe sozinha, no máximo uma vez neste intervalo por conta. */
 export const REPOR_CONTA_S = 600;
+/** Episódio sem momento calmo que passa disto vai ao registro, com o motivo. */
+export const CALMA_AVISO_S = 600;
+/** A atualização sozinha esperando a calma por mais que isto vira evento na nuvem (fica nos eventos do computador). */
+export const CALMA_EVENTO_S = 6 * 3600;
+/** Entre duas passagens pelo portão da calma, lacuna maior que isto não soma na espera (fora da janela, agente parado). */
+export const CALMA_LACUNA_S = 300;
 /** Leitura de uso que deu certo dentro deste intervalo prova que o login da conta funciona. */
 export const LOGIN_PROVADO_S = 1800;
 
@@ -284,6 +290,10 @@ export class Agente {
   private vezPedidaEm = 0;
   private sozinhoNaoComecouEm = 0;
   private motivoSemVez: string | null = null;
+  /** O episódio sem momento calmo em curso (motivo atual, desde quando, se já foi ao registro e à nuvem). */
+  private semCalma: { motivo: string; desde: number; avisado: boolean } | null = null;
+  /** A atualização sozinha esperando a calma: para qual versão, o tempo somado, a última passagem e se o evento já saiu. */
+  private esperaCalma: { para: string; somado: number; vistoEm: number; avisado: boolean } | null = null;
   /** A versão nova que a trava recusou (o agente espera a nuvem ter as migrações dela); o painel mostra. */
   travaNuvem: TravaNuvem | null = null;
   /** Versão da trava que já virou evento (um por versão, não um a cada conferência). */
@@ -1226,6 +1236,7 @@ export class Agente {
       this.configNuvem = r.config ?? {};
       await this.vigiarAtualizacao();
       this.fundo(this.conferirVersaoNova());
+      this.acompanharCalma();
       // a ordem: a nuvem já está na versão nova; funções e painel (atualização completa) antes do programa daqui
       await this.talvezPublicar();
       await this.talvezAtualizarSozinho();
@@ -1440,9 +1451,11 @@ export class Agente {
    */
   private async limparPossesAntigas(): Promise<void> {
     this.possesLimpas = true;
+    // as que estavam saindo quando o agente parou voltam à lista de saída, que pede a posse de verdade (0.22.2)
+    const saindo = this.posse!.retomarSaidas();
     for (const c of Object.values(this.estado.contas)) {
       // a conta numa trilha (0.18.0) está em uso pelas sessões da empresa: a busca das trilhas retoma a posse dela
-      if (!c.contaId || c.id === this.estado.ativa || this.trocador.trilhaDe(c.id) || this.posse!.temPosse(c.id)) continue;
+      if (!c.contaId || c.id === this.estado.ativa || this.trocador.trilhaDe(c.id) || this.posse!.temPosse(c.id) || saindo.has(c.id)) continue;
       this.posse!.posses.set(c.id, "renovacao");
       await this.posse!.devolver(c.id, { silencioso: true }).catch(() => false);
       await this.posse!.soltar(c.id).catch(() => undefined);
@@ -1709,7 +1722,7 @@ export class Agente {
     this.estado.nuvem.atribuicaoConta = a.conta_id;
     if (res.de && res.de !== id && this.estado.contas[res.de]?.contaId) {
       // A que saiu volta ao cofre depois da conferência da troca (5 s, até 3 refeitas).
-      this.posse!.soltarDepois.set(res.de, this.d.relogio.agora() + 20);
+      this.posse!.marcarParaSair(res.de, this.d.relogio.agora() + 20);
     }
     this.retomarHeadless();
     this.salvar();
@@ -1811,12 +1824,15 @@ export class Agente {
     const cfg = this.configNuvem;
     const nuvem = this.d.nuvem;
     const modo = modoAtualizar(cfg.atualizar_sozinho);
+    if (modo === "desligada") this.esperaCalma = null;
     if (modo === "desligada" || !nuvem || this.d.sombra || !this.d.versoes || this.publicando) return;
     const para = this.versaoNova;
     if (!para || compararVersao(para, VERSAO) <= 0) return;
     const t = this.d.relogio.agora();
     if (modo === "madrugada" && !naMadrugada(t, cfg.fuso)) return;
-    if (this.atualizacaoPendente() || !this.momentoCalmo()) return;
+    if (this.atualizacaoPendente()) return;
+    if (!this.momentoCalmo()) return this.avisarSemCalma(para, t);
+    this.esperaCalma = null;
     // a vez é pedida no máximo a cada 5 minutos; a que nem começou (o pacote não baixou) espera: de madrugada, a noite
     // seguinte; assim que sair, uma hora
     const esperaNaoComecou = modo === "madrugada" ? 12 * 3600 : 3600;
@@ -1840,14 +1856,78 @@ export class Agente {
 
   /** Nenhuma troca de conta em andamento nem sessão do assistente no limite agora. */
   momentoCalmo(): boolean {
+    return this.motivoSemCalma() === null;
+  }
+
+  /** Por que agora não é um momento calmo (null = é). Antes, o portão só dizia "não", e ninguém via o motivo (27/11/2026). */
+  motivoSemCalma(): string | null {
     const t = this.d.relogio.agora();
-    if (this.trocador.geral.ocupada || t - (this.estado.trocadaEm || 0) < 300) return false;
-    if (this.posse?.soltarDepois.size) return false;
+    // os motivos que duram vêm primeiro: a trava geral que o ciclo segura por instantes não troca o motivo de um episódio
+    const saidas = this.posse?.saidasSegurandoCalma(t) ?? 0;
+    if (saidas) return `${saidas === 1 ? "1 conta saindo de uso ainda não devolvida" : `${saidas} contas saindo de uso ainda não devolvidas`} ao cofre`;
     // a troca esperando memória: nada de atualização, publicação ou `claude update` agora
-    if (this.esperaMemoria?.esperando) return false;
-    if (this.estado.fila.some((f) => f.estado === "aguardando" && t - f.em < FILA_VALIDA_S)) return false;
+    if (this.esperaMemoria?.esperando) return "troca de conta esperando memória livre";
+    if (this.estado.fila.some((f) => f.estado === "aguardando" && t - f.em < FILA_VALIDA_S)) return "sessão esperando conta na fila";
     const ativa = this.estado.ativa ? this.estado.contas[this.estado.ativa] : null;
-    return !ativa || (pctEfetivo(ativa, t) ?? 0) < 100;
+    if (ativa && !((pctEfetivo(ativa, t) ?? 0) < 100)) return "conta em uso no limite";
+    if (t - (this.estado.trocadaEm || 0) < 300) return "troca de conta há menos de 5 min";
+    if (this.trocador.geral.ocupada) return "agente ocupado com as contas (troca ou conferência)";
+    return null;
+  }
+
+  /**
+   * Acompanha o episódio sem calma, a cada busca: uma linha no registro quando passa de 10 min (e a cada troca de motivo
+   * depois disso), outra na volta. O diagnóstico leva o motivo e desde quando (`infoCalma`).
+   */
+  private acompanharCalma(): void {
+    const t = this.d.relogio.agora();
+    const motivo = this.motivoSemCalma();
+    const ep = this.semCalma;
+    if (!motivo) {
+      if (ep?.avisado) this.d.log.info(`momento calmo de volta depois de ${Math.floor((t - ep.desde) / 60)} min`);
+      this.semCalma = null;
+      return;
+    }
+    if (!ep) {
+      this.semCalma = { motivo, desde: t, avisado: false };
+      return;
+    }
+    if (ep.motivo !== motivo) {
+      ep.motivo = motivo;
+      if (ep.avisado) this.d.log.info(`sem momento calmo, agora por: ${motivo}`);
+    }
+    if (!ep.avisado && t - ep.desde >= CALMA_AVISO_S) {
+      ep.avisado = true;
+      this.d.log.info(`sem momento calmo há ${Math.floor((t - ep.desde) / 60)} min (${motivo}): atualização, publicação e conferência do assistente esperam`);
+    }
+  }
+
+  /** O episódio sem calma, para o diagnóstico que o painel recebe (null = calmo). */
+  infoCalma(): { motivo: string; desde: string } | null {
+    const ep = this.semCalma;
+    return ep ? { motivo: ep.motivo, desde: new Date(ep.desde * 1000).toISOString() } : null;
+  }
+
+  /**
+   * A atualização sozinha para `para` bateu no portão da calma. Soma o tempo entre passagens seguidas pelo portão (uma
+   * lacuna maior que `CALMA_LACUNA_S`, como o dia fora da janela da madrugada ou o agente parado, não conta) e, passadas
+   * 6 h somadas, manda um evento na nuvem com o motivo, uma vez por espera. A espera zera quando o portão fica calmo ou a
+   * atualização sozinha é desligada. A chave é `calma`, e não `atualizacao`, para não entrar no andamento de uma
+   * atualização que o painel acompanha.
+   */
+  private avisarSemCalma(para: string, t: number): void {
+    if (this.esperaCalma?.para !== para) this.esperaCalma = { para, somado: 0, vistoEm: t, avisado: false };
+    const e = this.esperaCalma;
+    e.somado += Math.min(Math.max(t - e.vistoEm, 0), CALMA_LACUNA_S);
+    e.vistoEm = t;
+    if (e.avisado || e.somado < CALMA_EVENTO_S) return;
+    e.avisado = true;
+    const motivo = this.motivoSemCalma() ?? this.semCalma?.motivo ?? "sem motivo";
+    this.registrarEvento("info", `A atualização sozinha para a ${para} espera um momento calmo há ${Math.floor(e.somado / 3600)} h: ${motivo}.`, {
+      calma: "sem_calma",
+      para,
+      motivo,
+    });
   }
 
   /**

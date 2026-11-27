@@ -145,6 +145,11 @@ export interface EstadoLocal {
   /** Sessões marcadas como críticas neste computador, pelo id da sessão: quando foram marcadas ou lembradas (epoch s). */
   sessoesCriticas?: Record<string, number>;
   /**
+   * Contas que saíram de uso e ainda não voltaram ao cofre, pelo id local: quando entraram na lista (epoch s). A lista em
+   * si vive na memória; isto a refaz depois de um reinício, para a cópia daqui não deixar de ser tentada (0.22.2).
+   */
+  saidasPendentes?: Record<string, number>;
+  /**
    * As trilhas deste computador (0.18.0), pelo id da empresa na nuvem: as sessões de uma empresa separada rodam com o
    * login guardado na pasta da trilha, numa conta escolhida pela nuvem entre as da empresa.
    */

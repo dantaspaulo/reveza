@@ -1125,6 +1125,237 @@ describe("0.16.4: leitura velha, login cancelado e posse vencida", () => {
     assert.equal(m.log.linhas.filter((l) => /saiu de uso sem posse/.test(l)).length, 1, "o aviso saiu uma vez");
   });
 
+  test("saída presa segura a calma só por 30 min: depois segue tentando, mas a atualização não espera mais por ela", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 4, "B-morto");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    banco.atribuir("pc-2", bId);
+    e().trocadaEm = 0;
+    const posse = m.agente.posse!;
+    posse.soltarDepois.set(b, m.relogio.agora() + 20); // a troca de agora: ainda nem chegou a hora
+    assert.match(m.agente.motivoSemCalma() ?? "", /devolvida ao cofre/, "recém-marcada segura");
+    await posse.processarSaidas();
+    m.relogio.t += 21;
+    await posse.processarSaidas();
+    assert.equal(posse.soltarDepois.has(b), true, "presa: o outro computador está com ela");
+    assert.equal(m.agente.momentoCalmo(), false);
+    m.relogio.t += 1790;
+    assert.equal(m.agente.momentoCalmo(), true, "30 min depois de entrar na lista, não segura mais");
+    assert.equal(m.agente.motivoSemCalma(), null);
+    assert.equal(posse.soltarDepois.has(b), true, "e segue na lista, tentando");
+    banco.atribuir("pc-2", null);
+    await posse.processarSaidas();
+    assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B-novo", "o login subiu quando a conta ficou livre");
+    assert.equal(posse.soltarDepois.size, 0);
+  });
+
+  test("reinício com uma saída presa: a lista volta do estado, a faxina não mexe nela e o login sobe quando a conta fica livre", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 4, "B-morto");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    banco.atribuir("pc-2", bId);
+    const posse = m.agente.posse!;
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    const entrou = e().saidasPendentes?.[b];
+    assert.equal(entrou, m.relogio.agora(), "o estado guarda a saída");
+    // o reinício: a lista da memória some; o estado fica
+    posse.soltarDepois.clear();
+    (m.agente as unknown as { possesLimpas: boolean }).possesLimpas = false;
+    banco.atribuir("pc-2", null);
+    assert.match(m.agente.motivoSemCalma() ?? "", /devolvida ao cofre/, "logo depois do reinício, a saída do estado já segura a calma");
+    const antes = fns("devolverCofre").length;
+    await m.agente.busca();
+    assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B-novo", "o login daqui subiu depois do reinício");
+    assert.equal(fns("devolverCofre").length - antes, 1, "uma devolução só: a faxina da partida não tentou sem posse");
+    assert.equal(posse.soltarDepois.has(b), false);
+    assert.equal(e().saidasPendentes?.[b], undefined, "e saiu do estado");
+  });
+
+  test("a saída de uma conta que dá erro não segura as outras; a que não conseguiu soltar a posse fica na lista", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const xId = await semear("X", 4, "X-cofre");
+    const x = contaEstacionada(m, "X", 3, { contaId: xId });
+    m.cred.d.set(pasta(x), blob("", false, -60, m.relogio.agora()));
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    const posse = m.agente.posse!;
+    assert.ok((await posse.pegar(x, "renovacao", 60)).ok);
+    const soltar = posse.soltar.bind(posse);
+    posse.soltar = async (id: string) => {
+      if (id === x) throw new Error("a nuvem não respondeu");
+      return soltar(id);
+    };
+    posse.soltarDepois.set(x, m.relogio.agora());
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    await posse.processarSaidas();
+    assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B-novo", "a outra conta subiu");
+    assert.equal(posse.soltarDepois.has(x), true, "a que não soltou fica, para tentar de novo");
+    assert.equal(posse.temPosse(x), true);
+    assert.equal(m.log.linhas.filter((l) => /a saída de x@exemplo\.com falhou/.test(l)).length, 1, "o erro sai uma vez");
+    posse.soltar = soltar;
+    await posse.processarSaidas();
+    assert.equal(posse.soltarDepois.has(x), false);
+    assert.equal(banco.posse.get(xId), undefined, "com a nuvem de volta, soltou");
+  });
+
+  test("conta na lista que o ciclo de saída nunca alcançou também deixa de segurar a calma em 30 min", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    e().trocadaEm = 0;
+    const posse = m.agente.posse!;
+    posse.soltarDepois.set("nunca-vista", m.relogio.agora() + 10 * 3600);
+    assert.match(m.agente.motivoSemCalma() ?? "", /devolvida ao cofre/);
+    m.relogio.t += 1801;
+    assert.equal(m.agente.motivoSemCalma(), null);
+    posse.marcarParaSair("nunca-vista", m.relogio.agora() + 10 * 3600);
+    assert.match(m.agente.motivoSemCalma() ?? "", /devolvida ao cofre/, "uma saída nova da mesma conta segura de novo");
+    posse.esquecer("nunca-vista");
+    assert.equal(posse.soltarDepois.size, 0);
+    assert.deepEqual(e().saidasPendentes, {}, "a conta removida sai também do estado");
+    assert.equal(m.agente.motivoSemCalma(), null);
+  });
+
+  test("posse curta que não devolve não zera o prazo de 30 min de uma saída que já estava na lista", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    e().trocadaEm = 0;
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    const posse = m.agente.posse!;
+    posse.marcarParaSair(b, m.relogio.agora() + 3600); // a troca: saída nova
+    m.relogio.t += 1801;
+    assert.equal(m.agente.motivoSemCalma(), null);
+    posse.semEscrita = () => "a chave deste computador não é a da instalação"; // a devolução não passa
+    await posse.com(b, "leitura", async () => true, { devolverSempre: true });
+    assert.equal(posse.soltarDepois.has(b), true, "segue na lista");
+    assert.equal(m.agente.motivoSemCalma(), null, "e não volta a segurar a calma");
+  });
+
+  test("posse curta da mesma conta rodando durante a saída: a saída não solta a posse dela", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 4, "B-vivo-no-cofre");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    m.cred.d.set(pasta(b), blob("", false, -60, m.relogio.agora()));
+    const posse = m.agente.posse!;
+    let liberar: () => void = () => undefined;
+    const portao = new Promise<void>((r) => (liberar = r));
+    let comRodando: Promise<unknown> | null = null;
+    let posseNoMeio: unknown = "não leu";
+    const cred = m.cred as unknown as { lerEstrito?: (entrada: string) => Promise<unknown> };
+    cred.lerEstrito = async () => {
+      if (!comRodando) {
+        // o ciclo pega a posse curta de B enquanto a saída lê o chaveiro
+        comRodando = posse.com(b, "renovacao", async () => {
+          await portao;
+          posseNoMeio = banco.posse.get(bId);
+          return true;
+        });
+        for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+      }
+      return blob("", false, -60, m.relogio.agora());
+    };
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    assert.ok(posse.temPosse(b), "a posse curta já estava na mão quando a leitura voltou");
+    liberar();
+    await comRodando;
+    assert.notEqual(posseNoMeio, undefined, "a saída não soltou a posse que a posse curta usava");
+    delete cred.lerEstrito;
+  });
+
+  test("login esvaziado pela renovação recusada: nada a devolver, solta a posse e sai da lista (não segura a calma)", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 4, "B-vivo-no-cofre");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 4;
+    // o assistente regravou o login com o refreshToken vazio (caso de 27/11/2026)
+    m.cred.d.set(pasta(b), blob("", false, -60, m.relogio.agora()));
+    const posse = m.agente.posse!;
+    const p = await posse.pegar(b, "renovacao", 60);
+    assert.ok(p.ok);
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    assert.equal(posse.soltarDepois.has(b), false, "saiu da lista");
+    assert.equal(posse.temPosse(b), false, "a posse saiu da memória");
+    assert.equal(banco.posse.get(bId), undefined, "e foi solta na nuvem");
+    assert.equal(fns("devolverCofre").filter((c) => c.args[0] === bId).length, 0, "nada foi ao cofre");
+    assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B-vivo-no-cofre", "o cofre segue com a cópia dele");
+    // a renovação seguinte põe a conta de novo na lista: sai de novo, sem repetir a linha no registro
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    assert.equal(posse.soltarDepois.size, 0);
+    assert.equal(m.log.linhas.filter((l) => /b@exemplo\.com.*nada a devolver/.test(l)).length, 1, "o registro diz uma vez");
+  });
+
+  test("login esvaziado sem posse na memória: sai da lista sem pegar posse nenhuma", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 4, "B-vivo-no-cofre");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    m.cred.d.set(pasta(b), blob("", false, -60, m.relogio.agora()));
+    const posse = m.agente.posse!;
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    assert.equal(posse.soltarDepois.has(b), false);
+    assert.equal(fns("pegarPosse").filter((c) => c.args[0] === bId).length, 0, "não pediu posse para não devolver nada");
+  });
+
+  test("chaveiro sem resposta na saída: a conta fica na lista e nada sai do cofre", async () => {
+    await preparar();
+    await ativaEm(m, "A", 10);
+    await m.agente.esperar();
+    await m.agente.busca();
+    const bId = await semear("B", 2, "B1");
+    const b = contaEstacionada(m, "B", 3, { contaId: bId });
+    e().contas[b]!.versaoCofre = 2;
+    m.cred.d.set(pasta(b), blob("B-novo", true, 7200, m.relogio.agora()));
+    const cred = m.cred as unknown as { lerEstrito?: (entrada: string) => Promise<unknown> };
+    cred.lerEstrito = async () => {
+      throw new Error("o chaveiro não respondeu");
+    };
+    const posse = m.agente.posse!;
+    posse.soltarDepois.set(b, m.relogio.agora());
+    await posse.processarSaidas();
+    assert.equal(posse.soltarDepois.has(b), true, "segue tentando");
+    assert.equal(m.cred.token(pasta(b)), "B-novo", "a cópia daqui ficou");
+    delete cred.lerEstrito;
+    m.relogio.t += 301;
+    await posse.processarSaidas();
+    assert.equal(posse.soltarDepois.has(b), false);
+    assert.equal((await abrir(bId)).claudeAiOauth?.accessToken, "B-novo", "com o chaveiro de volta, o login subiu");
+  });
+
   test("conta parada que sobe ao cofre com o login provado tira a marca de precisar de login, ainda com a posse", async () => {
     await preparar();
     await ativaEm(m, "A", 10);

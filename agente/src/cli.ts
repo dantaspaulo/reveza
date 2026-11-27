@@ -1204,6 +1204,8 @@ async function cmdRodar(amb: Ambiente, a: Args): Promise<number> {
       publicando: agente.publicando,
       // o assistente de código deste computador (0.8.0): versão, a escolha da instalação e a última atualização
       assistente: { versao: r.find((c) => c.id === "assistente")?.valor ?? null, ...agente.infoAssistente() },
+      // por que a atualização, a publicação e a conferência do assistente esperam agora (0.22.2; null = calmo)
+      calma: agente.infoCalma(),
     };
   };
   await agente.iniciar();
