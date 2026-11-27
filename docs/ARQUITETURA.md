@@ -441,6 +441,34 @@ tenha escolhido uma pasta do OpenBot, e uma leitura da barra que falha nunca tir
   pasta pessoal contém toda sessão no classificador; a lista dos agentes que falha desde ligar não fica guardada. Fora do
   macOS, nada muda.
 
+## 6h. Checagem antes de ligar um projeto (0.22.1)
+
+Só o painel (`painel/src/lib/checagem.ts`, `checarLigar`, chamada no Salvar de `secoes/empresas.tsx`). Regra central:
+ligar um projeto que não teria como rodar nunca passa calado. A nuvem segue com a recusa dela (computador abaixo da
+0.20.0); esta é mais exigente, e só na hora de ligar.
+
+- **O que é checado:** cada unidade ligada no rascunho que estava desligada, em teste ou não existia (contas e
+  computadores), e cada unidade que já estava ligada, só nos computadores que entraram no "Roda em" dela (só
+  computadores). Projeto já ligado que perde contas não é checado de novo.
+- **Onde roda:** os computadores ativos do "Roda em" da empresa (o projeto usa os dela), como `rvz_roda_em`: todos,
+  ou só os escolhidos que não foram removidos; escolha só com computadores removidos não roda em lugar nenhum.
+- **Recusa (não grava, a barra diz o motivo):** nenhuma conta do projeto pode rodar (saindo, sem login, pausada ou
+  removida; esgotada não recusa, ela volta sozinha), ou computador visto nas últimas 24 horas abaixo da 0.21.0 (antes
+  dela o agente falha a conversa em vez de esperar), ou "Roda em" só com computadores removidos (não roda em lugar
+  nenhum, e a nuvem tira as contas dele de todos os computadores). A recusa que a empresa já deu (o computador atrasado
+  ou o "Roda em" sem computador) não se repete nos projetos dela, e a barra diz que nada foi gravado. Projeto cuja
+  empresa não veio na leitura tem só a checagem de contas. Projeto novo numa empresa já ligada passa pela mesma
+  checagem de quem liga, porque nasce ligado.
+- **Relatório antes de salvar (não recusa):** computador visto nas últimas 24 horas cuja conta atual não é do projeto
+  (as conversas do projeto ali passam para uma conta dele) e todas as contas que podem rodar esgotadas (as conversas
+  esperam). Conta só perto do limite não entra: a nuvem escolhe conta abaixo de 100%.
+- **Leitura:** contas e computadores da última leitura completa (a seção só monta com ela, e a leitura que falha não
+  troca o estado por uma lista vazia); o Salvar repete a conta na hora do clique.
+- **Limites conhecidos:** a checagem olha todos os computadores do "Roda em", mesmo onde o projeto não tem pasta nem
+  regra, e não confere o computador que já estava no "Roda em" quando o projeto ganha regra nele; é uma aproximação da
+  `rvz_candidatas_trilha` (não vê posse ou atribuição de outro computador, leitura de uso velha, cofre, agenda nem teto
+  da semana); a contagem por conversa fica fora.
+
 ## 7. Nuvem: tabelas (todas com RLS ligado)
 
 | Tabela | Quem lê | Quem escreve |

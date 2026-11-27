@@ -7,6 +7,36 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.22.1 · 27/11/2026
+
+Melhoria só no painel, para quem separa as contas por projeto: ligar um projeto passa por uma checagem automática, no
+lugar de um ensaio feito à mão. Nada muda no agente, na nuvem nem no que cada conversa recebe hoje.
+
+### O que muda em Projetos
+
+- **O Salvar recusa ligar um projeto que não teria como rodar.** Quando nenhuma conta do projeto pode rodar agora
+  (saindo, sem login, pausada ou removida do Reveza), o painel não grava nada, diz isso e mostra quais contas e por
+  quê. Conta esgotada
+  não recusa: ela volta sozinha, e as conversas esperam por ela.
+- **Computador que ainda não espera uma conta voltar.** Ligar um projeto, ou pôr no "Roda em" de um projeto já ligado
+  um computador visto nas últimas 24 horas que está abaixo da 0.21.0, também é recusado, com o nome e a versão do
+  computador. Antes da 0.21.0, o agente falha a conversa em vez de esperar uma conta do projeto voltar.
+- **O que muda para as conversas ao salvar.** Antes de salvar, um quadro mostra em quais computadores as conversas do projeto vão sair da
+  conta que usam hoje e avisa quando todas as contas que podem rodar estão esgotadas (aí as conversas esperam uma
+  conta voltar).
+- **Como a nuvem conta os computadores.** Computador removido, nunca visto ou parado há mais de um dia não entra na
+  checagem. Projeto cujo "Roda em" só tem computadores removidos não roda em lugar nenhum: ligar assim é recusado,
+  com o pedido de escolher um computador.
+
+### Fica para depois
+
+- Projeto já ligado que perde contas no rascunho não é checado de novo (a nuvem segue com a recusa dela).
+- A checagem olha todos os computadores do "Roda em", mesmo aquele onde o projeto não tem pasta nem regra, e não
+  confere o computador que já estava no "Roda em" quando o projeto ganha uma pasta nele.
+- A checagem é uma aproximação da escolha da nuvem: não vê a conta em uso em outro computador, a leitura de uso velha,
+  a agenda nem o teto da semana.
+- Prioridade por projeto e usar primeiro a franquia que vai vencer.
+
 ## 0.22.0 · 26/11/2026
 
 Recurso novo para quem separa as contas por projeto e usa o OpenBot no Mac: o projeto pode pegar os agentes de uma

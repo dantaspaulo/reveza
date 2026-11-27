@@ -78,6 +78,10 @@ teste, o CHANGELOG ou a release.
   por agente, nunca de todos; a espera tem um relógio só e prazo (`BARRA_ESPERA_S`), também na retomada; a barra boa
   guardada em disco não é apagada por um arquivo ausente. A regra `secao` sempre leva computador e respeita o portão de
   versão nos dois lados.
+- **checagem antes de ligar** (0.22.1): `painel/src/lib/checagem.ts`. Todo caminho que liga um projeto, ou que põe um
+  computador no "Roda em" de um projeto ligado, passa por ela; onde o projeto roda segue `rvz_roda_em` (escolha só
+  com computadores removidos não roda em lugar nenhum), não o `rodaNoComputador` da tela; o aviso de espera vale só
+  com todas as contas que rodam esgotadas, porque a nuvem escolhe conta abaixo de 100%.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.
