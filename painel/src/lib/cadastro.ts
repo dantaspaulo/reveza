@@ -42,6 +42,7 @@ export interface ErroCadastro {
     | "erroPasta"
     | "erroComputador"
     | "erroTexto"
+    | "erroSecao"
     | "erroRegras"
   nome?: string
   pasta?: string
@@ -386,7 +387,8 @@ export function validar(lista: UnidadeRascunho[], mudou: UnidadeRascunho[] = lis
     // 0.21.1: a nuvem recusa o mesmo texto em dois projetos que se cruzam num computador ("a pasta X já é de Y")
     for (const p of textosValidos(u)) {
       const dono = lista.find((x) => x.id !== u.id && textosValidos(x).some((q) => textosColidem(p, q)))
-      if (dono) return { id: u.id, chave: "erroTexto", pasta: p.padrao, dono: dono.nome.trim() }
+      // 0.22.0: a pasta do OpenBot tem o erro dela (a tela troca o id pelo caminho da pasta)
+      if (dono) return { id: u.id, chave: p.tipo === "secao" ? "erroSecao" : "erroTexto", pasta: p.padrao, dono: dono.nome.trim() }
     }
   }
   return null

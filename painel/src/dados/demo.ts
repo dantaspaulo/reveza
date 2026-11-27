@@ -763,7 +763,21 @@ function empresasDemo(criadaEm: string, vistoEm: string): DadosEmpresas {
       { id: "regra-4", tipo: "titulo", padrao: "Suporte", empresaId: "empresa-consultoria" },
     ],
     agentes: [
-      { computadorId: "pc-notebook", pasta: "~/agentes/suporte", nome: "Suporte", titulo: "Atendimento ao cliente", vistoEm },
+      {
+        computadorId: "pc-notebook",
+        pasta: "~/agentes/suporte",
+        nome: "Suporte",
+        titulo: "Atendimento ao cliente",
+        vistoEm,
+        secoes: ["secao-atendimento", "secao-suporte"],
+      },
+    ],
+    // 0.22.0: as pastas da barra do OpenBot do Notebook, para a escolha no editor do projeto
+    secoesNaNuvem: true,
+    secoes: [
+      { computadorId: "pc-notebook", id: "secao-atendimento", nome: "Atendimento", pai: null, vistoEm },
+      { computadorId: "pc-notebook", id: "secao-suporte", nome: "Suporte", pai: "secao-atendimento", vistoEm },
+      { computadorId: "pc-notebook", id: "secao-vendas", nome: "Vendas", pai: null, vistoEm },
     ],
     // tudo desligado de fábrica: nenhuma empresa separada, nenhuma conta em trilha, nada em teste
     trilhasNaNuvem: true,
@@ -1548,6 +1562,8 @@ export class FonteDemo implements Fonte {
     const pastas = (campos.pastas ?? []).map((p) => ({ ...p, padrao: p.tipo === "pasta" ? p.padrao.trim().replace(/(.)\/+$/, "$1") : p.padrao.trim() }))
     for (const p of pastas) {
       if (!p.padrao || p.padrao.length > 300 || /^(~|\/+|[A-Za-z]:)$/.test(p.padrao)) throw new ErroPainel("padrao_invalido")
+      // como a nuvem (0050): a pasta do OpenBot é de um computador
+      if (p.tipo === "secao" && !p.computador) throw new ErroPainel("padrao_invalido")
       const dono = e.regras.find(
         (r) => r.tipo === p.tipo && r.padrao === p.padrao && r.empresaId !== id && (!r.computadorId || !p.computador || r.computadorId === p.computador)
       )

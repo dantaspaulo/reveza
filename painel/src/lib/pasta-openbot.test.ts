@@ -132,7 +132,7 @@ describe("pasta do OpenBot no rascunho do cadastro", () => {
   it("a mesma pasta do OpenBot em dois projetos do mesmo computador é recusada antes de salvar; noutro computador, não", () => {
     const base = rascunhoDe(nuvem([secaoA]))
     const mesmo = base.map((u) => (u.id === "B" ? { ...u, titulos: [{ tipo: "secao" as const, padrao: "Clientes_1", computador: PC }] } : u))
-    expect(validar(mesmo)).toMatchObject({ chave: "erroTexto" })
+    expect(validar(mesmo)).toMatchObject({ chave: "erroSecao" })
     const outroPc = base.map((u) => (u.id === "B" ? { ...u, titulos: [{ tipo: "secao" as const, padrao: "Clientes_1", computador: PC2 }] } : u))
     expect(validar(outroPc)).toBeNull()
   })

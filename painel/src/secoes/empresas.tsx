@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
@@ -39,7 +40,7 @@ import { useAcao, useAgora, useConsulta, useDados, useEstado, usePermissao } fro
 import { estadoComputador, estadoConta, p5, p7, resetDe } from "@/dados/derivados"
 import { ErroPainel } from "@/dados/fonte"
 import { apagarNoCadastro, estadoGravacao, gravarCadastro, ouvirGravacao } from "@/dados/gravacao"
-import type { AgenteOpenBot, Computador, Conta, DadosEmpresas, SessaoUso, TrilhaEmUso } from "@/dados/tipos"
+import type { AgenteOpenBot, Computador, Conta, DadosEmpresas, SecaoOpenBot, SessaoUso, TrilhaEmUso } from "@/dados/tipos"
 import { useT } from "@/i18n"
 import {
   adicionarTexto,
@@ -87,6 +88,16 @@ import {
 } from "@/lib/empresas"
 import { fmtFuturo } from "@/lib/formato"
 import { Link } from "@/lib/rota"
+import {
+  adicionarSecao,
+  caminhoDaSecao,
+  donoDaSecao,
+  escolheSecoes,
+  opcoesDeSecoes,
+  rotuloDaSecao,
+  VERSAO_SECOES,
+  type OpcaoSecao,
+} from "@/lib/secoes"
 import { cn } from "@/lib/utils"
 
 let ultimoNovo = 0
@@ -141,6 +152,9 @@ export interface Edicao {
   /** 0.21.1: os agentes do OpenBot de todos os computadores e onde cada pasta cai pelo rascunho. */
   agentes: AgenteOpenBot[]
   classificar: Classificar
+  /** 0.22.0: a nuvem guarda as pastas da barra do OpenBot; as pastas deste computador, em árvore. */
+  secoesNaNuvem: boolean
+  opcoesSecoes: OpcaoSecao[]
   pode: boolean
   mudar: (id: string, campos: Partial<UnidadeRascunho>) => void
   /** Muda o rascunho inteiro: marcar um agente pode tirá-lo de outro projeto. */
@@ -461,6 +475,8 @@ export default function Empresas() {
           sugestoes: sugestoesDe(sessoes.dados, computador.id, agentes),
           agentes,
           classificar,
+          secoesNaNuvem: dados.secoesNaNuvem === true,
+          opcoesSecoes: opcoesDeSecoes(dados.secoes ?? [], agentes, computador.id, t("empresas.op.secaoSemNome")),
           pode,
           mudar,
           aplicar: editar,
@@ -475,7 +491,7 @@ export default function Empresas() {
       <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur">
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className={cn("text-sm", (erro || recusado) && "text-erro")} role={erro || recusado ? "alert" : undefined}>
-            {erro ? textoErro(erro, t) : recusado ? t("erros.cadastro_mudou") : t("empresas.op.naoSalvas")}
+            {erro ? textoErro(erro, t, dados?.secoes) : recusado ? t("erros.cadastro_mudou") : t("empresas.op.naoSalvas")}
           </p>
           {aviso && mudanca ? <p className="text-xs text-atencao">{t("empresas.agentes.avisoAoSalvar")}</p> : null}
         </div>
@@ -700,8 +716,17 @@ export default function Empresas() {
 
 type Traduzir = ReturnType<typeof useT>["t"]
 
-function textoErro(erro: ErroCadastro, t: Traduzir): string {
-  return t(`empresas.op.${erro.chave}`, { nome: erro.nome ?? "", pasta: erro.pasta ?? "", dono: erro.dono ?? "" })
+/** 0.22.0: a regra de pasta do OpenBot que pega o agente aparece pelo caminho da pasta, não pelo id. */
+function regraNaTela(regra: string, u: UnidadeRascunho, e: Edicao, t: Traduzir): string {
+  const secao = u.titulos.some((r) => r.tipo === "secao" && r.padrao.trim() === regra && r.computador === e.computador)
+  return secao ? t("empresas.op.secaoRegra", { pasta: rotuloDaSecao(regra, e.opcoesSecoes).texto }) : regra
+}
+
+function textoErro(erro: ErroCadastro, t: Traduzir, secoes: SecaoOpenBot[] = []): string {
+  // 0.22.0: a pasta do OpenBot aparece pelo caminho, não pelo id
+  const pasta =
+    erro.chave === "erroSecao" && erro.pasta ? caminhoDaSecao(erro.pasta, secoes, t("empresas.op.secaoSemNome")) : (erro.pasta ?? "")
+  return t(`empresas.op.${erro.chave}`, { nome: erro.nome ?? "", pasta, dono: erro.dono ?? "" })
 }
 
 function rotuloModo(u: UnidadeRascunho, lista: UnidadeRascunho[], t: Traduzir): string {
@@ -1252,7 +1277,7 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
   const variosComputadores = naLista == null || naLista.length > 1
   const titulos = u.titulos
     .map((regra, indice) => ({ regra, indice }))
-    .filter(({ regra }) => regra.computador === null || regra.computador === e.computador)
+    .filter(({ regra }) => regra.tipo === "titulo" && (regra.computador === null || regra.computador === e.computador))
   const trocar = (indice: number, campos: Partial<UnidadeRascunho["pastas"][number]>) => {
     if (indice < 0) {
       e.mudar(u.id, { pastas: [...u.pastas, { computador: e.computador, padrao: "", ...campos }] })
@@ -1338,7 +1363,87 @@ function Pastas({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
           ))}
         </div>
       ) : null}
+      <PastasOpenBot u={u} e={e} />
       <AgentesDoComputador u={u} e={e} />
+    </div>
+  )
+}
+
+/**
+ * 0.22.0: as pastas da barra do OpenBot escolhidas para a unidade neste computador e a escolha de mais uma. Só para o
+ * computador que já entende a regra e onde o projeto roda; a regra que já existe aparece sempre, para poder tirar.
+ */
+function PastasOpenBot({ u, e }: { u: UnidadeRascunho; e: Edicao }) {
+  const { t, tn } = useT()
+  const escolhidas = u.titulos
+    .map((regra, indice) => ({ regra, indice }))
+    .filter(({ regra }) => regra.tipo === "secao" && (regra.computador === null || regra.computador === e.computador))
+  const pc = e.computadores.find((c) => c.id === e.computador)
+  const pode = escolheSecoes({
+    secoesNaNuvem: e.secoesNaNuvem,
+    versao: pc?.versao,
+    lista: e.lista,
+    unidade: u.id,
+    computador: e.computador,
+    ativos: e.computadores.map((c) => c.id),
+  })
+  if (pode === "nao" && !escolhidas.length) return null
+  const livres = e.opcoesSecoes.filter((o) => !escolhidas.some(({ regra }) => regra.padrao === o.id))
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">{t("empresas.op.secoesDica")}</span>
+      {escolhidas.length ? (
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          {escolhidas.map(({ regra, indice }) => {
+            const r = rotuloDaSecao(regra.padrao, e.opcoesSecoes)
+            const texto = t(r.estado === "sumiu" ? "empresas.op.secaoSumiu" : "empresas.op.secaoRegra", { pasta: r.texto })
+            return (
+              <span
+                key={`${regra.computador ?? ""}:${regra.padrao}`}
+                className={cn(
+                  "inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/40 py-0.5 pr-0.5 pl-3 text-xs text-muted-foreground",
+                  r.estado === "sumiu" && "border-dashed text-erro"
+                )}
+              >
+                <span className="min-w-0 truncate">{texto}</span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-6 shrink-0 rounded-full"
+                  disabled={!e.pode}
+                  aria-label={t("empresas.op.secaoRemover", { pasta: r.texto })}
+                  onClick={() => e.mudar(u.id, { titulos: u.titulos.filter((_, x) => x !== indice) })}
+                >
+                  <XIcon />
+                </Button>
+              </span>
+            )
+          })}
+        </div>
+      ) : null}
+      {pode === "versao" ? (
+        <span className="text-xs text-muted-foreground">{t("empresas.op.secoesVersao", { versao: VERSAO_SECOES })}</span>
+      ) : pode === "sim" && !e.opcoesSecoes.length ? (
+        <span className="text-xs text-muted-foreground">{t("empresas.op.secoesVazio")}</span>
+      ) : pode === "sim" && livres.length ? (
+        <Select value="" onValueChange={(id) => e.aplicar((l) => adicionarSecao(l, u.id, id, e.computador))} disabled={!e.pode}>
+          <SelectTrigger className="w-full sm:w-fit" aria-label={t("empresas.op.secoesEscolher")}>
+            <SelectValue placeholder={t("empresas.op.secoesEscolher")} />
+          </SelectTrigger>
+          <SelectContent>
+            {livres.map((o) => {
+              const dono = donoDaSecao(e.lista, u.id, o.id, e.computador)
+              return (
+                <SelectItem key={o.id} value={o.id} disabled={dono !== null}>
+                  {dono !== null
+                    ? t("empresas.op.secoesEmOutro", { pasta: o.caminho, dono })
+                    : tn("empresas.op.secoesOpcao", o.agentes, { pasta: o.caminho })}
+                </SelectItem>
+              )
+            })}
+          </SelectContent>
+        </Select>
+      ) : null}
     </div>
   )
 }
@@ -1442,7 +1547,7 @@ function LinhaDoAgente({ l, u, e }: { l: LinhaAgente; u: UnidadeRascunho; e: Edi
         : l.bloqueio
           ? [t("empresas.agentes.bloqueado", { dono: l.bloqueio }), true]
       : l.porRegra
-        ? [t("empresas.agentes.pelaRegra", { regra: l.porRegra }), false]
+        ? [t("empresas.agentes.pelaRegra", { regra: regraNaTela(l.porRegra, u, e, t) }), false]
         : l.onde === u.id
           ? [t("empresas.agentes.aqui"), false]
           : l.ondeNome
