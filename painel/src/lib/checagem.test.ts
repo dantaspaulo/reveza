@@ -253,11 +253,37 @@ describe("checarLigar: computador sem a espera da 0.21.0 recusa", () => {
     ])
   })
 
-  it("Roda em só com computadores removidos: não roda em lugar nenhum (como a nuvem), sem recusa nem troca", () => {
+  it("Roda em só com computadores removidos: não roda em lugar nenhum (como a nuvem); ligar assim é recusado", () => {
     const a = [u("alfa", { contas: ["c1"], computadores: ["pc-removido"] })]
     const l = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: ["pc-removido"] })]
     const pcs = [pc(MAC, { versao: "0.20.2", atribuicao: usa("c2") }), pc("pc-removido", { revogado: true, versao: "0.19.0" })]
-    expect(checar(a, l, [c("c1"), c("c2")], {}, pcs)).toEqual({ recusas: [], avisos: [] })
+    expect(checar(a, l, [c("c1"), c("c2")], {}, pcs)).toEqual({
+      recusas: [{ tipo: "semComputador", unidade: "alfa" }],
+      avisos: [],
+    })
+    // o projeto que liga sozinho numa empresa assim também; a empresa já ligada que só muda o nome, não
+    const sub = [...a, u("p1", { pai: "alfa", modo: null })]
+    const subLiga = [...a, u("p1", { pai: "alfa", modo: "ligado" })]
+    expect(checar(sub, subLiga, [c("c1")], {}, pcs).recusas).toEqual([{ tipo: "semComputador", unidade: "p1" }])
+    const ligada = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: ["pc-removido"] })]
+    const renomeada = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: ["pc-removido"], nome: "Alfa 2" })]
+    expect(checar(ligada, renomeada, [c("c1")], {}, pcs).recusas).toEqual([])
+  })
+
+  it("projeto cuja empresa não veio na leitura: sem a recusa de computador (não se sabe onde roda)", () => {
+    const l = [u("p1", { pai: "sumida", modo: "ligado", contas: ["c1"] })]
+    expect(checar([u("p1", { pai: "sumida", contas: ["c1"] })], l, [c("c1")]).recusas).toEqual([])
+  })
+
+  it("dois projetos que ligam sozinhos com a empresa desligada: o computador atrasado sai em cada um", () => {
+    const a = [u("alfa", { contas: ["c1"] }), u("p1", { pai: "alfa", contas: ["c2"] }), u("p2", { pai: "alfa", contas: ["c3"] })]
+    const l = [
+      u("alfa", { contas: ["c1"] }),
+      u("p1", { pai: "alfa", modo: "ligado", contas: ["c2"] }),
+      u("p2", { pai: "alfa", modo: "ligado", contas: ["c3"] }),
+    ]
+    const r = checar(a, l, [c("c1"), c("c2"), c("c3")], {}, [pc(MAC, { versao: "0.20.2" })])
+    expect(r.recusas.map((x) => x.unidade)).toEqual(["p1", "p2"])
   })
 
   it("empresa já ligada que ganha no Roda em um computador atrasado: recusa só por ele, sem olhar as contas", () => {
@@ -325,6 +351,13 @@ describe("checarLigar: o relatório de quem troca de conta", () => {
     expect(checar(a, l, [c("c1"), c("c2")], {}, pcs).avisos).toEqual([
       { tipo: "trocam", unidade: "alfa", computador: "VPS", contaId: "c2" },
     ])
+  })
+
+  it("empresa já ligada sem nenhuma conta que rode ganha um computador: não promete troca", () => {
+    const a = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC] })]
+    const l = [u("alfa", { modo: "ligado", contas: ["c1"], computadores: [MAC, VPS] })]
+    const pcs = [pc(MAC), pc(VPS, { atribuicao: usa("c2") })]
+    expect(checar(a, l, [c("c1"), c("c2")], { c1: "precisa_login" }, pcs)).toEqual({ recusas: [], avisos: [] })
   })
 
   it("com recusa de conta, não promete troca nem espera", () => {

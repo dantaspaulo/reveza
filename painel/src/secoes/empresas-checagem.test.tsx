@@ -112,8 +112,7 @@ describe("Projetos: a checagem antes de ligar (0.22.1)", () => {
     await clicar(botao("Salvar"))
     expect(salvar).not.toHaveBeenCalled()
     const alerta = alertas()
-    expect(alerta).toContain("Não dá para ligar Agência")
-    expect(alerta).toContain("Desktop")
+    expect(alerta).toContain("Não dá para rodar Agência em Desktop")
     expect(alerta).toContain("0.20.2")
     // diz em qual projeto fica o "Roda em" (o subprojeto não tem o seu)
     expect(alerta).toContain("tire-o de \"Roda em\" em Agência")
@@ -125,24 +124,24 @@ describe("Projetos: a checagem antes de ligar (0.22.1)", () => {
     })
     await clicar(chave("Agência"))
     await clicar(botao("Salvar"))
-    expect(tela.textContent).toContain("Não dá para ligar Agência")
+    expect(tela.textContent).toContain("Não dá para rodar Agência em Desktop")
     await clicar(chave("Agência"))
-    expect(tela.textContent).not.toContain("Não dá para ligar Agência")
+    expect(tela.textContent).not.toContain("Não dá para rodar Agência")
   })
 
   it("mostra antes de salvar o computador que troca de conta, e salva quando dá para rodar", async () => {
     const fonte = await montar()
     const salvar = vi.spyOn(fonte, "salvarUnidades")
     // sem mudança, nada de relatório
-    expect(tela.textContent).not.toContain("O que muda ao ligar")
+    expect(tela.textContent).not.toContain("O que muda ao salvar")
     await clicar(chave("Agência"))
     // o Desktop usa a conta pessoal, que não é da Agência; o Notebook já usa a de trabalho
-    expect(tela.textContent).toContain("O que muda ao ligar")
+    expect(tela.textContent).toContain("O que muda ao salvar")
     expect(tela.textContent).toContain("Em Desktop, as conversas de Agência saem de pessoal@exemplo.com")
     expect(tela.textContent).not.toContain("Em Notebook, as conversas de Agência")
     await clicar(botao("Salvar"))
     expect(salvar).toHaveBeenCalledTimes(1)
-    expect(tela.textContent).not.toContain("Não dá para ligar")
+    expect(tela.textContent).not.toContain("Não dá para")
   })
 
   it("avisa que as conversas esperam quando toda conta que roda está no limite", async () => {

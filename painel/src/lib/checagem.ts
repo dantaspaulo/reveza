@@ -18,6 +18,7 @@ export type MotivoSemRodar = "saindo" | "precisa_login" | "pausada" | "sumiu"
 export type RecusaLigar =
   | { tipo: "semContaQueRode"; unidade: string; contas: { id: string; motivo: MotivoSemRodar }[] }
   | { tipo: "computadorSemEspera"; unidade: string; computador: string; versao: string }
+  | { tipo: "semComputador"; unidade: string }
 
 export type AvisoLigar =
   | { tipo: "trocam"; unidade: string; computador: string; contaId: string }
@@ -71,7 +72,7 @@ export function checarLigar(antes: UnidadeRascunho[], lista: UnidadeRascunho[], 
   const avisos: AvisoLigar[] = []
   const ids = new Set(quemLiga(antes, lista).map((x) => x.id))
   const porNome = (a: PcChecagem, b: PcChecagem) => a.nome.localeCompare(b.nome)
-  // o mesmo computador atrasado sai uma vez por empresa, na empresa quando ela também é olhada (empresas antes)
+  // o computador atrasado que a empresa já recusou não se repete nos projetos dela (empresas antes)
   const recusados = new Set<string>()
   const ordem = [...lista].sort((a, b) => (a.pai ? 1 : 0) - (b.pai ? 1 : 0))
   for (const un of ordem) {
@@ -96,7 +97,8 @@ export function checarLigar(antes: UnidadeRascunho[], lista: UnidadeRascunho[], 
     })
     // projeto já ligado que perde contas não é checado de novo (fora desta versão, ver o desenho)
     const ruins = estados.filter((x) => x.estado === null || SEM_RODAR.has(x.estado))
-    const semConta = nova && ruins.length === estados.length
+    const todasRuins = ruins.length === estados.length
+    const semConta = nova && todasRuins
     if (semConta) {
       recusas.push({
         tipo: "semContaQueRode",
@@ -104,16 +106,24 @@ export function checarLigar(antes: UnidadeRascunho[], lista: UnidadeRascunho[], 
         contas: ruins.map((x) => ({ id: x.id, motivo: (x.estado ?? "sumiu") as MotivoSemRodar })),
       })
     }
+    // "Roda em" só com computadores removidos: ligar assim não roda em lugar nenhum (e a nuvem tira as contas dele de
+    // todos os computadores); a empresa que não veio na leitura não entra (não se sabe onde ela roda)
+    const raiz = un.pai ? pai : un
+    if (nova && raiz && Array.isArray(raiz.computadores) && !ondeRoda(un, lista, ctx.computadores).length) {
+      recusas.push({ tipo: "semComputador", unidade: un.id })
+      continue
+    }
     const vistos = olhar.filter((p) => vistoHaPouco(p, ctx.agora))
     for (const p of vistos) {
+      // a empresa marca o computador que recusou; o projeto não repete o da empresa, e cada projeto diz o seu
       const chave = `${un.pai ?? un.id}|${p.id}`
       if (versaoNum(p.versao) < versaoNum(VERSAO_COM_ESPERA) && !recusados.has(chave)) {
-        recusados.add(chave)
+        if (!un.pai) recusados.add(chave)
         recusas.push({ tipo: "computadorSemEspera", unidade: un.id, computador: p.nome, versao: p.versao })
       }
     }
-    // com recusa de conta não há o que prometer
-    if (semConta) continue
+    // sem conta que rode não há o que prometer (no projeto já ligado também)
+    if (todasRuins) continue
     for (const p of vistos) {
       const emUso = p.atribuicao?.contaId
       if (emUso && !contas.includes(emUso)) avisos.push({ tipo: "trocam", unidade: un.id, computador: p.nome, contaId: emUso })

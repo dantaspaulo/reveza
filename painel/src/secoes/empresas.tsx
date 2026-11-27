@@ -781,11 +781,12 @@ function nomeDaConta(id: string, contas: Conta[]): string {
 /** 0.22.1: o motivo de o Salvar não ligar, com o nome do projeto, as contas e o computador. */
 function textoRecusa(r: RecusaLigar, lista: UnidadeRascunho[], contas: Conta[], t: Traduzir): string {
   const nome = nomeDaUnidade(r.unidade, lista, t)
+  // o "Roda em" é o da empresa: o subprojeto não tem o seu
+  const pai = lista.find((x) => x.id === r.unidade)?.pai
+  const empresa = pai ? nomeDaUnidade(pai, lista, t) : nome
+  if (r.tipo === "semComputador") return t("empresas.op.recusaSemComputador", { nome, empresa })
   if (r.tipo === "computadorSemEspera") {
     const versao = r.versao?.trim() || t("empresas.op.versaoDesconhecida")
-    // o "Roda em" é o da empresa: o subprojeto não tem o seu
-    const pai = lista.find((x) => x.id === r.unidade)?.pai
-    const empresa = pai ? nomeDaUnidade(pai, lista, t) : nome
     return t("empresas.op.recusaComputador", { nome, computador: r.computador, versao, empresa })
   }
   const lidas = r.contas
