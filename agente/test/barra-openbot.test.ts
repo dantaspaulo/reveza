@@ -56,7 +56,8 @@ describe("barra lateral do OpenBot", () => {
       }),
     );
     assert.equal(ciclo.deAgente.has("agent-1"), false);
-    assert.equal(ciclo.deAgente.has("agent-3"), false, "pasta que é pai de si mesma também é ciclo");
+    // revisão da 0.22.0: a pasta que é pai de si mesma é raiz, como na nuvem e no painel (que a oferecem para escolher)
+    assert.deepEqual(ciclo.deAgente.get("agent-3"), ["d"], "pasta que é pai de si mesma é raiz");
     assert.deepEqual(ciclo.deAgente.get("agent-2"), [C]);
 
     const secoes = Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, name: `n${i}`, ...(i ? { parentId: `s${i - 1}` } : {}) }));
@@ -133,5 +134,15 @@ describe("o id do agente na consulta ao banco do OpenBot (0.22.0)", () => {
       { pasta: "/b", nome: "", titulo: "" },
       { pasta: "/c", nome: "", titulo: "" },
     ]);
+  });
+
+  test("revisão: pasta que é pai dela mesma é raiz (como na nuvem e no painel); nome cortado não deixa meio emoji", () => {
+    const longo = "x".repeat(119) + "\u{1F600}";
+    const b = barraDoLayout(layout({ sections: [{ id: A, name: longo, parentId: A }], agentAssignments: { "agent-1": A } }));
+    assert.deepEqual(b.deAgente.get("agent-1"), [A]);
+    assert.equal(b.pastas[0]!.pai, null);
+    const nome = b.pastas[0]!.nome;
+    assert.ok(!/[\uD800-\uDBFF]$/.test(nome), "sem metade de emoji no fim");
+    assert.doesNotThrow(() => encodeURIComponent(nome));
   });
 });

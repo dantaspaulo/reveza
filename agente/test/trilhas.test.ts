@@ -615,6 +615,65 @@ describe("trilhas no agente", () => {
     assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true });
   });
 
+  test("0.22.0 (revisão): barra sem leitura e pasta do OpenBot de projeto estrito: a conversa do agente espera; fora das pastas dos agentes, nada muda", async () => {
+    banco = new BancoFalso();
+    nuvemFalsa = new NuvemFalsa(banco, "pc-1");
+    const ob = new OpenBotFalso();
+    // como no OpenBot de verdade, o estado da barra só muda numa leitura
+    let estado: "ok" | "sem_leitura" = "sem_leitura";
+    let proximo: "ok" | "sem_leitura" = "sem_leitura";
+    ob.barraEstado = () => estado;
+    const ler = ob.agentes.bind(ob);
+    ob.agentes = () => {
+      estado = proximo;
+      return ler();
+    };
+    m = await montar({ nuvem: nuvemFalsa, openbot: ob });
+    banco.agora = () => m.relogio.agora();
+    const pastaAgente = path.join(m.c.home, "OpenBot", "Agents", "agent-1");
+    const cwd = path.join(pastaAgente, "trabalho");
+    const fora = path.join(m.c.home, "outro-projeto");
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.mkdirSync(fora, { recursive: true });
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra" }];
+    await comPrincipal();
+    await comEmpresa();
+    banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true }];
+    banco.regras = [{ tipo: "secao", padrao: "clientes", empresa: E1 }];
+    banco.trilhas.get("pc-1")!.delete(E1);
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.agente.busca();
+    // a pasta do agente pode ser do projeto estrito pela pasta do OpenBot e a barra não foi lida: a primeira pergunta
+    // não abre na conta em uso, espera (a pergunta de novo segue sem certeza até a barra ser lida)
+    assert.match((await pedir(cwd)).bloqueio ?? "", /pastas do OpenBot/);
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null });
+    // a sessão fora das pastas dos agentes não depende da barra
+    assert.deepEqual(await pedir(fora), { ok: true, trilha: null });
+    assert.deepEqual(await deNovo(fora), { ok: true, trilha: null, certa: true });
+    // a barra que não está boa faz ler de novo em 30 s, não em 5 min
+    await m.relogio.dormir(301_000);
+    await pedir(fora);
+    const lidas = ob.leituras;
+    await m.relogio.dormir(31_000);
+    await pedir(fora);
+    assert.equal(ob.leituras, lidas + 1, "barra sem leitura: lê de novo em 30 s");
+    proximo = "ok";
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra", secoes: ["clientes"] }];
+    await m.relogio.dormir(31_000);
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "lida a barra, a pasta é do projeto");
+    const depois = ob.leituras;
+    await m.relogio.dormir(31_000);
+    await pedir(fora);
+    assert.equal(ob.leituras, depois, "barra boa: de volta aos 5 min");
+    // projeto que não é estrito: a barra sem leitura não segura a conversa do agente
+    proximo = "sem_leitura";
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra" }];
+    banco.empresas = [{ id: E1, nome: "Empresa Um" }];
+    await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
+    await m.relogio.dormir(301_000);
+    assert.equal((await pedir(cwd)).bloqueio, undefined);
+  });
+
   /** A conta A em uso na principal é a única da empresa, sem trilha própria. */
   async function naPrincipalDaEmpresa(): Promise<{ cwd: string; idNuvem: string }> {
     const a = await comPrincipal();

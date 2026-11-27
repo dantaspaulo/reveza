@@ -74,10 +74,17 @@ const BARRA_VERSOES = new Set([2]);
 const BARRA_PASTAS_MAX = 500;
 const BARRA_ATRIBUICOES_MAX = 2000;
 const BARRA_NIVEIS_MAX = 10;
+/** O arquivo da barra que falta por este tempo (duas leituras) é barra vazia, não uma regravação do OpenBot. */
+const BARRA_AUSENTE_MS = 25_000;
 
 /** Texto de fora: sem caracteres de controle, sem espaço nas pontas, curto. */
 function textoCurto(v: unknown, max: number): string {
-  return typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "";
+  return typeof v === "string" ? cortar(v.replace(/[\u0000-\u001f\u007f]/g, " ").trim(), max) : "";
+}
+
+/** Corta sem deixar meio emoji no fim (a metade solta não vira JSON que a nuvem aceite). */
+function cortar(s: string, max: number): string {
+  return s.slice(0, max).replace(/[\uD800-\uDBFF]$/, "");
 }
 
 /**
@@ -117,7 +124,8 @@ export function barraDoLayout(texto: string | null): BarraOpenBot {
     pastas.push(p);
     porId.set(p.id, p);
   }
-  for (const p of pastas) if (p.pai !== null && !porId.has(p.pai)) p.pai = null;
+  // pai que não existe, ou a própria pasta, vira raiz (a nuvem e o painel fazem o mesmo)
+  for (const p of pastas) if (p.pai !== null && (p.pai === p.id || !porId.has(p.pai))) p.pai = null;
   const cadeias = new Map<string, string[] | null>();
   const cadeiaDe = (id: string): string[] | null => {
     if (cadeias.has(id)) return cadeias.get(id)!;
@@ -166,7 +174,7 @@ export function agentesDaSaida(saida: string): AgenteOpenBot[] {
     return [];
   }
   if (!Array.isArray(linhas)) return [];
-  const texto = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "");
+  const texto = (v: unknown, max: number) => (typeof v === "string" ? cortar(v.replace(/[\u0000-\u001f\u007f]/g, " ").trim(), max) : "");
   const r: AgenteOpenBot[] = [];
   for (const l of linhas.slice(0, 500)) {
     if (!l || typeof l !== "object") continue;
@@ -248,6 +256,7 @@ export class OpenBotLocal implements OpenBot {
     private exec: Executor,
     private node: string = process.execPath,
     private sqlite = "/usr/bin/sqlite3",
+    private agora: () => number = Date.now,
   ) {}
 
   chatPrincipal(sessao: string): string | null {
@@ -295,7 +304,11 @@ export class OpenBotLocal implements OpenBot {
   }
 
   private barraBoa: BarraOpenBot | null = null;
-  private barraFalhou = false;
+  // nasce falha: antes da primeira leitura (ou com a dos agentes falhando antes dela) não se sabe nada da barra, e a
+  // lista vazia das pastas apagaria as da nuvem (revisão da 0.22.0)
+  private barraFalhou = true;
+  /** Desde quando o arquivo da barra falta (ms), para a falta que dura virar barra vazia. */
+  private barraAusenteDesde: number | null = null;
 
   /** As pastas da barra do OpenBot da última leitura boa (vazia sem pastas). */
   pastas(): PastaOpenBot[] {
@@ -303,19 +316,20 @@ export class OpenBotLocal implements OpenBot {
   }
 
   /**
-   * A última leitura da barra: "ok"; "velha" (falhou e vale a anterior; o doctor avisa); "sem_leitura" (falhou, ou não
-   * havia o arquivo, e nunca houve uma boa: ninguém tem pasta, a nuvem mantém a cadeia que tinha, e quem classifica trata
-   * como incerto quando há regra de pasta do OpenBot).
+   * A última leitura da barra: "ok"; "velha" (falhou e vale a anterior; o doctor avisa); "sem_leitura" (ainda não lida,
+   * ou falhou sem nunca ter havido uma boa: ninguém tem pasta, a nuvem mantém a cadeia que tinha, e a conversa de um
+   * agente que pode ser de um projeto estrito pela pasta do OpenBot espera).
    */
   barraEstado(): "ok" | "velha" | "sem_leitura" {
     return !this.barraFalhou ? "ok" : this.barraBoa ? "velha" : "sem_leitura";
   }
 
   /**
-   * A barra lateral do OpenBot, só leitura. Sem o arquivo desde o começo: barra vazia, "sem_leitura". A leitura que falha (JSON pela
-   * metade, versão nova do OpenBot, arquivo que sumiu no meio de uma regravação) mantém a última boa; sem leitura boa
-   * antes, barra vazia e estado "sem_leitura". Nunca lança: a barra estragada não pode derrubar a lista dos agentes de
-   * quem nem usa pastas (a lista que falha deixa o agente sem certeza em todas as conversas).
+   * A barra lateral do OpenBot, só leitura. A leitura que falha (JSON pela metade, versão nova do OpenBot, arquivo que
+   * sumiu no meio de uma regravação) mantém a última boa; sem leitura boa antes, barra vazia e estado "sem_leitura". O
+   * arquivo que falta em duas leituras com BARRA_AUSENTE_MS ou mais entre elas é barra vazia e boa (OpenBot sem pastas,
+   * ou zerado): sem isso a nuvem guardaria para sempre as pastas de antes. Nunca lança: a barra estragada não pode
+   * derrubar a lista dos agentes de quem nem usa pastas (a lista que falha deixa o agente sem certeza em todas as conversas).
    */
   private lerBarra(): BarraOpenBot {
     const arquivo = path.join(path.dirname(this.locais.banco), BARRA_ARQUIVO);
@@ -326,11 +340,12 @@ export class OpenBotLocal implements OpenBot {
         texto = fs.readFileSync(arquivo, "utf8");
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`a barra do OpenBot não deu para ler: ${(e as Error).message}`);
-        if (this.barraBoa && this.barraBoa.pastas.length) throw new Error("a barra do OpenBot sumiu depois de uma leitura boa");
-        // sem o arquivo desde que o agente ligou (nunca houve pastas, ou o OpenBot regravando nesse instante) não é uma
-        // leitura: a cadeia vai null e a nuvem mantém a que tinha (parte C da 0.22.0)
-        if (!this.barraBoa) throw new Error("a barra do OpenBot não existe");
+        // a falta de agora pode ser o OpenBot regravando: só a que dura é barra vazia
+        const agora = this.agora();
+        if (this.barraAusenteDesde === null) this.barraAusenteDesde = agora;
+        if (agora - this.barraAusenteDesde < BARRA_AUSENTE_MS) throw new Error("a barra do OpenBot não existe agora");
       }
+      if (texto !== null) this.barraAusenteDesde = null;
       const b = barraDoLayout(texto);
       this.barraBoa = b;
       this.barraFalhou = false;

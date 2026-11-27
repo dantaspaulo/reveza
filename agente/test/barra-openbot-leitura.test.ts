@@ -86,6 +86,74 @@ describe("agentes do OpenBot com as pastas da barra", { skip: !fs.existsSync(SQL
       fs.rmSync(d, { recursive: true, force: true });
     }
   });
+
+  test("revisão: antes da primeira leitura boa não está ok; o arquivo que falta vira barra vazia depois de uma folga", () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "reveza-openbot-barra-"));
+    try {
+      const banco = path.join(d, "openbot.db");
+      const barra = path.join(d, BARRA_ARQUIVO);
+      let t = 1_000_000;
+      const agora = () => t;
+      // a leitura dos agentes que falha antes da barra (banco trancado ou estranho) não pode valer como barra lida: a
+      // lista vazia das pastas apagaria as da nuvem
+      fs.writeFileSync(banco, "isto não é um banco do OpenBot");
+      const quebrado = new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec, process.execPath, SQLITE, agora);
+      assert.equal(quebrado.barraEstado(), "sem_leitura", "antes da primeira leitura");
+      assert.throws(() => quebrado.agentes());
+      assert.equal(quebrado.barraEstado(), "sem_leitura", "a leitura dos agentes falhou antes da barra");
+      fs.rmSync(banco);
+
+      const j = (o: unknown) => JSON.stringify(o).replace(/'/g, "''");
+      execFileSync(SQLITE, [
+        banco,
+        "CREATE TABLE projection_agents (agent_id TEXT, thread_id TEXT, agent_json TEXT);" +
+          `INSERT INTO projection_agents VALUES ('agent-1', 't1', '${j({ workspacePath: "/Users/x/OpenBot/Agents/agent-1", name: "Um", title: "T" })}');`,
+      ]);
+      const boa = JSON.stringify({
+        version: 2,
+        sections: [{ id: A, name: "Empresa" }, { id: B, name: "Time", parentId: A }],
+        agentAssignments: { "agent-1": B },
+      });
+      const ob = new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec, process.execPath, SQLITE, agora);
+      ob.agentes();
+      assert.equal(ob.barraEstado(), "sem_leitura", "sem o arquivo agora: pode ser o OpenBot regravando");
+      t += 10_000;
+      ob.agentes();
+      assert.equal(ob.barraEstado(), "sem_leitura", "ainda dentro da folga");
+      t += 20_000;
+      assert.equal(ob.agentes()[0]!.secoes, undefined);
+      assert.equal(ob.barraEstado(), "ok", "sem o arquivo há mais de 25 s: ninguém tem pasta (OpenBot sem pastas ou zerado)");
+      assert.deepEqual(ob.pastas(), []);
+
+      fs.writeFileSync(barra, boa);
+      t += 1_000;
+      assert.deepEqual(ob.agentes()[0]!.secoes, [A, B]);
+      assert.equal(ob.pastas().length, 2);
+      fs.rmSync(barra);
+      assert.deepEqual(ob.agentes()[0]!.secoes, [A, B], "sumiu agora: vale a última");
+      assert.equal(ob.barraEstado(), "velha");
+      t += 30_000;
+      assert.equal(ob.agentes()[0]!.secoes, undefined, "sumiu de vez: ninguém tem pasta");
+      assert.equal(ob.barraEstado(), "ok");
+      assert.deepEqual(ob.pastas(), []);
+
+      // a falta que volta depois de uma leitura boa começa a contar de novo
+      fs.writeFileSync(barra, boa);
+      t += 1_000;
+      ob.agentes();
+      fs.rmSync(barra);
+      ob.agentes();
+      t += 10_000;
+      fs.writeFileSync(barra, boa);
+      ob.agentes();
+      fs.rmSync(barra);
+      t += 20_000;
+      ob.agentes();
+      assert.equal(ob.barraEstado(), "velha", "a falta de antes não soma com a de agora");
+    } finally {
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("aviso do doctor sobre a barra do OpenBot (0.22.0)", () => {

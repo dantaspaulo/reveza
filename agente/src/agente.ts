@@ -2797,8 +2797,10 @@ export class Agente {
     const ob = this.d.openbot;
     if (!ob?.agentes) return [];
     const t = this.d.relogio.agora();
-    // a leitura que falhou tenta de novo em 30 s, não em 5 min: até lá, a espera do lançador fica sem certeza
-    if (t - this.agentesLidosEm < (this.agentesFalhou ? 30 : 300)) return this.agentesLista;
+    // a leitura que falhou (a dos agentes ou a da barra) tenta de novo em 30 s, não em 5 min: até lá, a espera do
+    // lançador fica sem certeza e a conversa de um agente que pode ser de um projeto estrito pela pasta do OpenBot espera
+    const falhou = this.agentesFalhou || (!!ob.barraEstado && ob.barraEstado() !== "ok");
+    if (t - this.agentesLidosEm < (falhou ? 30 : 300)) return this.agentesLista;
     this.agentesLidosEm = t;
     try {
       this.agentesLista = ob.agentes();

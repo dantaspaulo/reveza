@@ -336,10 +336,24 @@ export class Trilhas {
       !!this.d.nuvem() &&
       this.lidasEm > 0 &&
       this.agora() - this.lidasEm <= 2 * EMPRESAS_LER_S &&
-      !this.d.agentesFalhou?.() &&
-      // 0.22.0: com regra de pasta do OpenBot, a barra que nunca foi lida deixa sem saber de qual projeto é a pasta
-      !(this.d.barraSemLeitura?.() && this.regras.some((r) => r.tipo === "secao"))
+      !this.d.agentesFalhou?.()
     );
+  }
+
+  /**
+   * 0.22.0 (revisão): a barra do OpenBot ainda sem leitura deixa sem saber se a pasta de um agente é de um projeto
+   * estrito pela pasta do OpenBot. Vale só para a sessão dentro da pasta de um agente e só com essa regra num projeto
+   * estrito: as outras sessões não dependem da barra.
+   */
+  private barraIncerta(cwd: string): boolean {
+    if (this.d.sombra || !this.d.barraSemLeitura?.()) return false;
+    const estritas = new Set(this.empresas.filter((e) => e.estrita === true).map((e) => e.id));
+    if (!this.regras.some((r) => r.tipo === "secao" && estritas.has(r.empresa))) return false;
+    const p = normalizarPasta(this.d.pastaDe(cwd));
+    return this.d.agentes().some((a) => {
+      const base = normalizarPasta(a.pasta);
+      return !!base && a.secoes === null && (p === base || (base === "/" ? p.startsWith("/") : p.startsWith(base + "/")));
+    });
   }
 
   /** A resposta "abre na principal"; na pergunta de novo, com a marca de certeza quando o agente a tem. */
@@ -410,6 +424,13 @@ export class Trilhas {
       this.d.log.erro(`ler os projetos separados: ${(e as Error).message}`);
     }
     const emp = this.empresaDe(cwd);
+    // a conversa que pode ser de um projeto estrito pela pasta do OpenBot não abre na conta em uso antes de a barra ser
+    // lida: espera (o lançador pergunta de novo a cada 15 s, e a pergunta de novo segue sem certeza até lá)
+    if (this.barraIncerta(cwd)) {
+      return deNovo
+        ? { ok: true, trilha: null }
+        : { ok: true, trilha: null, bloqueio: "esperando a leitura das pastas do OpenBot para saber o projeto desta conversa." };
+    }
     if (!emp) return this.naPrincipalCom(deNovo);
     // no modo sombra o agente só registra: a regra das contas não impede sessão nenhuma de abrir
     const estrita = emp.estrita === true && !this.d.sombra;
