@@ -11,6 +11,7 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { gravarAtomico } from "./util/arquivos.js";
 import type { Executor } from "./util/executor.js";
 
 const SESSAO_VALIDA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,6 +41,11 @@ export interface OpenBot {
   pastas?(): PastaOpenBot[];
   /** Como foi a última leitura da barra (0.22.0): "ok", "velha" (vale a anterior) ou "sem_leitura" (nunca houve uma boa). */
   barraEstado?(): "ok" | "velha" | "sem_leitura";
+  /**
+   * Há quanto tempo a barra não está boa (ms; 0.22.0, revisão 2), num relógio só: desde a primeira leitura ruim depois
+   * da última boa, ou desde ligar. null com a barra boa.
+   */
+  barraFalhaHaMs?(): number | null;
 }
 
 export interface AgenteOpenBot {
@@ -48,8 +54,11 @@ export interface AgenteOpenBot {
   pasta: string;
   nome: string;
   titulo: string;
-  /** As pastas da barra do OpenBot em que o agente está, da raiz até a dele (ids; 0.22.0). Sem pasta: ausente. */
-  secoes?: string[];
+  /**
+   * As pastas da barra do OpenBot em que o agente está, da raiz até a dele (ids; 0.22.0). Sem pasta: ausente. null: a
+   * pasta dele não se sabe (nunca houve leitura boa, ou ele não estava na última e a barra de agora não dá para ler).
+   */
+  secoes?: string[] | null;
 }
 
 /** O arquivo da barra lateral do OpenBot, na pasta do banco dele. */
@@ -74,8 +83,6 @@ const BARRA_VERSOES = new Set([2]);
 const BARRA_PASTAS_MAX = 500;
 const BARRA_ATRIBUICOES_MAX = 2000;
 const BARRA_NIVEIS_MAX = 10;
-/** O arquivo da barra que falta por este tempo (duas leituras) é barra vazia, não uma regravação do OpenBot. */
-const BARRA_AUSENTE_MS = 25_000;
 
 /** Texto de fora: sem caracteres de controle, sem espaço nas pontas, curto. */
 function textoCurto(v: unknown, max: number): string {
@@ -157,6 +164,37 @@ export function barraDoLayout(texto: string | null): BarraOpenBot {
   return { pastas, deAgente };
 }
 
+/** A última barra boa que o Reveza guardou (0.22.0, revisão 2): a barra, o texto lido e os agentes vistos na mesma leitura. */
+export interface BarraGuardada {
+  barra: BarraOpenBot;
+  texto: string | null;
+  vistos: Set<string>;
+}
+
+/** O conteúdo do arquivo da barra guardada (`~/.reveza/openbot-barra.json`): sempre o mesmo texto para o mesmo estado. */
+function textoGuardado(texto: string | null, vistos: Iterable<string>): string {
+  return JSON.stringify({ versao: 1, barra: texto, vistos: [...vistos].sort() });
+}
+
+/**
+ * A barra guardada pelo próprio Reveza, relida pelo mesmo `barraDoLayout`. null: não há, ou está estragada (vale como se
+ * não houvesse: o agente nasce sem leitura, como antes da revisão 2).
+ */
+export function lerBarraGuardada(arquivo: string): BarraGuardada | null {
+  try {
+    if (fs.statSync(arquivo).size > 8 << 20) return null;
+    const j = JSON.parse(fs.readFileSync(arquivo, "utf8")) as unknown;
+    if (!j || typeof j !== "object" || Array.isArray(j)) return null;
+    const o = j as Record<string, unknown>;
+    if (o.versao !== 1 || (o.barra !== null && typeof o.barra !== "string") || !Array.isArray(o.vistos)) return null;
+    const vistos = new Set<string>();
+    for (const v of o.vistos.slice(0, BARRA_ATRIBUICOES_MAX)) if (typeof v === "string" && AGENTE_VALIDO.test(v)) vistos.add(v);
+    return { barra: barraDoLayout(o.barra), texto: o.barra, vistos };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A consulta dos agentes (só leitura): id (0.22.0, para achar a pasta da barra), pasta, nome e título de cada um, em
  * JSON. Linha com JSON estragado fica de fora (senão a consulta inteira falha).
@@ -224,9 +262,10 @@ export function openBotCarregaConfiguracao(home: string, plataforma: NodeJS.Plat
 
 /**
  * O aviso do doctor sobre a barra lateral do OpenBot (0.22.0): o motivo quando o arquivo existe e não dá para ler (JSON
- * pela metade, versão nova do OpenBot), ou null (sem OpenBot, sem a barra, barra boa, fora do macOS). Só leitura.
+ * pela metade, versão nova do OpenBot), ou quando ele falta e a última barra boa guardada tinha pastas (revisão 2: o
+ * agente segue com ela, sem prazo); null nos outros casos (sem OpenBot, barra boa, fora do macOS). Só leitura.
  */
-export function avisoDaBarra(home: string, plataforma: NodeJS.Platform = process.platform): string | null {
+export function avisoDaBarra(home: string, plataforma: NodeJS.Platform = process.platform, guardado?: string): string | null {
   if (plataforma !== "darwin") return null;
   const pasta = path.join(home, "Library", "Application Support", "OpenBot");
   if (!fs.existsSync(path.join(pasta, "openbot.db"))) return null;
@@ -236,8 +275,11 @@ export function avisoDaBarra(home: string, plataforma: NodeJS.Platform = process
     barraDoLayout(fs.readFileSync(arquivo, "utf8"));
     return null;
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
-    return (e as Error).message;
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") return (e as Error).message;
+    const g = guardado ? lerBarraGuardada(guardado) : null;
+    return g?.barra.pastas.length
+      ? "a barra do OpenBot não existe agora; valem as pastas da última leitura boa até o OpenBot gravar outra"
+      : null;
   }
 }
 
@@ -257,7 +299,18 @@ export class OpenBotLocal implements OpenBot {
     private node: string = process.execPath,
     private sqlite = "/usr/bin/sqlite3",
     private agora: () => number = Date.now,
-  ) {}
+    /** Onde vai a última barra boa (0.22.0, revisão 2); null: não guarda (testes antigos). */
+    private guardado: string | null = null,
+  ) {
+    this.falhaDesde = this.agora();
+    const g = guardado ? lerBarraGuardada(guardado) : null;
+    if (g) {
+      // religado: nasce com a última barra boa ("velha" até a primeira leitura), e não sem saber a pasta de ninguém
+      this.barraBoa = g.barra;
+      this.vistos = g.vistos;
+      this.guardadoTexto = textoGuardado(g.texto, g.vistos);
+    }
+  }
 
   chatPrincipal(sessao: string): string | null {
     const sql = consultaDoChatPrincipal(sessao);
@@ -295,20 +348,36 @@ export class OpenBotLocal implements OpenBot {
       throw new Error("a leitura dos agentes do OpenBot não veio em JSON");
     }
     const lista = agentesDaSaida(saida);
-    const barra = this.lerBarra();
+    this.lerBarra(lista.flatMap((a) => (a.id ? [a.id] : [])));
+    const boa = this.barraBoa;
     for (const a of lista) {
-      const secoes = a.id ? barra.deAgente.get(a.id) : undefined;
+      // a pasta de um agente não se sabe quando nunca houve leitura boa, ou quando a barra de agora não dá para ler e ele
+      // não estava na última boa (revisão 2: "não sei" é de cada agente, e não da barra inteira)
+      if (!boa || (this.barraFalhou && a.id && !this.vistos?.has(a.id))) {
+        a.secoes = null;
+        continue;
+      }
+      const secoes = a.id ? boa.deAgente.get(a.id) : undefined;
       if (secoes) a.secoes = [...secoes];
     }
     return lista;
   }
 
   private barraBoa: BarraOpenBot | null = null;
-  // nasce falha: antes da primeira leitura (ou com a dos agentes falhando antes dela) não se sabe nada da barra, e a
-  // lista vazia das pastas apagaria as da nuvem (revisão da 0.22.0)
+  /** Os agentes do banco na mesma leitura da última barra boa (a barra não traz quem está sem pasta). */
+  private vistos: Set<string> | null = null;
+  // nasce falha: antes da primeira leitura (ou com a dos agentes falhando antes dela) a barra de agora não foi lida, e a
+  // lista das pastas não vai à nuvem (revisão da 0.22.0)
   private barraFalhou = true;
-  /** Desde quando o arquivo da barra falta (ms), para a falta que dura virar barra vazia. */
-  private barraAusenteDesde: number | null = null;
+  /** O relógio da falha (ms): a primeira leitura ruim depois da última boa, ou a hora de ligar. null com a barra boa. */
+  private falhaDesde: number | null;
+  /** O que está no arquivo da barra guardada: a mesma barra não regrava. */
+  private guardadoTexto = "";
+
+  /** Há quanto tempo a barra não está boa (ms), ou null com a barra boa. */
+  barraFalhaHaMs(): number | null {
+    return this.barraFalhou && this.falhaDesde !== null ? Math.max(0, this.agora() - this.falhaDesde) : null;
+  }
 
   /** As pastas da barra do OpenBot da última leitura boa (vazia sem pastas). */
   pastas(): PastaOpenBot[] {
@@ -316,22 +385,23 @@ export class OpenBotLocal implements OpenBot {
   }
 
   /**
-   * A última leitura da barra: "ok"; "velha" (falhou e vale a anterior; o doctor avisa); "sem_leitura" (ainda não lida,
-   * ou falhou sem nunca ter havido uma boa: ninguém tem pasta, a nuvem mantém a cadeia que tinha, e a conversa de um
-   * agente que pode ser de um projeto estrito pela pasta do OpenBot espera).
+   * A última leitura da barra: "ok"; "velha" (falhou e vale a anterior, também ao ligar com a barra guardada, até a
+   * primeira leitura; o doctor avisa); "sem_leitura" (ainda não lida, ou falhou sem nunca ter havido uma boa nem uma
+   * guardada: a pasta de ninguém se sabe, a nuvem mantém a cadeia que tinha, e a conversa incerta espera no prazo).
    */
   barraEstado(): "ok" | "velha" | "sem_leitura" {
     return !this.barraFalhou ? "ok" : this.barraBoa ? "velha" : "sem_leitura";
   }
 
   /**
-   * A barra lateral do OpenBot, só leitura. A leitura que falha (JSON pela metade, versão nova do OpenBot, arquivo que
-   * sumiu no meio de uma regravação) mantém a última boa; sem leitura boa antes, barra vazia e estado "sem_leitura". O
-   * arquivo que falta em duas leituras com BARRA_AUSENTE_MS ou mais entre elas é barra vazia e boa (OpenBot sem pastas,
-   * ou zerado): sem isso a nuvem guardaria para sempre as pastas de antes. Nunca lança: a barra estragada não pode
-   * derrubar a lista dos agentes de quem nem usa pastas (a lista que falha deixa o agente sem certeza em todas as conversas).
+   * A barra lateral do OpenBot, só leitura, com os ids dos agentes lidos do banco na mesma chamada. A leitura que falha
+   * (JSON pela metade, versão nova do OpenBot) mantém a última boa. O OpenBot grava a barra num temporário e troca pelo
+   * nome (medido na versão instalada em 25/11/2026): ela não some ao regravar. Falta antes da primeira gravação, ou
+   * quando ele põe de lado uma barra estragada ao ligar; por isso, sem o arquivo: com pastas na última boa, vale ela, sem
+   * prazo (a nuvem e o agente ficam com a mesma; o doctor avisa); sem pastas nela, ou sem nenhuma boa, é a barra vazia,
+   * na hora. Nunca lança: a barra estragada não pode derrubar a lista dos agentes de quem nem usa pastas.
    */
-  private lerBarra(): BarraOpenBot {
+  private lerBarra(ids: string[]): void {
     const arquivo = path.join(path.dirname(this.locais.banco), BARRA_ARQUIVO);
     try {
       let texto: string | null = null;
@@ -340,19 +410,29 @@ export class OpenBotLocal implements OpenBot {
         texto = fs.readFileSync(arquivo, "utf8");
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`a barra do OpenBot não deu para ler: ${(e as Error).message}`);
-        // a falta de agora pode ser o OpenBot regravando: só a que dura é barra vazia
-        const agora = this.agora();
-        if (this.barraAusenteDesde === null) this.barraAusenteDesde = agora;
-        if (agora - this.barraAusenteDesde < BARRA_AUSENTE_MS) throw new Error("a barra do OpenBot não existe agora");
+        if (this.barraBoa?.pastas.length) throw new Error("a barra do OpenBot não existe agora");
       }
-      if (texto !== null) this.barraAusenteDesde = null;
-      const b = barraDoLayout(texto);
-      this.barraBoa = b;
+      this.barraBoa = barraDoLayout(texto);
+      this.vistos = new Set(ids);
       this.barraFalhou = false;
-      return b;
+      this.falhaDesde = null;
+      this.guardar(texto);
     } catch {
+      if (!this.barraFalhou || this.falhaDesde === null) this.falhaDesde = this.agora();
       this.barraFalhou = true;
-      return this.barraBoa ?? { pastas: [], deAgente: new Map() };
+    }
+  }
+
+  /** A leitura boa vai ao disco (só quando muda; gravação atômica), para o agente religado nascer com ela. */
+  private guardar(texto: string | null): void {
+    if (!this.guardado) return;
+    const conteudo = textoGuardado(texto, this.vistos ?? []);
+    if (conteudo === this.guardadoTexto) return;
+    try {
+      gravarAtomico(this.guardado, conteudo, 0o600);
+      this.guardadoTexto = conteudo;
+    } catch {
+      // disco cheio ou pasta sem permissão: a barra de agora vale do mesmo jeito; tenta de novo na próxima leitura boa
     }
   }
 
@@ -367,9 +447,9 @@ export class OpenBotLocal implements OpenBot {
 }
 
 /** O OpenBot deste computador, ou null quando ele não está instalado aqui. */
-export function openBotDoComputador(home: string, exec: Executor): OpenBot | null {
+export function openBotDoComputador(home: string, exec: Executor, guardado?: string): OpenBot | null {
   const locais = locaisDoOpenBot(home);
-  return locais ? new OpenBotLocal(locais, exec) : null;
+  return locais ? new OpenBotLocal(locais, exec, process.execPath, "/usr/bin/sqlite3", Date.now, guardado ?? null) : null;
 }
 
 /**

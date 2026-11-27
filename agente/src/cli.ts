@@ -1142,7 +1142,7 @@ async function cmdRodar(amb: Ambiente, a: Args): Promise<number> {
     // a troca automática espera sobrar memória para a leva de processos que ela abre nos editores (memoria.ts)
     memoria: amb.env.REVEZA_TROCA_ESPERA_MEMORIA === "0" ? undefined : () => lerMemoria(amb.exec, amb.sistema),
     // conversa de agente do OpenBot cortada pelo limite continua pelo próprio OpenBot (openbot.ts)
-    openbot: openBotDoComputador(amb.c.home, amb.exec),
+    openbot: openBotDoComputador(amb.c.home, amb.exec, amb.c.openbotBarra),
     diagnostico: async (): Promise<Record<string, unknown>> => {
       // a conferência periódica (agente_ola) só lê: nunca conserta sozinha
       const r = await doctor(depsDentro());

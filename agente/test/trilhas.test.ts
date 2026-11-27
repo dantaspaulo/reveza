@@ -12,7 +12,7 @@ import { lerChave } from "../src/ligar.js";
 import { NuvemRpc } from "../src/nuvem/rpc.js";
 import { fileURLToPath } from "node:url";
 import type { RegraEmpresa } from "../src/nuvem/tipos.js";
-import { criarClassificador, ehCaminho, EMPRESAS_LER_S, EMPRESAS_VENCIDAS_S, normalizarPasta, type AgentePasta } from "../src/trilhas.js";
+import { criarClassificador, criarClassificadorComIncerto, ehCaminho, EMPRESAS_LER_S, EMPRESAS_VENCIDAS_S, normalizarPasta, type AgentePasta } from "../src/trilhas.js";
 import { ativaEm, BancoFalso, blob, contaEstacionada, montar, NuvemFalsa, OpenBotFalso, type Montado } from "./falsos.js";
 
 /** A tabela de casos da pasta do OpenBot, a mesma da nuvem (dist/test -> nuvem/testes). */
@@ -98,6 +98,36 @@ describe("classificador das empresas separadas (o mesmo do painel)", () => {
     // um dos agentes da mesma pasta sem leitura: a parte comum não se sabe, a regra não pega
     const dois = com({ ...ag, secoes: ["clientes"] }, { ...ag, nome: "Outro", secoes: null });
     assert.equal(criarClassificador(empresas, regras, dois)("~/OpenBot/Agents/agent-1"), E2);
+  });
+
+  test("0.22.0 (revisão 2): o incerto sai na mesma passada do classificador, pela pasta de agente mais funda", () => {
+    const S = E1; // projeto estrito
+    const N = E2; // projeto que não é estrito
+    const FORA = "cccccccc-dddd-4eee-8fff-000000000000"; // projeto fora da lista dos ligados
+    const empresas = [{ id: S, nome: "Estrito", estrita: true }, { id: N, nome: "Livre" }];
+    const ag = (pasta: string, secoes: string[] | null, titulo = "Sem regra") => ({ pasta, nome: "Ag", titulo, secoes }) as AgentePasta;
+    const r = (tipo: string, padrao: string, empresa: string) => ({ tipo, padrao, empresa }) as RegraEmpresa;
+    const casos: [string, RegraEmpresa[], AgentePasta[], string, string | null, boolean][] = [
+      ["sem leitura, regra de pasta do OpenBot de projeto estrito", [r("secao", "c", S)], [ag("~/a", null)], "~/a/x", null, true],
+      ["regra de pasta do OpenBot só de projeto não estrito, nada estrito hoje", [r("secao", "c", N)], [ag("~/a", null)], "~/a", null, false],
+      ["título estrito com pasta do OpenBot não estrita", [r("secao", "c", N), r("titulo", "projeto x", S)], [ag("~/a", null, "Projeto X")], "~/a", S, true],
+      ["caminho do agente decide", [r("secao", "c", S), r("pasta", "~/a", N)], [ag("~/a", null)], "~/a/x", N, false],
+      ["caminho mais fundo que o agente decide", [r("secao", "c", S), r("pasta", "~/a/x", N)], [ag("~/a", null)], "~/a/x/y", N, false],
+      ["caminho acima do agente não decide", [r("secao", "c", S), r("pasta", "~/", N)], [ag("~/a", null)], "~/a/x", N, true],
+      ["nome da pasta do agente decide", [r("secao", "c", S), r("pasta", "a", N)], [ag("~/a", null)], "~/a/x", N, false],
+      ["agente conhecido", [r("secao", "c", S)], [ag("~/a", ["c"])], "~/a", S, false],
+      ["agente conhecido sem pasta", [r("secao", "c", S)], [ag("~/a", [])], "~/a", null, false],
+      ["fora das pastas dos agentes", [r("secao", "c", S)], [ag("~/a", null)], "~/b", null, false],
+      ["agente de cima sem leitura não segura o de baixo conhecido", [r("secao", "c", S)], [ag("~/a", null), ag("~/a/b", [])], "~/a/b/x", null, false],
+      ["mesma pasta, um dos agentes sem leitura", [r("secao", "c", S)], [ag("~/a", ["c"]), ag("~/a", null)], "~/a", null, true],
+      ["sem regra de pasta do OpenBot", [r("titulo", "nada", S)], [ag("~/a", null)], "~/a", null, false],
+      ["regra de pasta do OpenBot de projeto fora da lista", [r("secao", "c", FORA)], [ag("~/a", null)], "~/a", null, false],
+    ];
+    for (const [nome, regras, agentes, pasta, empresa, incerto] of casos) {
+      const c = criarClassificadorComIncerto(empresas, regras, agentes);
+      assert.deepEqual(c(pasta), { empresa, incerto }, nome);
+      assert.equal(criarClassificador(empresas, regras, agentes)(pasta), empresa, `${nome}: o classificador de sempre`);
+    }
   });
 
   test("normalizar e reconhecer caminho", () => {
@@ -605,6 +635,7 @@ describe("trilhas no agente", () => {
     assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "a pasta do agente é do projeto pela pasta do OpenBot");
     // a barra nunca foi lida (estragada desde que o agente ligou): o agente fica sem pasta e não há certeza
     ob.barraEstado = () => "sem_leitura";
+    ob.barraFalhaHaMs = () => 0; // dentro do prazo da espera
     ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra" }];
     await m.relogio.dormir(301_000);
     await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
@@ -615,14 +646,16 @@ describe("trilhas no agente", () => {
     assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true });
   });
 
-  test("0.22.0 (revisão): barra sem leitura e pasta do OpenBot de projeto estrito: a conversa do agente espera; fora das pastas dos agentes, nada muda", async () => {
+  test("0.22.0 (revisão 2): agente sem pasta conhecida e pasta do OpenBot de projeto estrito: espera só nos 3 primeiros min, a retomada também; depois abre pelas outras regras, com um aviso por hora", async () => {
     banco = new BancoFalso();
     nuvemFalsa = new NuvemFalsa(banco, "pc-1");
     const ob = new OpenBotFalso();
-    // como no OpenBot de verdade, o estado da barra só muda numa leitura
-    let estado: "ok" | "sem_leitura" = "sem_leitura";
-    let proximo: "ok" | "sem_leitura" = "sem_leitura";
+    // como no OpenBot de verdade: o estado da barra só muda numa leitura, e o relógio da falha é um só
+    let estado: "ok" | "velha" = "velha";
+    let proximo: "ok" | "velha" = "velha";
+    let falhaDesde = 0;
     ob.barraEstado = () => estado;
+    ob.barraFalhaHaMs = () => (estado === "ok" ? null : (m.relogio.agora() - falhaDesde) * 1000);
     const ler = ob.agentes.bind(ob);
     ob.agentes = () => {
       estado = proximo;
@@ -635,7 +668,8 @@ describe("trilhas no agente", () => {
     const fora = path.join(m.c.home, "outro-projeto");
     fs.mkdirSync(cwd, { recursive: true });
     fs.mkdirSync(fora, { recursive: true });
-    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra" }];
+    // o agente que não estava na última leitura boa: a pasta dele não se sabe
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra", secoes: null }];
     await comPrincipal();
     await comEmpresa();
     banco.empresas = [{ id: E1, nome: "Empresa Um", estrita: true }];
@@ -643,34 +677,62 @@ describe("trilhas no agente", () => {
     banco.trilhas.get("pc-1")!.delete(E1);
     await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
     await m.agente.busca();
-    // a pasta do agente pode ser do projeto estrito pela pasta do OpenBot e a barra não foi lida: a primeira pergunta
-    // não abre na conta em uso, espera (a pergunta de novo segue sem certeza até a barra ser lida)
+    falhaDesde = m.relogio.agora();
+    // no prazo: a primeira pergunta não abre na conta em uso, a pergunta de novo segue sem certeza, a retomada espera
     assert.match((await pedir(cwd)).bloqueio ?? "", /pastas do OpenBot/);
     assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null });
+    assert.deepEqual(m.agente.trilhas!.retomada(cwd), { espera: true }, "a retomada também espera no prazo");
     // a sessão fora das pastas dos agentes não depende da barra
     assert.deepEqual(await pedir(fora), { ok: true, trilha: null });
     assert.deepEqual(await deNovo(fora), { ok: true, trilha: null, certa: true });
-    // a barra que não está boa faz ler de novo em 30 s, não em 5 min
-    await m.relogio.dormir(301_000);
+    // nos primeiros 10 min de falha, a barra é lida de novo em 30 s
+    await m.relogio.dormir(31_000);
     await pedir(fora);
     const lidas = ob.leituras;
     await m.relogio.dormir(31_000);
     await pedir(fora);
-    assert.equal(ob.leituras, lidas + 1, "barra sem leitura: lê de novo em 30 s");
-    proximo = "ok";
-    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra", secoes: ["clientes"] }];
-    await m.relogio.dormir(31_000);
-    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "lida a barra, a pasta é do projeto");
-    const depois = ob.leituras;
+    assert.equal(ob.leituras, lidas + 1, "lê de novo em 30 s");
+    // passados 3 min sem saber a pasta: abre pelas outras regras (aqui, a conta em uso), com um aviso; nunca recusa
+    const avisos = () => banco.eventos.filter((x) => x.tipo === "aviso" && /pastas do OpenBot/.test(x.texto)).length;
+    await m.agente.esperar();
+    const antes = avisos();
+    await m.relogio.dormir(120_000);
+    const r = await pedir(cwd);
+    assert.equal(r.bloqueio, undefined, "passado o prazo, não espera mais");
+    assert.equal(r.trilha, null);
+    assert.deepEqual(await deNovo(cwd), { ok: true, trilha: null, certa: true }, "a espera não recusa para sempre");
+    assert.deepEqual(m.agente.trilhas!.retomada(cwd), {}, "a retomada também volta pelas outras regras");
+    await m.agente.esperar();
+    assert.equal(avisos(), antes + 1, "um aviso ao painel");
+    await pedir(cwd);
+    await m.agente.esperar();
+    assert.equal(avisos(), antes + 1, "no máximo um por hora");
+    // passados 10 min de falha, a leitura volta aos 5 min
+    await m.relogio.dormir(450_000);
+    await pedir(fora);
+    const tarde = ob.leituras;
     await m.relogio.dormir(31_000);
     await pedir(fora);
-    assert.equal(ob.leituras, depois, "barra boa: de volta aos 5 min");
-    // projeto que não é estrito: a barra sem leitura não segura a conversa do agente
-    proximo = "sem_leitura";
-    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra" }];
+    assert.equal(ob.leituras, tarde, "falha antiga: lê de novo só em 5 min");
+    m.relogio.t += 3601;
+    assert.deepEqual(m.agente.trilhas!.retomada(cwd), {});
+    await m.agente.esperar();
+    assert.equal(avisos(), antes + 2, "passada uma hora, avisa de novo (também pela retomada)");
+    await pedir(cwd);
+    await m.agente.esperar();
+    assert.equal(avisos(), antes + 2, "a conversa nova na mesma hora não repete");
+    // lida a barra, a pasta é do projeto
+    proximo = "ok";
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra", secoes: ["clientes"] }];
+    m.relogio.t += 301;
+    assert.match((await pedir(cwd)).bloqueio ?? "", /Empresa Um/, "lida a barra, a pasta é do projeto");
+    // projeto que não é estrito: a pasta que não se sabe não segura a conversa do agente, nem no prazo
+    proximo = "velha";
+    ob.lista = [{ pasta: pastaAgente, nome: "Agente Um", titulo: "Sem regra", secoes: null }];
     banco.empresas = [{ id: E1, nome: "Empresa Um" }];
     await m.relogio.dormir((EMPRESAS_LER_S + 1) * 1000);
-    await m.relogio.dormir(301_000);
+    m.relogio.t += 301;
+    falhaDesde = m.relogio.agora();
     assert.equal((await pedir(cwd)).bloqueio, undefined);
   });
 

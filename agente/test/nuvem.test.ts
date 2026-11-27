@@ -786,10 +786,12 @@ describe("relatos", () => {
     // velha (a leitura falhou e vale a última boa): a cadeia vai como está; a lista das pastas não vai (ela troca a lista inteira)
     ob.barraEstado = () => "velha";
     ob.pastas = () => [];
-    ob.lista = [{ pasta: um, nome: "Um", titulo: "T1", secoes: ["clientes"] }, { pasta: dois, nome: "Dois", titulo: "T2" }];
+    // (revisão 2) o agente que não estava na última leitura boa vai null: a nuvem mantém a cadeia que tinha
+    ob.lista = [{ pasta: um, nome: "Um", titulo: "T1", secoes: ["clientes"] }, { pasta: dois, nome: "Dois", titulo: "T2", secoes: null }];
     m.relogio.t += 3601;
     await m.agente.registro();
     assert.deepEqual(ag("~/OpenBot/Agents/agent-1").secoes, ["clientes"]);
+    assert.equal(ag("~/OpenBot/Agents/agent-2").secoes, null, "pasta que não se sabe: null, não lista vazia");
     assert.equal(fns("relatarSecoes").length, 2);
     assert.equal(pastasNaNuvem()!.length, 1, "a nuvem segue com as pastas da última leitura boa");
 

@@ -32,6 +32,8 @@ export interface Caminhos {
   ponteChave: string;
   segredos: string;
   permitidas: string;
+  /** A última barra boa do OpenBot (0.22.0): volta ao religar, para o agente não nascer sem saber as pastas. */
+  openbotBarra: string;
   /**
    * Arquivo da liberação sem perguntar da 0.1.x (`reveza ligar --painel ligar`), que deixava a nuvem autorizar sozinha.
    * Saiu na 0.2.0: o agente não lê mais; `reveza ligar --painel ...` só o apaga.
@@ -59,6 +61,7 @@ export function caminhos(home = os.homedir(), env: NodeJS.ProcessEnv = process.e
     ponteChave: path.join(base, "ponte.chave"),
     segredos: path.join(base, "segredos"),
     permitidas: path.join(base, "contas-permitidas.txt"),
+    openbotBarra: path.join(base, "openbot-barra.json"),
     ligarPeloPainel: path.join(base, "ligar-pelo-painel"),
     principalDir,
     claudeJson: path.join(home, ".claude.json"),

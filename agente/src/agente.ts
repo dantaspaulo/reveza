@@ -134,6 +134,8 @@ type Pendente = AtualizacaoPendente & {
 
 /** Quanto a conta que a nuvem mandou pode levar para chegar à principal antes de o doctor acusar falha. */
 export const ESPERA_CONTA_S = 120;
+/** A barra do OpenBot que falha é lida de novo em 30 s só nos primeiros 10 min (0.22.0, revisão 2); depois, em 5 min. */
+export const BARRA_DEPRESSA_MS = 600_000;
 /** O assistente saiu da conta em uso: a busca a repõe sozinha, no máximo uma vez neste intervalo por conta. */
 export const REPOR_CONTA_S = 600;
 /** Leitura de uso que deu certo dentro deste intervalo prova que o login da conta funciona. */
@@ -370,7 +372,10 @@ export class Agente {
         pastaDe: (cwd) => this.pastas.de(cwd),
         agentes: () => this.agentesNaNuvem(),
         agentesFalhou: () => this.agentesFalhou,
-        barraSemLeitura: () => this.d.openbot?.barraEstado?.() === "sem_leitura",
+        barraIncertaHa: () => {
+          const ms = this.d.openbot?.barraFalhaHaMs?.();
+          return typeof ms === "number" ? ms / 1000 : null;
+        },
         vivo: processoVivo,
         inicioDoProcesso,
         renovar: async (pasta) => void (await this.d.cli.renovar(pasta, 0)),
@@ -396,13 +401,14 @@ export class Agente {
 
   /**
    * A cadeia de pastas da barra do OpenBot de um agente, como vai à nuvem e ao classificador (0.22.0): sem o campo quando
-   * o OpenBot não lê a barra; null quando a barra nunca foi lida (a nuvem mantém a que tinha, e a regra não pega aqui);
-   * senão a cadeia da última leitura boa, ou vazia sem pasta.
+   * o OpenBot não lê a barra; null quando a pasta dele não se sabe (barra nunca lida, ou ele não estava na última leitura
+   * boa: a nuvem mantém a que tinha, e o classificador diz se isso segura a conversa); senão a cadeia da última leitura
+   * boa, ou vazia sem pasta.
    */
   private secoesDe(a: AgenteOpenBot): { secoes?: string[] | null } {
     const estado = this.d.openbot?.barraEstado?.();
     if (!estado) return {};
-    if (estado === "sem_leitura") return { secoes: null };
+    if (estado === "sem_leitura" || a.secoes === null) return { secoes: null };
     return { secoes: a.secoes ? [...a.secoes] : [] };
   }
 
@@ -1117,7 +1123,11 @@ export class Agente {
     if ("espera" in destino) {
       if (!this.semContaAvisada.has(sessao)) {
         this.semContaAvisada.add(sessao);
-        this.d.log.info(`sessão ${sessao.slice(0, 8)}: a conta do projeto dela não está livre; fica na fila`);
+        this.d.log.info(
+          destino.empresa
+            ? `sessão ${sessao.slice(0, 8)}: a conta do projeto dela não está livre; fica na fila`
+            : `sessão ${sessao.slice(0, 8)}: o projeto dela ainda não se sabe (regras da nuvem ou pastas do OpenBot por ler); fica na fila`,
+        );
       }
       this.confirmarTravaERetomar(sessao, destino.empresa);
       return destino.empresa ? { semConta: true, empresa: destino.empresa } : { semConta: true };
@@ -2797,10 +2807,12 @@ export class Agente {
     const ob = this.d.openbot;
     if (!ob?.agentes) return [];
     const t = this.d.relogio.agora();
-    // a leitura que falhou (a dos agentes ou a da barra) tenta de novo em 30 s, não em 5 min: até lá, a espera do
-    // lançador fica sem certeza e a conversa de um agente que pode ser de um projeto estrito pela pasta do OpenBot espera
-    const falhou = this.agentesFalhou || (!!ob.barraEstado && ob.barraEstado() !== "ok");
-    if (t - this.agentesLidosEm < (falhou ? 30 : 300)) return this.agentesLista;
+    // a leitura dos agentes que falhou tenta de novo em 30 s, não em 5 min: até lá, a espera do lançador fica sem certeza.
+    // A da barra também, mas só nos primeiros 10 min de falha (revisão 2): a conversa incerta espera só 3 min, e a falha
+    // que passa disso quase nunca passa sozinha
+    const ha = ob.barraFalhaHaMs?.() ?? null;
+    const barraRuim = !!ob.barraEstado && ob.barraEstado() !== "ok" && (ha === null || ha < BARRA_DEPRESSA_MS);
+    if (t - this.agentesLidosEm < (this.agentesFalhou || barraRuim ? 30 : 300)) return this.agentesLista;
     this.agentesLidosEm = t;
     try {
       this.agentesLista = ob.agentes();

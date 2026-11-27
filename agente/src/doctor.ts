@@ -295,15 +295,15 @@ export async function doctor(d: DepsDoctor): Promise<Conferencia[]> {
   }
 
   // A barra lateral do OpenBot que não dá para ler (0.22.0): os projetos pelas pastas dele ficam com a última leitura boa
-  const barra = avisoDaBarra(d.c.home);
+  const barra = avisoDaBarra(d.c.home, process.platform, d.c.openbotBarra);
   if (barra) {
     add(
       "openbot-barra",
       t("Pastas do OpenBot", "OpenBot folders"),
       "aviso",
       t(
-        `${barra}: os projetos escolhidos pelas pastas do OpenBot seguem com a última leitura boa (ou sem pasta, se o Reveza ligou depois disso)`,
-        `the OpenBot sidebar could not be read (${barra}): projects chosen by OpenBot folders keep the last good reading (or no folder, if Reveza started after that)`,
+        `${barra}: os projetos escolhidos pelas pastas do OpenBot seguem com a última leitura boa; a conversa de um agente sem pasta conhecida espera até 3 min e depois abre pelas outras regras`,
+        `OpenBot sidebar (${barra}): projects chosen by OpenBot folders keep the last good reading; a conversation of an agent with no known folder waits up to 3 min, then opens by the other rules`,
       ),
     );
   }

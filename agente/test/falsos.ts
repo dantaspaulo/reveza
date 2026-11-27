@@ -181,6 +181,7 @@ export class OpenBotFalso implements OpenBot {
   /** A barra lateral (0.22.0): sem as duas, o OpenBot falso é o de antes, sem pastas. */
   pastas?: () => PastaOpenBot[];
   barraEstado?: () => "ok" | "velha" | "sem_leitura";
+  barraFalhaHaMs?: () => number | null;
 }
 
 export class CliFalsa implements Cli {

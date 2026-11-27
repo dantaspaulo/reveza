@@ -67,11 +67,22 @@ export interface AgentePasta {
   nome: string;
   titulo: string;
   /**
-   * As pastas da barra do OpenBot do agente, da raiz até a dele (ids; 0.22.0). null: a barra nunca foi lida desde que o
-   * agente ligou (não se sabe: a regra de pasta do OpenBot não pega). Ausente ou vazia: sem pasta.
+   * As pastas da barra do OpenBot do agente, da raiz até a dele (ids; 0.22.0). null: a pasta dele não se sabe (a regra
+   * de pasta do OpenBot não pega, e o classificador diz se isso pode mudar o projeto: `incerto`). Ausente ou vazia: sem pasta.
    */
   secoes?: string[] | null;
 }
+
+/** O que o classificador diz de uma pasta: a unidade, e se ela pode mudar quando a pasta do OpenBot do agente se souber. */
+export interface Classificacao {
+  empresa: string | null;
+  incerto: boolean;
+}
+
+/** A nota mais alta que a regra de pasta do OpenBot pode dar, abaixo da pasta do agente (a cadeia vale até 9 níveis). */
+const SECAO_NOTA_MAX = 0.4;
+/** A conversa incerta espera a barra do OpenBot só nos primeiros 3 min de falha (0.22.0, revisão 2). */
+export const BARRA_ESPERA_S = 180;
 
 /** Caminho para comparar: barras normais, sem barra no fim, minúsculo (o mesmo do painel). */
 export function normalizarPasta(p: string): string {
@@ -91,7 +102,19 @@ export function ehCaminho(padrao: string): boolean {
  * pela conta do computador). A regra que vence é escolhida entre todas, e só depois se olha a lista.
  */
 export function criarClassificador(empresas: EmpresaSeparada[], regras: RegraEmpresa[], agentes: AgentePasta[]): (pasta: string) => string | null {
+  const c = criarClassificadorComIncerto(empresas, regras, agentes);
+  return (pasta) => c(pasta).empresa;
+}
+
+/**
+ * O classificador com o `incerto` (0.22.0, revisão 2), na mesma passada: a pasta está na pasta de agente mais funda que
+ * a contém, a pasta do OpenBot desse agente não se sabe, há regra de pasta do OpenBot, nenhuma regra mais forte decide
+ * (a melhor nota sem ela fica abaixo da nota máxima que ela daria) e o resultado de hoje é de projeto estrito, ou alguma
+ * regra de pasta do OpenBot é de projeto estrito. Sem tudo isso, saber a pasta não muda para qual conta a conversa vai.
+ */
+export function criarClassificadorComIncerto(empresas: EmpresaSeparada[], regras: RegraEmpresa[], agentes: AgentePasta[]): (pasta: string) => Classificacao {
   const existe = new Set(empresas.map((e) => e.id));
+  const estritas = new Set(empresas.filter((e) => e.estrita === true).map((e) => e.id));
   const validas = regras;
   const prefixos = validas.filter((r) => r.tipo === "pasta" && ehCaminho(r.padrao)).map((r) => ({ base: normalizarPasta(r.padrao), empresa: r.empresa }));
   const nomes = validas
@@ -105,6 +128,7 @@ export function criarClassificador(empresas: EmpresaSeparada[], regras: RegraEmp
     .sort((a, b) => b.texto.length - a.texto.length);
   // 0.22.0: o padrão é o id exato da pasta do OpenBot (sem minúsculas, como na nuvem)
   const secoes = validas.filter((r) => r.tipo === "secao" && r.padrao).map((r) => ({ id: r.padrao, empresa: r.empresa }));
+  const secaoEstrita = secoes.some((r) => estritas.has(r.empresa));
   const pastasAgentes = new Map<string, { nome: string; titulo: string; secoes: string[] | null }>();
   for (const a of agentes) {
     const p = normalizarPasta(a.pasta);
@@ -127,8 +151,9 @@ export function criarClassificador(empresas: EmpresaSeparada[], regras: RegraEmp
   const dentro = (p: string, base: string) => p === base || (base === "/" ? p.startsWith("/") : p.startsWith(base + "/"));
   return (pasta) => {
     const p = normalizarPasta(pasta);
-    if (!p) return null;
+    if (!p) return { empresa: null, incerto: false };
     let melhor: { nota: number; empresa: string } | null = null;
+    let semSaber: string | null = null; // a pasta de agente mais funda, quando a pasta do OpenBot dela não se sabe
     const propor = (nota: number, empresa: string) => {
       if (!melhor || nota > melhor.nota) melhor = { nota, empresa };
     };
@@ -158,13 +183,19 @@ export function criarClassificador(empresas: EmpresaSeparada[], regras: RegraEmp
             }
           }
           if (empresa) propor(pastaAgente.length - 0.49 + 0.01 * Math.min(fundo, 9), empresa);
-        }
+        } else if (ag.secoes === null && secoes.length) semSaber = pastaAgente;
         const r = titulos.find((x) => ag.titulo.includes(x.texto) || ag.nome.includes(x.texto));
         if (r) propor(pastaAgente.length - 0.5, r.empresa);
       }
     }
-    const vence = (melhor as { empresa: string } | null)?.empresa ?? null;
-    return vence && existe.has(vence) ? vence : null;
+    const m = melhor as { nota: number; empresa: string } | null;
+    const vence = m?.empresa ?? null;
+    const empresa = vence && existe.has(vence) ? vence : null;
+    // sem a pasta do OpenBot, `melhor` é a nota de hoje sem ela: só uma regra mais forte (caminho ou nome de pasta do
+    // agente ou mais fundo) decide sem depender dela
+    const incerto =
+      semSaber !== null && (!m || m.nota < semSaber.length - SECAO_NOTA_MAX) && ((empresa !== null && estritas.has(empresa)) || secaoEstrita);
+    return { empresa, incerto };
   };
 }
 
@@ -189,8 +220,11 @@ export interface DepsTrilhas {
   agentes: () => AgentePasta[];
   /** A última leitura dos agentes do OpenBot falhou (vale a lista anterior, que pode estar velha). */
   agentesFalhou?: () => boolean;
-  /** A barra do OpenBot nunca foi lida desde que o agente ligou (0.22.0): ninguém tem pasta do OpenBot conhecida. */
-  barraSemLeitura?: () => boolean;
+  /**
+   * Há quanto tempo (s) a barra do OpenBot não está boa (0.22.0, revisão 2), num relógio só; null com a barra boa. A
+   * conversa incerta espera só nos primeiros BARRA_ESPERA_S dele.
+   */
+  barraIncertaHa?: () => number | null;
   /** O processo ainda roda? */
   vivo: (pid: number) => boolean;
   /** Renova o login de uma pasta pelo assistente (conta que chega do cofre com o token vencido). */
@@ -223,7 +257,9 @@ export class Trilhas {
   private empresas: EmpresaSeparada[] = [];
   private regras: RegraEmpresa[] = [];
   private lidasEm = 0;
-  private classificar: ((pasta: string) => string | null) | null = null;
+  private classificar: ((pasta: string) => Classificacao) | null = null;
+  /** Até quando não se repete o aviso da conversa que abriu sem saber a pasta do OpenBot do agente (revisão 2). */
+  private avisadoBarra = 0;
   private agentesVistos: AgentePasta[] | null = null;
   /** A nuvem disse que há empresa separada (agente_ola). */
   ligadas = false;
@@ -341,19 +377,24 @@ export class Trilhas {
   }
 
   /**
-   * 0.22.0 (revisão): a barra do OpenBot ainda sem leitura deixa sem saber se a pasta de um agente é de um projeto
-   * estrito pela pasta do OpenBot. Vale só para a sessão dentro da pasta de um agente e só com essa regra num projeto
-   * estrito: as outras sessões não dependem da barra.
+   * 0.22.0 (revisão 2): a conversa incerta (o classificador não sabe a pasta do OpenBot do agente e ela pode mudar o
+   * projeto) espera só nos primeiros BARRA_ESPERA_S do relógio da falha da barra. Sem o relógio, não espera: a espera
+   * nunca é para sempre. Com a última barra boa guardada em disco, isso só acontece em instalação nova, com o guardado
+   * perdido, ou com um agente criado enquanto a barra não dá para ler.
    */
-  private barraIncerta(cwd: string): boolean {
-    if (this.d.sombra || !this.d.barraSemLeitura?.()) return false;
-    const estritas = new Set(this.empresas.filter((e) => e.estrita === true).map((e) => e.id));
-    if (!this.regras.some((r) => r.tipo === "secao" && estritas.has(r.empresa))) return false;
-    const p = normalizarPasta(this.d.pastaDe(cwd));
-    return this.d.agentes().some((a) => {
-      const base = normalizarPasta(a.pasta);
-      return !!base && a.secoes === null && (p === base || (base === "/" ? p.startsWith("/") : p.startsWith(base + "/")));
-    });
+  private barraNoPrazo(): boolean {
+    const ha = this.d.barraIncertaHa?.() ?? null;
+    return ha !== null && ha < BARRA_ESPERA_S;
+  }
+
+  /** Passado o prazo, a conversa incerta abre pelas outras regras: o painel sabe, uma vez por hora. */
+  private avisarBarra(): void {
+    if (this.avisadoBarra > this.agora()) return;
+    this.avisadoBarra = this.agora() + 3600;
+    this.d.trocador.evento(
+      "aviso",
+      `As pastas do OpenBot não puderam ser lidas há mais de ${Math.round(BARRA_ESPERA_S / 60)} min: a conversa de um agente abriu pelas outras regras dos projetos, sem a pasta do OpenBot dele. Veja o "reveza doctor" neste computador.`,
+    );
   }
 
   /** A resposta "abre na principal"; na pergunta de novo, com a marca de certeza quando o agente a tem. */
@@ -365,13 +406,18 @@ export class Trilhas {
 
   /** A empresa separada da pasta em que a sessão abre, ou null. */
   empresaDe(cwd: string): EmpresaSeparada | null {
+    return this.classificacao(cwd).emp;
+  }
+
+  /** A empresa da pasta e se ela pode mudar quando a pasta do OpenBot do agente se souber (o `incerto`). */
+  private classificacao(cwd: string): { emp: EmpresaSeparada | null; incerto: boolean } {
     const agentes = this.d.agentes();
     if (!this.classificar || agentes !== this.agentesVistos) {
       this.agentesVistos = agentes;
-      this.classificar = criarClassificador(this.empresas, this.regras, agentes);
+      this.classificar = criarClassificadorComIncerto(this.empresas, this.regras, agentes);
     }
-    const id = this.classificar(this.d.pastaDe(cwd));
-    return id ? (this.empresas.find((e) => e.id === id) ?? null) : null;
+    const r = this.classificar(this.d.pastaDe(cwd));
+    return { emp: r.empresa ? (this.empresas.find((e) => e.id === r.empresa) ?? null) : null, incerto: r.incerto };
   }
 
   /**
@@ -423,13 +469,17 @@ export class Trilhas {
     } catch (e) {
       this.d.log.erro(`ler os projetos separados: ${(e as Error).message}`);
     }
-    const emp = this.empresaDe(cwd);
-    // a conversa que pode ser de um projeto estrito pela pasta do OpenBot não abre na conta em uso antes de a barra ser
-    // lida: espera (o lançador pergunta de novo a cada 15 s, e a pergunta de novo segue sem certeza até lá)
-    if (this.barraIncerta(cwd)) {
-      return deNovo
-        ? { ok: true, trilha: null }
-        : { ok: true, trilha: null, bloqueio: "esperando a leitura das pastas do OpenBot para saber o projeto desta conversa." };
+    const { emp, incerto } = this.classificacao(cwd);
+    // a conversa que pode ser de um projeto estrito pela pasta do OpenBot do agente, que ainda não se sabe, não abre na
+    // conta em uso logo: espera no prazo (o lançador pergunta de novo a cada 15 s, e a pergunta de novo segue sem
+    // certeza até lá); passado o prazo, abre pelas outras regras, com o aviso
+    if (incerto && !this.d.sombra) {
+      if (this.barraNoPrazo()) {
+        return deNovo
+          ? { ok: true, trilha: null }
+          : { ok: true, trilha: null, bloqueio: "esperando a leitura das pastas do OpenBot para saber o projeto desta conversa." };
+      }
+      this.avisarBarra();
     }
     if (!emp) return this.naPrincipalCom(deNovo);
     // no modo sombra o agente só registra: a regra das contas não impede sessão nenhuma de abrir
@@ -797,7 +847,18 @@ export class Trilhas {
     this.carregarGuardadas();
     if (this.aguardandoRegras()) return { espera: true };
     const marcada = empresa ? this.empresas.find((e) => e.id === empresa) : undefined;
-    const emp = marcada && !marcada.estrita ? null : (marcada ?? this.empresaDe(cwd));
+    let emp: EmpresaSeparada | null;
+    if (marcada) emp = marcada.estrita ? marcada : null;
+    else {
+      const c = this.classificacao(cwd);
+      // a pasta do OpenBot do agente ainda não se sabe: no prazo, a retomada espera como a conversa nova (revisão 2);
+      // passado o prazo, volta pelas outras regras, com o mesmo aviso
+      if (c.incerto) {
+        if (this.barraNoPrazo()) return { espera: true };
+        this.avisarBarra();
+      }
+      emp = c.emp;
+    }
     if (!emp?.estrita) return comum;
     const t = this.trilhas[emp.id];
     if (t?.conta && this.contaServe(emp, t.conta)) return { trilha: { pasta: t.pasta, empresa: t.empresa } };

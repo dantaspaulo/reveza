@@ -61,7 +61,9 @@ describe("agentes do OpenBot com as pastas da barra", { skip: !fs.existsSync(SQL
       const nova = new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec);
       const semBoa = nova.agentes();
       assert.equal(semBoa.length, 2, "sem leitura boa antes: a lista dos agentes vem do mesmo jeito");
-      assert.equal(semBoa[0]!.secoes, undefined);
+      // revisão 2: a pasta de cada agente não se sabe (null), e não "sem pasta"
+      assert.equal(semBoa[0]!.secoes, null);
+      assert.equal(semBoa[1]!.secoes, null);
       assert.equal(nova.barraEstado(), "sem_leitura");
       assert.deepEqual(nova.pastas(), []);
 
@@ -75,8 +77,9 @@ describe("agentes do OpenBot com as pastas da barra", { skip: !fs.existsSync(SQL
       const semBarra = new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec);
       assert.equal(semBarra.agentes()[0]!.secoes, undefined, "nunca houve arquivo: ninguém tem pasta, sem erro");
       assert.deepEqual(semBarra.pastas(), []);
-      // parte C: sem arquivo desde que ligou não é leitura (o OpenBot pode estar regravando): a nuvem mantém o que tinha
-      assert.equal(semBarra.barraEstado(), "sem_leitura");
+      // revisão 2: o OpenBot grava a barra num temporário e troca pelo nome (não some ao regravar); sem o arquivo e sem
+      // pastas conhecidas antes, é a barra vazia, na hora
+      assert.equal(semBarra.barraEstado(), "ok");
       fs.writeFileSync(barra, boa);
       assert.deepEqual(ob.agentes()[0]!.secoes, [A, B]);
       assert.equal(ob.barraEstado(), "ok", "voltou a ler: não está mais velha");
@@ -115,41 +118,118 @@ describe("agentes do OpenBot com as pastas da barra", { skip: !fs.existsSync(SQL
         agentAssignments: { "agent-1": B },
       });
       const ob = new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec, process.execPath, SQLITE, agora);
-      ob.agentes();
-      assert.equal(ob.barraEstado(), "sem_leitura", "sem o arquivo agora: pode ser o OpenBot regravando");
-      t += 10_000;
-      ob.agentes();
-      assert.equal(ob.barraEstado(), "sem_leitura", "ainda dentro da folga");
-      t += 20_000;
+      // revisão 2 (medido no OpenBot: a barra é trocada pelo nome, não some ao regravar): sem o arquivo e sem pastas
+      // conhecidas, é a barra vazia na hora
       assert.equal(ob.agentes()[0]!.secoes, undefined);
-      assert.equal(ob.barraEstado(), "ok", "sem o arquivo há mais de 25 s: ninguém tem pasta (OpenBot sem pastas ou zerado)");
+      assert.equal(ob.barraEstado(), "ok");
       assert.deepEqual(ob.pastas(), []);
 
       fs.writeFileSync(barra, boa);
       t += 1_000;
       assert.deepEqual(ob.agentes()[0]!.secoes, [A, B]);
       assert.equal(ob.pastas().length, 2);
+      // sem o arquivo depois de uma leitura com pastas (o OpenBot pôs de lado uma barra estragada): vale a última, sem prazo
       fs.rmSync(barra);
-      assert.deepEqual(ob.agentes()[0]!.secoes, [A, B], "sumiu agora: vale a última");
+      assert.deepEqual(ob.agentes()[0]!.secoes, [A, B], "sumiu: vale a última");
       assert.equal(ob.barraEstado(), "velha");
-      t += 30_000;
-      assert.equal(ob.agentes()[0]!.secoes, undefined, "sumiu de vez: ninguém tem pasta");
-      assert.equal(ob.barraEstado(), "ok");
-      assert.deepEqual(ob.pastas(), []);
+      t += 3_600_000;
+      assert.deepEqual(ob.agentes()[0]!.secoes, [A, B], "uma hora depois: segue valendo a última");
+      assert.equal(ob.barraEstado(), "velha");
+      assert.equal(ob.pastas().length, 2);
 
-      // a falta que volta depois de uma leitura boa começa a contar de novo
-      fs.writeFileSync(barra, boa);
+      // a última leitura boa sem pastas: sem o arquivo, barra vazia na hora
+      fs.writeFileSync(barra, JSON.stringify({ version: 2, sections: [], agentAssignments: {} }));
+      ob.agentes();
+      assert.equal(ob.barraEstado(), "ok");
+      fs.rmSync(barra);
+      assert.equal(ob.agentes()[0]!.secoes, undefined);
+      assert.equal(ob.barraEstado(), "ok");
+    } finally {
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  test("revisão 2: a última barra boa vai ao disco e volta ao religar; o agente que não estava nela fica sem saber (null)", () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "reveza-openbot-barra-"));
+    try {
+      const banco = path.join(d, "openbot.db");
+      const barra = path.join(d, BARRA_ARQUIVO);
+      const guardado = path.join(d, "reveza", "openbot-barra.json");
+      const j = (o: unknown) => JSON.stringify(o).replace(/'/g, "''");
+      const agente = (id: string, nome: string) => `('${id}', 't', '${j({ workspacePath: `/Users/x/OpenBot/Agents/${id}`, name: nome, title: "" })}')`;
+      execFileSync(SQLITE, [
+        banco,
+        "CREATE TABLE projection_agents (agent_id TEXT, thread_id TEXT, agent_json TEXT);" +
+          `INSERT INTO projection_agents VALUES ${agente("agent-1", "Um")}, ${agente("agent-2", "Dois")};`,
+      ]);
+      fs.writeFileSync(barra, JSON.stringify({ version: 2, sections: [{ id: A, name: "Empresa" }, { id: B, name: "Time", parentId: A }], agentAssignments: { "agent-1": B } }));
+      const novo = (t: () => number = Date.now) => new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec, process.execPath, SQLITE, t, guardado);
+
+      const ob = novo();
+      ob.agentes();
+      assert.equal(ob.barraEstado(), "ok");
+      assert.ok(fs.existsSync(guardado), "a leitura boa foi guardada");
+      assert.equal(fs.statSync(guardado).mode & 0o777, 0o600);
+      // a mesma barra não regrava o guardado
+      const passado = new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000); // segundo inteiro: o disco guarda o mtime sem a fração
+      fs.utimesSync(guardado, passado, passado);
+      ob.agentes();
+      assert.equal(fs.statSync(guardado).mtimeMs, passado.getTime(), "nada mudou: não regrava");
+
+      // religa com a barra estragada e um agente novo no banco
+      execFileSync(SQLITE, [banco, `INSERT INTO projection_agents VALUES ${agente("agent-3", "Três")};`]);
+      fs.writeFileSync(barra, "{ pela metade");
+      const religado = novo();
+      assert.equal(religado.barraEstado(), "velha", "nasce com a última boa, antes de ler");
+      assert.equal(religado.pastas().length, 2);
+      const lista = religado.agentes();
+      assert.deepEqual(lista.map((a) => [a.id, a.secoes]), [
+        ["agent-1", [A, B]],
+        ["agent-2", undefined],
+        ["agent-3", null],
+      ], "quem estava segue com a pasta (ou sem pasta); o novo não se sabe");
+      assert.equal(religado.barraEstado(), "velha");
+
+      // guardado estragado: ignorado, como se não houvesse
+      fs.writeFileSync(guardado, "{ estragado");
+      const semGuardado = novo();
+      assert.equal(semGuardado.barraEstado(), "sem_leitura");
+      assert.deepEqual(semGuardado.agentes().map((a) => a.secoes), [null, null, null]);
+      assert.equal(fs.readFileSync(guardado, "utf8"), "{ estragado", "a leitura que falhou não regrava o guardado");
+    } finally {
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  test("revisão 2: um relógio só para a falha (desde a primeira leitura ruim depois da boa, ou desde ligar)", () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "reveza-openbot-barra-"));
+    try {
+      const banco = path.join(d, "openbot.db");
+      const barra = path.join(d, BARRA_ARQUIVO);
+      const j = (o: unknown) => JSON.stringify(o).replace(/'/g, "''");
+      execFileSync(SQLITE, [
+        banco,
+        "CREATE TABLE projection_agents (agent_id TEXT, thread_id TEXT, agent_json TEXT);" +
+          `INSERT INTO projection_agents VALUES ('agent-1', 't1', '${j({ workspacePath: "/Users/x/OpenBot/Agents/agent-1", name: "Um", title: "" })}');`,
+      ]);
+      let t = 5_000_000;
+      const ob = new OpenBotLocal({ banco, comando: "/x/cli.mjs" }, exec, process.execPath, SQLITE, () => t);
+      assert.equal(ob.barraFalhaHaMs(), 0, "conta desde ligar");
+      t += 4_000;
+      assert.equal(ob.barraFalhaHaMs(), 4_000);
+      fs.writeFileSync(barra, JSON.stringify({ version: 2, sections: [{ id: A, name: "Empresa" }], agentAssignments: { "agent-1": A } }));
+      ob.agentes();
+      assert.equal(ob.barraFalhaHaMs(), null, "leitura boa: sem falha");
+      fs.writeFileSync(barra, "{ pela metade");
       t += 1_000;
       ob.agentes();
-      fs.rmSync(barra);
+      assert.equal(ob.barraFalhaHaMs(), 0);
+      t += 60_000;
       ob.agentes();
-      t += 10_000;
-      fs.writeFileSync(barra, boa);
+      assert.equal(ob.barraFalhaHaMs(), 60_000, "a segunda falha não zera o relógio");
+      fs.writeFileSync(barra, JSON.stringify({ version: 2, sections: [], agentAssignments: {} }));
       ob.agentes();
-      fs.rmSync(barra);
-      t += 20_000;
-      ob.agentes();
-      assert.equal(ob.barraEstado(), "velha", "a falta de antes não soma com a de agora");
+      assert.equal(ob.barraFalhaHaMs(), null);
     } finally {
       fs.rmSync(d, { recursive: true, force: true });
     }
@@ -158,7 +238,7 @@ describe("agentes do OpenBot com as pastas da barra", { skip: !fs.existsSync(SQL
 
 describe("aviso do doctor sobre a barra do OpenBot (0.22.0)", () => {
   test("só avisa com a barra que existe e não dá para ler; sem OpenBot, sem a barra ou fora do macOS, nada", async () => {
-    const { avisoDaBarra } = (await import("../src/openbot.js")) as { avisoDaBarra?: (home: string, plataforma?: NodeJS.Platform) => string | null };
+    const { avisoDaBarra } = (await import("../src/openbot.js")) as { avisoDaBarra?: (home: string, plataforma?: NodeJS.Platform, guardado?: string) => string | null };
     assert.equal(typeof avisoDaBarra, "function");
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "reveza-doctor-barra-"));
     try {
@@ -174,6 +254,16 @@ describe("aviso do doctor sobre a barra do OpenBot (0.22.0)", () => {
       fs.writeFileSync(path.join(pasta, BARRA_ARQUIVO), JSON.stringify({ version: 3, sections: [], agentAssignments: {} }));
       assert.match(avisoDaBarra!(home, "darwin") ?? "", /versão desconhecida/);
       assert.equal(avisoDaBarra!(home, "linux"), null, "fora do macOS não há OpenBot");
+      // revisão 2: sem a barra, o guardado com pastas diz que valem as da última leitura boa
+      fs.rmSync(path.join(pasta, BARRA_ARQUIVO));
+      const guardado = path.join(home, "openbot-barra.json");
+      const comPastas = { versao: 1, barra: JSON.stringify({ version: 2, sections: [{ id: A, name: "Empresa" }], agentAssignments: {} }), vistos: [] };
+      fs.writeFileSync(guardado, JSON.stringify(comPastas));
+      assert.match(avisoDaBarra!(home, "darwin", guardado) ?? "", /última leitura boa/);
+      fs.writeFileSync(guardado, JSON.stringify({ ...comPastas, barra: JSON.stringify({ version: 2, sections: [], agentAssignments: {} }) }));
+      assert.equal(avisoDaBarra!(home, "darwin", guardado), null, "a última boa sem pastas: nada a avisar");
+      fs.writeFileSync(guardado, "{ estragado");
+      assert.equal(avisoDaBarra!(home, "darwin", guardado), null);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
