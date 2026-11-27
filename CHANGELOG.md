@@ -7,7 +7,7 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
-## 0.22.0 · 27/11/2026
+## 0.22.0 · 26/11/2026
 
 Recurso novo para quem separa as contas por projeto e usa o OpenBot no Mac: o projeto pode pegar os agentes de uma
 pasta da barra lateral do OpenBot, com as subpastas dela. Mudam o agente, a nuvem e o painel. Quem não escolher
