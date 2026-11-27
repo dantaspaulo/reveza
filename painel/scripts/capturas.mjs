@@ -105,6 +105,40 @@ const INTERACOES = [
     },
   ],
   [
+    // 0.22.0: a lista das pastas da barra do OpenBot no editor do projeto. Só aparece com o computador na 0.22.0 ou
+    // mais nova: rode com VITE_REVEZA_VERSAO=0.22.0 antes do lançamento, que põe a versão no package.json.
+    "i-projetos-pasta-openbot",
+    "/projetos",
+    async (p) => {
+      const escolher = p.getByRole("combobox", { name: L("Escolher uma pasta do OpenBot", "Choose an OpenBot folder") })
+      await escolher.first().scrollIntoViewIfNeeded()
+      await escolher.first().click()
+      await p.getByRole("option").first().waitFor()
+    },
+  ],
+  [
+    // 0.22.0: escolher uma pasta livre põe a regra no rascunho, com o caminho da pasta, e a pasta sai da lista
+    "i-projetos-pasta-openbot-escolhida",
+    "/projetos",
+    async (p) => {
+      // conta os botões de tirar a pasta: o texto da regra aparece também na linha do agente que ela pega
+      const regra = L("Pasta do OpenBot: ", "OpenBot folder: ")
+      const tirar = p.getByRole("button", { name: L(/^Remover a pasta do OpenBot /, /^Remove the OpenBot folder /) })
+      const antes = await tirar.count()
+      const escolher = p.getByRole("combobox", { name: L("Escolher uma pasta do OpenBot", "Choose an OpenBot folder") })
+      await escolher.first().scrollIntoViewIfNeeded()
+      await escolher.first().click()
+      const livre = p.locator('[role="option"]:not([data-disabled])').first()
+      const texto = ((await livre.textContent()) ?? "").split(" · ")[0].trim()
+      if (!texto) throw new Error("pasta do OpenBot: nenhuma pasta livre na lista")
+      await livre.click()
+      await p.getByText(`${regra}${texto}`).first().waitFor()
+      const depois = await tirar.count()
+      if (depois !== antes + 1) throw new Error(`pasta do OpenBot: esperava ${antes + 1} regras, veio ${depois}`)
+      await p.getByText(`${regra}${texto}`).first().scrollIntoViewIfNeeded()
+    },
+  ],
+  [
     "i-contas-editar",
     "/contas",
     async (p) => {
