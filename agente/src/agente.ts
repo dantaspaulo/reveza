@@ -20,7 +20,7 @@ import { expiraEm, hashToken, temRenovacao } from "./credenciais/blob.js";
 import { PRINCIPAL } from "./credenciais/tipos.js";
 import { CredenciaisSombra } from "./credenciais/sombra.js";
 import type { Credenciais } from "./credenciais/tipos.js";
-import { agendarRodizio, candidata, decidir, esgotada, gatilhoDeTroca, pctEfetivo, sorteioReal } from "./decisao.js";
+import { agendarRodizio, candidata, decidir, esgotada, gatilhoDeTroca, horasDoAproveitar, pctEfetivo, sorteioReal } from "./decisao.js";
 import { gatilhoValido, lembrarCritica, marcarCritica, sessaoCritica, sessaoValida, situacaoCriticas } from "./criticas.js";
 import { carregarEstadoDoAgente, salvarCopiaBoa, salvarEstado, type ContaLocal, type EstadoLocal, type ItemFila, type Modo, type Recuperacao, type UltimaAtualizacaoAssistente } from "./estado.js";
 import { idiomaAtual, t, t as t_ } from "./i18n.js";
@@ -1419,6 +1419,9 @@ export class Agente {
     if (typeof cfg.retomar_terminal === "boolean") k.retomarHeadless = cfg.retomar_terminal;
     if (typeof cfg.criticas === "boolean") k.criticas = cfg.criticas;
     k.criticasGatilho = gatilhoValido(cfg.criticas_gatilho) ?? k.criticasGatilho;
+    // usar primeiro a conta que vai renovar (0.22.3): com nuvem quem escolhe é a nuvem; aqui serve à sombra e ao registro
+    if (typeof cfg.aproveitar_vencer === "boolean") k.aproveitarVencer = cfg.aproveitar_vencer;
+    k.aproveitarHoras = horasDoAproveitar(cfg.aproveitar_horas) ?? k.aproveitarHoras;
   }
 
   /** Se as sessões comuns estavam em espera na última volta (null: ainda não olhado desde que o agente subiu). */
@@ -2981,6 +2984,19 @@ export class Agente {
           }
         } else lembrarCritica(this.estado, sessao, t);
         return { status: 200, corpo: { ok: true, critica: sessaoCritica(this.estado, sessao) } };
+      },
+      aproveitar: (corpo: Record<string, unknown>): Resposta => {
+        const k = this.estado.config;
+        // ligar, desligar e o prazo: com nuvem, quem decide é o painel (a próxima busca escreveria por cima)
+        if (typeof corpo.ligada === "boolean" || corpo.horas !== undefined) {
+          if (this.comNuvem) return { status: 409, corpo: { ok: false, erro: "com nuvem, ligue e ajuste pelo painel (Troca automática, Sobra que vai renovar)" } };
+          const h = corpo.horas === undefined ? null : horasDoAproveitar(corpo.horas);
+          if (corpo.horas !== undefined && h === null) return { status: 400, corpo: { ok: false, erro: "prazo de 12 a 168 horas (número inteiro)" } };
+          if (typeof corpo.ligada === "boolean") k.aproveitarVencer = corpo.ligada;
+          if (h !== null) k.aproveitarHoras = h;
+          this.salvar();
+        }
+        return { status: 200, corpo: { ok: true, ligada: k.aproveitarVencer === true, horas: k.aproveitarHoras } };
       },
       estado: () => this.publico(),
       trilha: async (corpo: Record<string, unknown>): Promise<Resposta> => {

@@ -86,6 +86,11 @@ export interface AlvoPonte {
    */
   critica(corpo: Record<string, unknown>): Resposta | Promise<Resposta>;
   /**
+   * Usar primeiro a conta que vai renovar (0.22.3), sem nuvem: `{ ligada?, horas? }` liga, desliga e ajusta o prazo;
+   * `{}` lê (a linha de comando). Com nuvem, só lê: quem decide é o painel.
+   */
+  aproveitar?(corpo: Record<string, unknown>): Resposta | Promise<Resposta>;
+  /**
    * Trilhas (0.18.0): `{ cwd, pid }` do lançador ~/.reveza/lancador/claude, que pergunta em qual pasta de login a sessão
    * abre (a da empresa separada, ou nenhuma: a principal).
    */
@@ -186,6 +191,7 @@ export function criarPonte(alvo: AlvoPonte, porta: number, chave: string | null 
         if (caminho === "/api/sessao/erro") return alvo.sessaoErro(c);
         if (caminho === "/api/consertar") return alvo.consertar(c);
         if (caminho === "/api/critica") return alvo.critica(c);
+        if (caminho === "/api/aproveitar" && alvo.aproveitar) return alvo.aproveitar(c);
         if (caminho === "/api/trilha" && alvo.trilha) return alvo.trilha(c);
         if (caminho === "/api/trilha/ativa" && alvo.trilhaAtiva) return alvo.trilhaAtiva(c);
         const m = /^\/api\/fila\/([^/]+)\/(retomada|descartar)$/.exec(caminho);

@@ -170,6 +170,9 @@ Uso: reveza <comando> [opções]
   criticas [ligar [75]|desligar|marcar <sessão>|desmarcar <sessão>]
                                   sessões críticas: sem conta com folga abaixo do gatilho, só as marcadas seguem
                                   (com nuvem, liga pelo painel; na sessão, /reveza critica marca e desmarca)
+  aproveitar [ligar [48]|desligar]
+                                  usar primeiro a conta cuja semana renova em até 12 a 168 h com sobra
+                                  (desligado de fábrica; com nuvem, liga pelo painel)
   uso [--dias N] [--csv|--json]   tokens e custo equivalente por dia, conta, modelo e projeto
   doctor [--so-ver] [--json]      confere serviço, mod, credenciais, chaveiro, nuvem, relógio e versões, e conserta o que
                                   tem conserto seguro (serviço, mod, conta em uso sem login); --so-ver só confere
@@ -210,6 +213,9 @@ Usage: reveza <command> [options]
   criticas [ligar [75]|desligar|marcar <session>|desmarcar <session>]
                                   critical sessions: with no account below the trigger, only marked ones keep going
                                   (with the cloud, turn it on in the panel; in a session, /reveza critica toggles it)
+  aproveitar [ligar [48]|desligar]
+                                  use first the account whose week renews within 12 to 168 h with headroom
+                                  (off by default; with the cloud, turn it on in the panel)
   uso [--dias N] [--csv|--json]   tokens and equivalent cost per day, account, model and project
   doctor [--so-ver] [--json]      checks service, mod, credentials, keychain, cloud, clock and versions, and fixes
                                   what has a safe fix (service, mod, account in use without a login); --so-ver only checks
@@ -590,6 +596,50 @@ async function cmdCriticas(amb: Ambiente, a: Args): Promise<number> {
   const sessoes = l.sessoes ?? [];
   amb.saida(t(`marcadas neste computador: ${sessoes.length}`, `marked on this computer: ${sessoes.length}`));
   for (const s of sessoes) amb.saida(`  ${s.sessao}`);
+  return 0;
+}
+
+/**
+ * reveza aproveitar [ligar [12-168]|desligar]: usar primeiro a conta cuja semana vai renovar com sobra (0.22.3). Ligar e
+ * o prazo, só sem nuvem (com nuvem, o painel, em Troca automática); sem argumento, mostra como está.
+ */
+async function cmdAproveitar(amb: Ambiente, a: Args): Promise<number> {
+  const acao = a.pos[1] ?? "";
+  const uso = t("uso: reveza aproveitar [ligar [12-168]|desligar]", "usage: reveza aproveitar [ligar [12-168]|desligar]");
+  let corpo: Record<string, unknown> = {};
+  if (acao === "ligar") {
+    corpo = { ligada: true };
+    if (a.pos[2] !== undefined) {
+      const h = Number(a.pos[2].replace(/h$/i, ""));
+      if (!Number.isFinite(h)) {
+        amb.erro(uso);
+        return 2;
+      }
+      corpo.horas = h;
+    }
+  } else if (acao === "desligar") corpo = { ligada: false };
+  else if (acao) {
+    amb.erro(uso);
+    return 2;
+  }
+  const r = await pedirPonte(portaDe(amb, a), "POST", "/api/aproveitar", corpo, chaveDaPonte(amb.c.ponteChave, false));
+  if (!r) {
+    amb.erro(t("o agente não está rodando", "the agent is not running"));
+    return 1;
+  }
+  const c = r.corpo as { ok?: boolean; erro?: string; ligada?: boolean; horas?: number };
+  if (!c.ok) {
+    amb.erro(c.erro ?? t("o agente recusou", "the agent refused"));
+    return 1;
+  }
+  amb.saida(
+    c.ligada
+      ? t(
+          `usar primeiro a conta que vai renovar: ligado, semana que renova em até ${c.horas} h`,
+          `use first the account about to renew: on, week renewing within ${c.horas} h`,
+        )
+      : t("usar primeiro a conta que vai renovar: desligado", "use first the account about to renew: off"),
+  );
   return 0;
 }
 
@@ -1383,6 +1433,8 @@ export async function executarCli(argv: string[], amb: Ambiente = ambienteReal()
         return await cmdResumo(amb, a);
       case "criticas":
         return await cmdCriticas(amb, a);
+      case "aproveitar":
+        return await cmdAproveitar(amb, a);
       case "uso":
         return await cmdUso(amb, a);
       case "doctor":

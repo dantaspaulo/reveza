@@ -3,7 +3,7 @@ import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { decidir, estadoDaConta } from "../src/decisao.js";
 import { LEITURA_VALIDA_S } from "../src/config.js";
-import { ativaEm, contaEstacionada, montar, type Montado } from "./falsos.js";
+import { ativaEm, BancoFalso, contaEstacionada, montar, NuvemFalsa, type Montado } from "./falsos.js";
 
 let m: Montado;
 afterEach(() => m?.limpar());
@@ -419,5 +419,42 @@ describe("decisão sem nuvem: usar primeiro a conta que vai renovar", () => {
     janelas(b, 55, 55, 120);
     janelas(c, 70, 40, 10);
     assert.deepEqual(decidir(e(), agora()), ["trocar", b]);
+  });
+
+  test("sem nuvem, a linha de comando liga, ajusta o prazo e desliga; prazo fora de 12 a 168 é recusado", async () => {
+    m = await montar();
+    const p = m.agente.alvoPonte();
+    const r = await p.aproveitar!({ ligada: true, horas: 72 });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.corpo, { ok: true, ligada: true, horas: 72 });
+    assert.equal(e().config.aproveitarVencer, true);
+    assert.equal(e().config.aproveitarHoras, 72);
+    for (const horas of [11, 169, 47.5, "48"]) {
+      assert.equal((await p.aproveitar!({ horas })).status, 400, String(horas));
+    }
+    assert.equal(e().config.aproveitarHoras, 72);
+    assert.deepEqual((await p.aproveitar!({ ligada: false })).corpo, { ok: true, ligada: false, horas: 72 });
+    assert.deepEqual((await p.aproveitar!({})).corpo, { ok: true, ligada: false, horas: 72 });
+  });
+
+  test("com nuvem, ligar pela linha de comando é recusado (quem decide é o painel); ler segue", async () => {
+    m = await montar({ nuvem: new NuvemFalsa(new BancoFalso(), "pc-1") });
+    const p = m.agente.alvoPonte();
+    assert.equal((await p.aproveitar!({ ligada: true })).status, 409);
+    assert.equal(e().config.aproveitarVencer, false);
+    assert.equal((await p.aproveitar!({})).status, 200);
+  });
+
+  test("a configuração da nuvem chega ao agente (a sombra registra com a mesma regra); valor inválido não muda", async () => {
+    m = await montar();
+    m.agente.aplicarConfig({ aproveitar_vencer: true, aproveitar_horas: 72 });
+    assert.equal(e().config.aproveitarVencer, true);
+    assert.equal(e().config.aproveitarHoras, 72);
+    m.agente.aplicarConfig({ aproveitar_vencer: "sim", aproveitar_horas: 300 });
+    assert.equal(e().config.aproveitarVencer, true);
+    assert.equal(e().config.aproveitarHoras, 72);
+    m.agente.aplicarConfig({ aproveitar_horas: 72.0, aproveitar_vencer: false });
+    assert.equal(e().config.aproveitarVencer, false);
+    assert.equal(e().config.aproveitarHoras, 72);
   });
 });

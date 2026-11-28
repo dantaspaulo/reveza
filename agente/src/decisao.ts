@@ -57,8 +57,12 @@ export function mesmaOrganizacao(estado: EstadoLocal, id: string, p: number): bo
 
 /** O prazo de "vai renovar logo", em horas, conferido (12 a 168); fora disso, o de fábrica (48), como a nuvem. */
 function horasDoPrazo(estado: EstadoLocal): number {
-  const h = estado.config.aproveitarHoras;
-  return Number.isInteger(h) && h >= 12 && h <= 168 ? h : 48;
+  return horasDoAproveitar(estado.config.aproveitarHoras) ?? 48;
+}
+
+/** O prazo da opção de usar primeiro a conta que vai renovar: inteiro de 12 a 168 horas; senão, null. */
+export function horasDoAproveitar(v: unknown): number | null {
+  return typeof v === "number" && Number.isInteger(v) && v >= 12 && v <= 168 ? v : null;
 }
 
 /**
