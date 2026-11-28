@@ -7,6 +7,31 @@ Git (`vX.Y.Z`) e na página de versões do GitHub, sempre iguais.
 - **X.Y.0**: melhoria ou recurso novo que não quebra nada.
 - **X.Y.Z**: correção.
 
+## 0.22.3 · 28/11/2026
+
+Opção nova na troca de conta: usar primeiro a conta cuja semana vai renovar com sobra. Vem desligada: nada muda para
+quem não ligar.
+
+### O que muda
+
+- **Usar primeiro a conta que vai renovar.** A semana de cada conta renova num dia diferente, e o que sobra quando ela
+  renova se perde. A ordem de sempre escolhe a conta menos usada, que costuma ser justamente a que tem mais tempo até
+  renovar. Com a opção ligada, na hora de trocar, a conta que renova a semana dentro do prazo escolhido (12 a 168
+  horas, 48 de fábrica) e ainda está pelo menos 20 pontos abaixo do ponto de troca (e do teto da semana dela, quando
+  há) vem antes das outras livres; se duas entram, vem a que renova antes.
+- **O que continua na frente.** A conta preferida do computador continua primeiro, a de reserva continua por último e
+  a preferida de outro computador continua fora. A opção passa na frente da ordem manual das contas e da troca dentro
+  da mesma organização: a sobra perdida pesa mais que o reenvio das conversas abertas numa troca.
+- **O socorro não muda.** Com todas as contas acima do aviso, a troca segue pela de mais folga, como antes, também nos
+  projetos e na sombra.
+- **Onde ligar.** Com nuvem, no painel, em Troca automática, cartão "Sobra que vai renovar". Sem nuvem, pela linha de
+  comando: `reveza aproveitar ligar [horas]`, `reveza aproveitar desligar` e `reveza aproveitar` para ver como está.
+- **Painel novo com nuvem velha.** Se o painel chegar antes da nuvem, ligar a opção mostra que a nuvem ainda não tem
+  essa função e manda conferir a versão em Computadores.
+- **Atualização da nuvem curta.** Esta versão roda na nuvem só a migração nova (0051) e as permissões. Migração que já
+  saiu não muda mais: antes, acrescentar uma chave de configuração editava migrações antigas, e a nuvem em uso rodava
+  de novo dezenas delas, uma por uma, com a troca automática funcionando no meio.
+
 ## 0.22.2 · 27/11/2026
 
 Correção no agente: uma conta parada que perdeu o login não segura mais a atualização do computador. Nada muda na

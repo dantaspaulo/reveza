@@ -87,6 +87,13 @@ teste, o CHANGELOG ou a release.
   cofre, a saída presa deixa de segurar em `SAIDA_SEGURA_CALMA_S`; a posse curta (`com`) e a saída da mesma conta não
   correm juntas; leitura do chaveiro que falha não mexe em nada; a lista no estado (`saidasPendentes`) volta na partida;
   o evento `calma` não leva e-mail nem login.
+- **critério novo na ordem das contas** (0.22.3): `rvz_vence_logo` (0051) e `venceLogo` em `agente/src/decisao.ts`
+  fazem a mesma regra. Critério que põe uma conta na frente olha o gatilho e o `teto_semana` dela; nas funções de
+  candidatas que também servem ao socorro (trilha e sombra, chamadas com teto acima do aviso), a ordem nova só vale até
+  o aviso; número da configuração se lê com `trunc(...::numeric)::int`; opção nova tem caminho para ligar com e sem
+  nuvem (a linha de comando recusa com nuvem) e o `aplicarConfig` copia as chaves para a sombra.
+- **migração lançada** (0.22.3): nenhuma migração do `nuvem/testes/migracoes-lancadas.json` muda no diff (o teste
+  pega); mudança e chave nova vão numa migração nova, no fim.
 
 ## Sempre precisa de gente (risco alto)
 - login e permissão, migração da nuvem, CI, instalador e o lançador das trilhas.

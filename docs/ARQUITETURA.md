@@ -133,6 +133,14 @@ aviso de limite. Para cada computador ligado:
 - o uso que decide (`rvz_pct_efetivo`, 0.15.0): o maior entre as janelas lidas há menos de 15 minutos (a renovada conta
   zero), nunca abaixo da última leitura de uma janela que ainda não renovou (o uso só cresce até o reset). Antes, com a
   leitura limitada pelo provedor, a semana cheia saía da conta e a conta aparecia em 0%;
+- usar primeiro a conta que vai renovar (0.22.3, `aproveitar_vencer`, desligada de fábrica; prazo `aproveitar_horas`,
+  12 a 168, 48 de fábrica; `rvz_vence_logo`, 0051): depois da preferida, da reserva e da preferida de outro, e antes da
+  mesma organização, vem a candidata cuja semana renova dentro do prazo e está a 20 pontos ou mais do gatilho de troca
+  (100 no modo limite) e do teto da semana dela, quando há; a que renova antes primeiro. O filtro não muda, só a
+  ordem. Vale na conta do computador (inclusive no rodízio, antes do sorteio e do menor uso), nas trilhas e na sombra
+  na busca até o aviso; o socorro (`rvz_socorro`, e a busca das trilhas e da sombra com teto acima do aviso) segue pela
+  de mais folga. Sem nuvem, o agente faz a mesma ordem (`venceLogo` em `decisao.ts`), ligada por `reveza aproveitar`;
+  com nuvem, a linha de comando recusa e o painel decide;
 - grava a decisão em `atribuicao(computador_id, conta_id, motivo, versao)` e no `eventos`.
 
 **Sessões críticas (0.15.0).** A conta vale para o computador inteiro, então reservar uma conta não protege uma sessão:
@@ -680,6 +688,15 @@ definida em mais de um arquivo fica sempre com o corpo do último: na subida da 
 regra vale nos dois caminhos: o instalador (Management API, com o token) e, desde a 0.3.0, a própria nuvem (7e), que
 aplica cada migração numa transação. Por isso migração nova não pode controlar a própria transação nem usar
 `concurrently` ou `vacuum` (a nuvem recusa antes de começar e diz por quê).
+
+Migração lançada não muda (0.22.3). Editar uma antiga, mesmo reaplicável, faz a nuvem em uso rodar de novo todas as
+reaplicáveis depois dela, uma por transação: dezenas de corpos antigos de função ficam valendo por instantes com o
+`decidir` rodando, e uma falha no meio deixa a nuvem parada neles. A mudança vai numa migração nova, no fim; chave nova
+da configuração leva a lista completa só na migração nova (as antigas guardam a lista do tempo delas e nunca rodam de
+novo). `nuvem/testes/migracoes-lancadas.json` guarda o resumo de cada migração lançada (menos a 0099, que roda em toda
+atualização) e o teste recusa edição e migração nova com número menor que uma lançada; ao começar a versão seguinte,
+acrescente a ele as migrações da versão que saiu. Até a 0.22.2 o padrão era editar as antigas que recriam
+`config_chave_check` (0009, 0012, 0018, 0021, 0026, 0027, 0033); a última vez foi na 0.15.0.
 
 ## 7d. Atualizar o programa dos computadores
 
