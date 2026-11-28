@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { migracoes } from "../provisionar.mjs";
+import { migracoes, planoMigracoes } from "../provisionar.mjs";
 
 const lancadas = JSON.parse(readFileSync(new URL("./migracoes-lancadas.json", import.meta.url), "utf8")).migracoes;
 const resumo = (sql) => createHash("sha256").update(sql.replace(/\r\n/g, "\n")).digest("hex");
@@ -29,4 +29,14 @@ test("migração nova vem depois de todas as lançadas (a 0099 fica por último)
     if (lancadas[m.nome] || m.nome.startsWith("0099")) continue;
     assert.ok(m.nome > ultima, `${m.nome} é nova e vem antes da ${ultima}, já lançada: a atualização rodaria de novo as seguintes`);
   }
+});
+
+test("numa nuvem com todas as lançadas, o plano roda só as novas e a 0099", () => {
+  const todas = migracoes();
+  const feitas = new Map(Object.entries(lancadas));
+  const perm = todas.find((m) => m.nome.startsWith("0099"));
+  feitas.set(perm.nome, resumo(perm.sql));
+  const novas = todas.filter((m) => !feitas.has(m.nome)).map((m) => m.nome);
+  const plano = planoMigracoes(todas, feitas, true).map((m) => m.nome);
+  assert.deepEqual(plano, novas.length ? [...novas, perm.nome] : []);
 });
