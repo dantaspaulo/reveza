@@ -75,13 +75,13 @@ export default secao({
       aproveitar: {
         titulo: "Sobra que vai renovar",
         descricao:
-          "A semana de cada conta renova num dia diferente, e o que sobra quando ela renova se perde. Com isto ligado, na hora de trocar o Reveza escolhe primeiro, entre as contas livres, a que renova a semana logo e ainda tem folga. A conta preferida deste computador continua primeiro e a de reserva continua por último.",
+          "A semana de cada conta renova num dia diferente, e o que sobra quando ela renova se perde. Com isto ligado, na hora de trocar o Reveza escolhe primeiro, entre as contas livres, a que renova a semana logo e ainda tem folga. A conta preferida deste computador continua primeiro e a de reserva continua por último. A opção passa na frente da sua ordem das contas e da troca dentro da mesma organização (que poupa o reenvio das conversas abertas).",
         ligar: "Usar primeiro a conta que vai renovar",
         ligarDica: "Desligado, a escolha segue a ordem de sempre.",
         horas: "Renova em até",
         horasValor: "{n} h",
         horasDica:
-          "Só entra a conta que renova a semana dentro deste prazo e ainda está pelo menos 20 pontos abaixo do ponto de troca, para não trocar de novo logo depois. Se duas entrarem, vem a que renova antes.",
+          "Só entra a conta que renova a semana dentro deste prazo e ainda está pelo menos 20 pontos abaixo do ponto de troca (e do teto da semana dela, se houver), para não trocar de novo logo depois. Se duas entrarem, vem a que renova antes.",
       },
       ajustes: {
         titulo: "Mais ajustes",
@@ -176,13 +176,13 @@ export default secao({
       aproveitar: {
         titulo: "Leftover about to renew",
         descricao:
-          "Each account's week renews on a different day, and whatever is left when it renews is lost. With this on, when switching Reveza first picks, among the free accounts, the one whose week renews soon and still has room. This computer's preferred account still comes first and the reserve account still comes last.",
+          "Each account's week renews on a different day, and whatever is left when it renews is lost. With this on, when switching Reveza first picks, among the free accounts, the one whose week renews soon and still has room. This computer's preferred account still comes first and the reserve account still comes last. The option goes ahead of your account order and of switching within the same organization (which spares resending open conversations).",
         ligar: "Use the account about to renew first",
         ligarDica: "Off, the choice follows the usual order.",
         horas: "Renews within",
         horasValor: "{n} h",
         horasDica:
-          "Only an account whose week renews within this window and is still at least 20 points below the switch point counts, so it doesn't switch again right after. If two qualify, the one that renews first comes first.",
+          "Only an account whose week renews within this window and is still at least 20 points below the switch point (and below its own weekly cap, if any) counts, so it doesn't switch again right after. If two qualify, the one that renews first comes first.",
       },
       ajustes: {
         titulo: "More settings",
