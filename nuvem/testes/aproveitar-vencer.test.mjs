@@ -158,6 +158,12 @@ test("prazo gravado com decimal zero (72.0) não derruba a escolha; o painel gra
   await b.sql(`insert into public.config (chave, valor) values ('aproveitar_horas', '72.0'::jsonb)
                on conflict (chave) do update set valor = excluded.valor`);
   assert.equal(await primeira(b, pc), a);
+  // texto, fora de 12 a 168 ou com fração gravados por fora: vale o de fábrica (48, e A renova em 10 h), sem derrubar a
+  // escolha (antes de o decidir dar A à principal: depois dele, A sai das candidatas)
+  for (const v of ['"72h"', "true", "500", "72.5", "5"]) {
+    await b.sql("update public.config set valor = $1::jsonb where chave = 'aproveitar_horas'", [v]);
+    assert.equal(await primeira(b, pc), a, v);
+  }
   await b.sql("select public.decidir()");
   await b.como(admin, "select public.painel_config('aproveitar_horas', '96.0'::jsonb)");
   const [l] = await b.sql("select valor::text as v from public.config where chave = 'aproveitar_horas'");

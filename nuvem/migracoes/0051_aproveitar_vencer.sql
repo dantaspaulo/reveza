@@ -23,8 +23,9 @@ alter table public.config add constraint config_chave_check check (chave in ('au
 
 -- A semana da conta vai renovar logo, com folga para usar: devolve o reset (para ordenar, o mais perto primeiro); senão,
 -- nulo. Folga de 20 pontos até o gatilho de troca (100 no modo limite): menos que isso daria outra troca logo depois. A
--- conta com teto da semana precisa dos mesmos 20 pontos até o teto: em uso, ela só sai pelo gatilho. O prazo é lido como
--- número e arredondado para baixo (72.0 gravado por fora do painel não derruba a escolha).
+-- conta com teto da semana precisa dos mesmos 20 pontos até o teto: em uso, ela só sai pelo gatilho. O prazo vale só como
+-- número inteiro de 12 a 168 (72.0 conta como 72); outro valor gravado por fora do painel vale 48, como no agente, sem
+-- derrubar a escolha.
 create or replace function public.rvz_vence_logo(p_conta uuid) returns timestamptz
 language sql stable security definer set search_path = public, pg_temp as $$
   select j.reset_em
@@ -35,7 +36,11 @@ language sql stable security definer set search_path = public, pg_temp as $$
      and j.pct is not null
      and (c.teto_semana is null or j.pct <= c.teto_semana - 20)
      and j.reset_em > now()
-     and j.reset_em <= now() + make_interval(hours => coalesce(trunc((public.rvz_cfg('aproveitar_horas', '48') #>> '{}')::numeric)::int, 48))
+     and j.reset_em <= now() + make_interval(hours => (
+           select case when jsonb_typeof(v) = 'number' and (v #>> '{}')::numeric between 12 and 168
+                        and (v #>> '{}')::numeric = trunc((v #>> '{}')::numeric)
+                       then (v #>> '{}')::numeric::int else 48 end
+             from (select public.rvz_cfg('aproveitar_horas', '48') as v) x))
      and public.rvz_pct_efetivo(p_conta) <= (case when public.rvz_cfg('modo', '"limiar"') #>> '{}' = 'limite' then 100
                                                   else (public.rvz_cfg('troca', '95') #>> '{}')::numeric end) - 20
 $$;
