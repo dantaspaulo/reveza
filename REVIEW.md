@@ -91,7 +91,8 @@ teste, o CHANGELOG ou a release.
   fazem a mesma regra. Critério que põe uma conta na frente olha o gatilho e o `teto_semana` dela; nas funções de
   candidatas que também servem ao socorro (trilha e sombra, chamadas com teto acima do aviso), a ordem nova só vale até
   o aviso; número da configuração se lê com `trunc(...::numeric)::int`; opção nova tem caminho para ligar com e sem
-  nuvem (a linha de comando recusa com nuvem) e o `aplicarConfig` copia as chaves para a sombra.
+  nuvem (a linha de comando recusa com nuvem) e o `aplicarConfig` copia as chaves (sem a linha na nuvem, o de fábrica)
+  para a linha de comando mostrar o que vale.
 - **migração lançada** (0.22.3): nenhuma migração do `nuvem/testes/migracoes-lancadas.json` muda no diff (o teste
   pega); mudança e chave nova vão numa migração nova, no fim.
 

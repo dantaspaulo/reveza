@@ -20,7 +20,7 @@ quem não ligar.
   horas, 48 de fábrica) e ainda está pelo menos 20 pontos abaixo do ponto de troca (e do teto da semana dela, quando
   há) vem antes das outras livres; se duas entram, vem a que renova antes.
 - **O que continua na frente.** A conta preferida do computador continua primeiro, a de reserva continua por último e
-  a preferida de outro computador continua fora. A opção passa na frente da ordem manual das contas e da troca dentro
+  a preferida de outro computador continua depois das outras. A opção passa na frente da ordem manual das contas e da troca dentro
   da mesma organização: a sobra perdida pesa mais que o reenvio das conversas abertas numa troca.
 - **O socorro não muda.** Com todas as contas acima do aviso, a troca segue pela de mais folga, como antes, também nos
   projetos e na sombra.

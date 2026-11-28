@@ -200,6 +200,7 @@ reveza uso --csv         # usage log as a spreadsheet
 reveza som desligar      # turns off the switch sound (som ligar, som testar)
 reveza resumo 300k       # how many tokens before the conversation is summarized (default 180k; resumo desligar)
 reveza criticas          # critical sessions: on/off, trigger and marked ones (criticas marcar <session>)
+reveza aproveitar        # use first the account about to renew: aproveitar ligar [hours], aproveitar desligar
 reveza doctor            # diagnostics
 reveza contas conectar b@example.com   # connects an account from the terminal
 ```

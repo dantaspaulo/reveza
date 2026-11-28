@@ -196,6 +196,7 @@ reveza uso --csv         # registro de uso em planilha
 reveza som desligar      # tira o som da troca (som ligar, som testar)
 reveza resumo 300k       # perto de quantos tokens a conversa é resumida (de fábrica, 180k; resumo desligar)
 reveza criticas          # sessões críticas: ligadas, gatilho e as marcadas (criticas marcar <sessão>)
+reveza aproveitar        # usar primeiro a conta que vai renovar: aproveitar ligar [horas], aproveitar desligar
 reveza doctor            # diagnóstico
 reveza contas conectar b@exemplo.com   # conecta uma conta pelo terminal
 ```
