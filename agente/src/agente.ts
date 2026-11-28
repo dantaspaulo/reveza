@@ -1419,9 +1419,12 @@ export class Agente {
     if (typeof cfg.retomar_terminal === "boolean") k.retomarHeadless = cfg.retomar_terminal;
     if (typeof cfg.criticas === "boolean") k.criticas = cfg.criticas;
     k.criticasGatilho = gatilhoValido(cfg.criticas_gatilho) ?? k.criticasGatilho;
-    // usar primeiro a conta que vai renovar (0.22.3): com nuvem quem escolhe é a nuvem; aqui serve à sombra e ao registro
+    // usar primeiro a conta que vai renovar (0.22.3): com nuvem quem escolhe é a nuvem; aqui só para a linha de comando
+    // mostrar o que vale. A nuvem manda só as linhas que existem: sem a chave, o de fábrica (não o ligado antes sem nuvem).
     if (typeof cfg.aproveitar_vencer === "boolean") k.aproveitarVencer = cfg.aproveitar_vencer;
-    k.aproveitarHoras = horasDoAproveitar(cfg.aproveitar_horas) ?? k.aproveitarHoras;
+    else if (!("aproveitar_vencer" in cfg)) k.aproveitarVencer = false;
+    if (!("aproveitar_horas" in cfg)) k.aproveitarHoras = 48;
+    else k.aproveitarHoras = horasDoAproveitar(cfg.aproveitar_horas) ?? k.aproveitarHoras;
   }
 
   /** Se as sessões comuns estavam em espera na última volta (null: ainda não olhado desde que o agente subiu). */
@@ -2996,7 +2999,7 @@ export class Agente {
           if (h !== null) k.aproveitarHoras = h;
           this.salvar();
         }
-        return { status: 200, corpo: { ok: true, ligada: k.aproveitarVencer === true, horas: k.aproveitarHoras } };
+        return { status: 200, corpo: { ok: true, ligada: k.aproveitarVencer === true, horas: horasDoAproveitar(k.aproveitarHoras) ?? 48 } };
       },
       estado: () => this.publico(),
       trilha: async (corpo: Record<string, unknown>): Promise<Resposta> => {

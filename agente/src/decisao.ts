@@ -55,7 +55,7 @@ export function mesmaOrganizacao(estado: EstadoLocal, id: string, p: number): bo
   return !!org && estado.contas[id]?.org === org && p <= gatilhoDeTroca(estado) - 30;
 }
 
-/** O prazo de "vai renovar logo", em horas, conferido (12 a 168); fora disso, o de fábrica (48), como a nuvem. */
+/** O prazo de "vai renovar logo", em horas, conferido (inteiro de 12 a 168); fora disso, o de fábrica (48), como a nuvem (0051). */
 function horasDoPrazo(estado: EstadoLocal): number {
   return horasDoAproveitar(estado.config.aproveitarHoras) ?? 48;
 }

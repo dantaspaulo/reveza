@@ -445,7 +445,7 @@ describe("decisão sem nuvem: usar primeiro a conta que vai renovar", () => {
     assert.equal((await p.aproveitar!({})).status, 200);
   });
 
-  test("a configuração da nuvem chega ao agente (a sombra registra com a mesma regra); valor inválido não muda", async () => {
+  test("a configuração da nuvem chega ao agente (a linha de comando mostra o que vale); inválido não muda, sem a chave volta ao de fábrica", async () => {
     m = await montar();
     m.agente.aplicarConfig({ aproveitar_vencer: true, aproveitar_horas: 72 });
     assert.equal(e().config.aproveitarVencer, true);
@@ -456,5 +456,16 @@ describe("decisão sem nuvem: usar primeiro a conta que vai renovar", () => {
     m.agente.aplicarConfig({ aproveitar_horas: 72.0, aproveitar_vencer: false });
     assert.equal(e().config.aproveitarVencer, false);
     assert.equal(e().config.aproveitarHoras, 72);
+    // a nuvem só manda as linhas que existem: sem elas, vale o de fábrica (ligado antes sem nuvem não fica)
+    m.agente.aplicarConfig({ aproveitar_vencer: true });
+    m.agente.aplicarConfig({ auto: true });
+    assert.equal(e().config.aproveitarVencer, false);
+    assert.equal(e().config.aproveitarHoras, 48);
+  });
+
+  test("a leitura pela linha de comando devolve o prazo que vale (fora de 12 a 168, o de fábrica)", async () => {
+    m = await montar();
+    e().config.aproveitarHoras = 500;
+    assert.deepEqual((await m.agente.alvoPonte().aproveitar!({})).corpo, { ok: true, ligada: false, horas: 48 });
   });
 });
