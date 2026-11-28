@@ -362,6 +362,44 @@ describe("telas com os dados da produção (admin em aal1, fator pendente, alert
   })
 })
 
+describe("Troca: usar primeiro a conta que vai renovar (0.22.3)", () => {
+  async function desenharTroca(config: Record<string, unknown>[] = []) {
+    const antes = linhas.tabelas.config
+    linhas.tabelas.config = [...antes.filter((c) => !String(c.chave).startsWith("aproveitar_")), ...config]
+    try {
+      const lido = await fonte.carregar()
+      const { default: Tela } = await TELAS.troca()
+      return { ...(await desenhar(Tela, fonte, { ...lido, contas: pintarPorWorkspace(lido.contas) })), lido }
+    } finally {
+      linhas.tabelas.config = antes
+    }
+  }
+  const interruptor = (html: string) => html.match(/<button[^>]*id="aproveitar"[^>]*>/)?.[0] ?? ""
+
+  it("sem a opção gravada (nuvem de antes da 0051 ou de fábrica): desligada, sem o prazo, e a regra explicada", async () => {
+    const { html, erros, lido } = await desenharTroca()
+    expect(erros).toEqual([])
+    expect(lido.config).toMatchObject({ aproveitarVencer: false, aproveitarHoras: 48 })
+    expect(html).toContain("Usar primeiro a conta que vai renovar")
+    expect(interruptor(html)).toMatch(/aria-checked="false"/)
+    expect(interruptor(html)).not.toMatch(/\sdisabled=""/)
+    expect(html).not.toContain("Renova em até")
+  })
+
+  it("ligada com 72 horas: o interruptor marcado, o prazo gravado e a condição de quem fica na frente", async () => {
+    const { html, erros, lido } = await desenharTroca([
+      { chave: "aproveitar_vencer", valor: true },
+      { chave: "aproveitar_horas", valor: 72 },
+    ])
+    expect(erros).toEqual([])
+    expect(lido.config).toMatchObject({ aproveitarVencer: true, aproveitarHoras: 72 })
+    expect(interruptor(html)).toMatch(/aria-checked="true"/)
+    expect(html).toContain("Renova em até")
+    expect(html).toContain("72 h")
+    expect(html).toContain("A conta preferida deste computador continua primeiro e a de reserva continua por último")
+  })
+})
+
 describe("Computadores: o cartão de atualizações (Verificar, a escolha de como atualizar sozinho e a trava)", () => {
   const vazioDeConfig = () => linhas.tabelas.config.filter((c) => c.chave !== "atualizar_sozinho" && c.chave !== "atualizacao_vez")
   async function desenharComputadores(config: Record<string, unknown>[] = [], computadores?: Record<string, unknown>[]) {

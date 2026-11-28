@@ -8,6 +8,7 @@ import {
   ArrowUpIcon,
   CalendarClockIcon,
   CircleDollarSignIcon,
+  HourglassIcon,
   PencilIcon,
   ShieldCheckIcon,
   TimerIcon,
@@ -384,6 +385,51 @@ export default function Troca() {
                       </div>
                     </Field>
                   </>
+                ) : null}
+              </FieldGroup>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <HourglassIcon className="size-4 text-muted-foreground" aria-hidden />
+                {t("troca.aproveitar.titulo")}
+              </CardTitle>
+              <CardDescription>{t("troca.aproveitar.descricao")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FieldGroup>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldLabel htmlFor="aproveitar">{t("troca.aproveitar.ligar")}</FieldLabel>
+                    <FieldDescription>{t("troca.aproveitar.ligarDica")}</FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    id="aproveitar"
+                    checked={cfg.aproveitarVencer}
+                    onCheckedChange={(aproveitarVencer) => mudar({ aproveitarVencer })}
+                    disabled={!pode}
+                  />
+                </Field>
+                {cfg.aproveitarVencer ? (
+                  <Field>
+                    <div className="flex items-center justify-between">
+                      <FieldLabel>{t("troca.aproveitar.horas")}</FieldLabel>
+                      <span className="text-sm font-medium tabular-nums">
+                        {t("troca.aproveitar.horasValor", { n: cfg.aproveitarHoras })}
+                      </span>
+                    </div>
+                    <Slider
+                      value={[cfg.aproveitarHoras]}
+                      min={12}
+                      max={168}
+                      step={12}
+                      onValueChange={(v) => mudar({ aproveitarHoras: v[0] ?? cfg.aproveitarHoras })}
+                      disabled={!pode}
+                      aria-label={t("troca.aproveitar.horas")}
+                    />
+                    <FieldDescription>{t("troca.aproveitar.horasDica")}</FieldDescription>
+                  </Field>
                 ) : null}
               </FieldGroup>
             </CardContent>

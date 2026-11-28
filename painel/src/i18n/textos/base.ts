@@ -259,6 +259,9 @@ export default secao({
       intervalo_fora: "O tempo de atualização é 5, 10, 15 ou 30 segundos.",
       espera_fora: "A espera entre trocas vai de 30 segundos a 1 hora.",
       criticas_fora: "O gatilho das sessões críticas vai de 50% a 95%.",
+      aproveitar_fora: "O prazo da renovação vai de 12 a 168 horas.",
+      config_desconhecida:
+        "A nuvem ainda não tem esta opção. Ela se atualiza sozinha de hora em hora: tente de novo quando ela chegar à versão nova.",
       fuso_invalido: "Fuso horário desconhecido.",
       email_invalido: "E-mail inválido.",
       url_invalida: "O endereço precisa começar com https://",
@@ -582,6 +585,9 @@ export default secao({
       intervalo_fora: "The update interval is 5, 10, 15 or 30 seconds.",
       espera_fora: "The wait between switches goes from 30 seconds to 1 hour.",
       criticas_fora: "The critical sessions trigger goes from 50% to 95%.",
+      aproveitar_fora: "The renewal window goes from 12 to 168 hours.",
+      config_desconhecida:
+        "The cloud doesn't have this option yet. It updates itself every hour: try again once it reaches the new version.",
       fuso_invalido: "Unknown time zone.",
       email_invalido: "Invalid email.",
       url_invalida: "The address must start with https://",

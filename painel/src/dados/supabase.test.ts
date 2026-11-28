@@ -75,6 +75,8 @@ describe("FonteSupabase (partes puras)", () => {
         "atualizar_sozinho",
         "auto",
         "aviso",
+        "aproveitar_horas",
+        "aproveitar_vencer",
         "criticas",
         "criticas_gatilho",
         "espera_entre_trocas_s",
@@ -98,7 +100,17 @@ describe("FonteSupabase (partes puras)", () => {
       assistenteAtualizar: "padrao",
       criticas: false,
       criticasGatilho: 75,
+      aproveitarVencer: false,
+      aproveitarHoras: 48,
     })
+  })
+
+  it("usar primeiro a conta que vai renovar (0.22.3): as recusas da nuvem viram texto claro, e a nuvem velha também", () => {
+    expect(codigoDoErro("a semana que renova em até 12 a 168 horas (número inteiro)")).toBe("aproveitar_fora")
+    // painel novo com a nuvem de antes da 0051: a chave ainda não existe lá
+    expect(codigoDoErro("configuração desconhecida")).toBe("config_desconhecida")
+    // não engole as recusas de cadastro com "desconhecid"
+    expect(codigoDoErro("conta desconhecida")).toBe("nao_encontrado")
   })
 
   it("atualizar sozinho: o true de antes é de madrugada, e o painel grava false e true para os jeitos de antes", () => {

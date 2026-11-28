@@ -616,6 +616,8 @@ export function gerarDemo(agora: Date, semente = 7, versao = versaoDemo()): Dado
     assistenteAtualizar: "padrao",
     criticas: false,
     criticasGatilho: 75,
+    aproveitarVencer: false,
+    aproveitarHoras: 48,
     atualizacaoVez: null,
     // a nuvem e o painel na versão da demonstração, com a atualização completa desligada (o padrão)
     nuvem: {

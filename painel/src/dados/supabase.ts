@@ -89,6 +89,8 @@ export const CONFIG_PADRAO: ConfigTroca = {
   assistenteAtualizar: "padrao",
   criticas: false,
   criticasGatilho: 75,
+  aproveitarVencer: false,
+  aproveitarHoras: 48,
   atualizacaoVez: null,
   nuvem: null,
   proximoRodizioEm: null,
@@ -177,6 +179,8 @@ export const CHAVES_CONFIG: Record<CampoGravavel, string> = {
   assistenteAtualizar: "assistente_atualizar",
   criticas: "criticas",
   criticasGatilho: "criticas_gatilho",
+  aproveitarVencer: "aproveitar_vencer",
+  aproveitarHoras: "aproveitar_horas",
 }
 
 const CAMPOS_CONTA: Record<keyof CamposConta, string> = {
@@ -211,6 +215,9 @@ const MENSAGENS: [RegExp, string][] = [
   [/intervalo de 3 a 60|tempo de atualização/i, "intervalo_fora"],
   [/espera de 30 a 3600/i, "espera_fora"],
   [/gatilho das sessões críticas/i, "criticas_fora"],
+  [/a semana que renova em até 12 a 168 horas/i, "aproveitar_fora"],
+  // painel mais novo que a nuvem: a chave ainda não existe lá (ela se atualiza sozinha de hora em hora)
+  [/^configuração desconhecida$/i, "config_desconhecida"],
   [/fuso desconhecido/i, "fuso_invalido"],
   [/^e-mail inválido$/i, "email_invalido"],
   [/último administrador/i, "ultimo_admin"],

@@ -72,6 +72,17 @@ export default secao({
         naRotina: "Em rotinas abertas por script, ponha isto antes do comando:",
         noTerminal: "Ou, no terminal do computador, com o id da sessão:",
       },
+      aproveitar: {
+        titulo: "Sobra que vai renovar",
+        descricao:
+          "A semana de cada conta renova num dia diferente, e o que sobra quando ela renova se perde. Com isto ligado, na hora de trocar o Reveza escolhe primeiro, entre as contas livres, a que renova a semana logo e ainda tem folga. A conta preferida deste computador continua primeiro e a de reserva continua por último.",
+        ligar: "Usar primeiro a conta que vai renovar",
+        ligarDica: "Desligado, a escolha segue a ordem de sempre.",
+        horas: "Renova em até",
+        horasValor: "{n} h",
+        horasDica:
+          "Só entra a conta que renova a semana dentro deste prazo e ainda está pelo menos 20 pontos abaixo do ponto de troca, para não trocar de novo logo depois. Se duas entrarem, vem a que renova antes.",
+      },
       ajustes: {
         titulo: "Mais ajustes",
         espera: "Espera mínima entre trocas",
@@ -161,6 +172,17 @@ export default secao({
         naSessao: "Inside the session, type:",
         naRotina: "In routines started by a script, put this before the command:",
         noTerminal: "Or, in the computer's terminal, with the session id:",
+      },
+      aproveitar: {
+        titulo: "Leftover about to renew",
+        descricao:
+          "Each account's week renews on a different day, and whatever is left when it renews is lost. With this on, when switching Reveza first picks, among the free accounts, the one whose week renews soon and still has room. This computer's preferred account still comes first and the reserve account still comes last.",
+        ligar: "Use the account about to renew first",
+        ligarDica: "Off, the choice follows the usual order.",
+        horas: "Renews within",
+        horasValor: "{n} h",
+        horasDica:
+          "Only an account whose week renews within this window and is still at least 20 points below the switch point counts, so it doesn't switch again right after. If two qualify, the one that renews first comes first.",
       },
       ajustes: {
         titulo: "More settings",

@@ -185,6 +185,13 @@ export interface ConfigTroca {
   criticas: boolean
   /** O gatilho das sessões críticas, em % (50 a 95). */
   criticasGatilho: number
+  /**
+   * Usar primeiro a conta que vai renovar (0.22.3, migração 0051): entre as livres, a conta cuja semana renova dentro
+   * do prazo e ainda tem folga vem antes das outras (a preferida e a reserva não mudam de lugar). Desligada de fábrica.
+   */
+  aproveitarVencer: boolean
+  /** O prazo dessa renovação, em horas (12 a 168). */
+  aproveitarHoras: number
   /** Só leitura: de quem é a vez de atualizar sozinho agora (config `atualizacao_vez`, um computador por vez). */
   atualizacaoVez?: VezAtualizacao | null
   /** Só leitura: a nuvem e o painel (0.3.0): a versão da nuvem, o que está no ar e o andamento. */
