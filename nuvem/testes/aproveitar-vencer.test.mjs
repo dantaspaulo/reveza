@@ -143,6 +143,27 @@ test("ligado: com todas acima do aviso, o socorro segue pela de mais folga", asy
   assert.equal(s.conta_id, bb);
 });
 
+test("ligado: conta com teto da semana só passa na frente com 20 pontos de folga até o teto", async () => {
+  const { b, pc } = await cenario();
+  const { a, bb } = await duas(b, pc);
+  await b.sql("update public.contas set teto_semana = 50 where id = $1", [a]);
+  assert.equal(await primeira(b, pc), bb, "40 de 50: sem os 20 pontos até o teto");
+  await b.sql("update public.contas set teto_semana = 60 where id = $1", [a]);
+  assert.equal(await primeira(b, pc), a, "40 de 60: tem os 20 pontos");
+});
+
+test("prazo gravado com decimal zero (72.0) não derruba a escolha; o painel grava o número inteiro", async () => {
+  const { b, admin, pc } = await cenario();
+  const { a } = await duas(b, pc);
+  await b.sql(`insert into public.config (chave, valor) values ('aproveitar_horas', '72.0'::jsonb)
+               on conflict (chave) do update set valor = excluded.valor`);
+  assert.equal(await primeira(b, pc), a);
+  await b.sql("select public.decidir()");
+  await b.como(admin, "select public.painel_config('aproveitar_horas', '96.0'::jsonb)");
+  const [l] = await b.sql("select valor::text as v from public.config where chave = 'aproveitar_horas'");
+  assert.equal(l.v, "96");
+});
+
 async function projeto(b, admin, pc) {
   // a principal já tem conta, para o decidir de quem salva o projeto não pegar uma das duas
   const x = await b.conta(pc, "x@exemplo.com", 50);
@@ -164,6 +185,19 @@ test("trilha e sombra de um projeto: a que vence vem antes entre as contas dele"
   assert.equal(t.conta_id, a, "trilha");
   const [s] = await b.sql("select conta_id from public.rvz_candidatas_sombra($1, $2, 90, false) limit 1", [pc.pc, emp]);
   assert.equal(s.conta_id, a, "sombra");
+});
+
+test("trilha e sombra no socorro (teto acima do aviso ou sem teto): a de mais folga, como antes", async () => {
+  const { b, admin, pc } = await cenario();
+  const { emp, bb } = await projeto(b, admin, pc);
+  for (const teto of [95, 100]) {
+    const [t] = await b.sql("select conta_id from public.rvz_candidatas_trilha($1, $2, $3, false) limit 1", [pc.pc, emp, teto]);
+    assert.equal(t.conta_id, bb, `trilha ${teto}`);
+    const [s] = await b.sql("select conta_id from public.rvz_candidatas_sombra($1, $2, $3, false) limit 1", [pc.pc, emp, teto]);
+    assert.equal(s.conta_id, bb, `sombra ${teto}`);
+  }
+  const [s] = await b.sql("select conta_id from public.rvz_candidatas_sombra($1, $2, null, false) limit 1", [pc.pc, emp]);
+  assert.equal(s.conta_id, bb, "sombra sem teto");
 });
 
 test("trilha e sombra, desligado: a ordem é a de antes", async () => {

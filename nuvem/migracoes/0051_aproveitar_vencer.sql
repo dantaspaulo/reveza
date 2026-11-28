@@ -1,17 +1,17 @@
--- Reveza AI · 0051 · usar primeiro a conta cuja semana vai renovar com sobra (pedido do Paulo, 23/11/2026: "aproveitar
--- a franquia que tá pra vencer").
+-- Reveza AI · 0051 · usar primeiro a conta cuja semana vai renovar com sobra.
 -- reaplicável: restrição recriada e funções (create or replace).
 --
--- A sobra da semana que renova sem uso se perde. Medido em 27/11/2026 numa instalação com 12 contas e 3 computadores:
--- os 3 estavam em contas que renovam em 103 h a 166 h, enquanto outras tinham de 28 a 56 pontos da semana para gastar
--- em 37 h a 75 h; e a ordem de antes escolhia a menos usada, justamente a que tem mais tempo.
+-- A sobra da semana que renova sem uso se perde. A ordem de antes escolhia a menos usada, que costuma ser justamente a
+-- que tem mais tempo até renovar, enquanto outra conta renova logo com muitos pontos sobrando.
 --
 -- Desligado de fábrica (`aproveitar_vencer`, falso): nada muda para quem não ligar. Ligado, entre as candidatas que já
 -- entrariam (o filtro não muda), a conta cuja semana renova em até `aproveitar_horas` (12 a 168, 48 de fábrica), com
--- 20 pontos de folga até o gatilho de troca, vem antes das outras, a que renova antes primeiro. A preferida do
+-- 20 pontos de folga até o gatilho de troca (e até o teto da semana da conta, quando há), vem antes das outras, a que
+-- renova antes primeiro. A preferida do
 -- computador, a reserva e a preferida de outro computador seguem na frente; a mesma organização vem depois (a sobra
 -- perdida pesa mais que o cache de uma troca). Vale na conta do computador (inclusive no rodízio), nas trilhas dos
--- projetos e na sombra. O socorro (todas acima do aviso) segue pela de mais folga, como antes.
+-- projetos e na sombra. O socorro (todas acima do aviso, ou a busca com teto acima do aviso nas trilhas e na sombra)
+-- segue pela de mais folga, como antes.
 
 alter table public.config drop constraint if exists config_chave_check;
 alter table public.config add constraint config_chave_check check (chave in ('auto', 'modo', 'aviso', 'troca',
@@ -22,16 +22,20 @@ alter table public.config add constraint config_chave_check check (chave in ('au
   'aproveitar_horas'));
 
 -- A semana da conta vai renovar logo, com folga para usar: devolve o reset (para ordenar, o mais perto primeiro); senão,
--- nulo. Folga de 20 pontos até o gatilho de troca (100 no modo limite): menos que isso daria outra troca logo depois.
+-- nulo. Folga de 20 pontos até o gatilho de troca (100 no modo limite): menos que isso daria outra troca logo depois. A
+-- conta com teto da semana precisa dos mesmos 20 pontos até o teto: em uso, ela só sai pelo gatilho. O prazo é lido como
+-- número e arredondado para baixo (72.0 gravado por fora do painel não derruba a escolha).
 create or replace function public.rvz_vence_logo(p_conta uuid) returns timestamptz
 language sql stable security definer set search_path = public, pg_temp as $$
   select j.reset_em
     from public.uso_janelas j
+    join public.contas c on c.id = j.conta_id
    where j.conta_id = p_conta and j.tipo = 'seven_day'
      and coalesce((public.rvz_cfg('aproveitar_vencer', 'false') #>> '{}')::boolean, false)
      and j.pct is not null
+     and (c.teto_semana is null or j.pct <= c.teto_semana - 20)
      and j.reset_em > now()
-     and j.reset_em <= now() + make_interval(hours => coalesce((public.rvz_cfg('aproveitar_horas', '48') #>> '{}')::int, 48))
+     and j.reset_em <= now() + make_interval(hours => coalesce(trunc((public.rvz_cfg('aproveitar_horas', '48') #>> '{}')::numeric)::int, 48))
      and public.rvz_pct_efetivo(p_conta) <= (case when public.rvz_cfg('modo', '"limiar"') #>> '{}' = 'limite' then 100
                                                   else (public.rvz_cfg('troca', '95') #>> '{}')::numeric end) - 20
 $$;
@@ -97,6 +101,7 @@ begin
          or (p_valor #>> '{}')::numeric <> trunc((p_valor #>> '{}')::numeric) then
         raise exception 'a semana que renova em até 12 a 168 horas (número inteiro)';
       end if;
+      p_valor := to_jsonb(trunc((p_valor #>> '{}')::numeric)::int);
     when 'atualizar_sozinho' then
       if jsonb_typeof(p_valor) = 'boolean' then
         null;
@@ -154,7 +159,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
             c.email
 $$;
 
--- O corpo da 0044, mais a que vence logo depois das contas de outra unidade estrita.
+-- O corpo da 0044, mais a que vence logo depois das contas de outra unidade estrita (só na busca até o aviso: acima
+-- dele é socorro, que segue pela de mais folga).
 create or replace function public.rvz_candidatas_trilha(p_pc uuid, p_emp uuid, p_teto numeric, p_transbordo boolean)
 returns table (conta_id uuid, efetivo numeric)
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -179,11 +185,11 @@ language sql stable security definer set search_path = public, pg_temp as $$
               where u.id <> p_emp and u.so_contas_dela and public.rvz_unidade_de(u.id) = u.id
                 and public.rvz_unidade_ligada(u.id) and c.id = any (public.rvz_contas_efetivas(u.id))
                 and public.rvz_contas_efetivas(u.id) <> public.rvz_contas_efetivas(p_emp)),
-            public.rvz_vence_logo(c.id) nulls last,
+            case when p_teto <= (public.rvz_cfg('aviso', '90') #>> '{}')::numeric then public.rvz_vence_logo(c.id) end nulls last,
             public.rvz_pct_efetivo(c.id), c.prioridade, c.email
 $$;
 
--- O corpo da 0041, mais a que vence logo depois da reserva (a sombra prevê a trilha).
+-- O corpo da 0041, mais a que vence logo depois da reserva (a sombra prevê a trilha; só na busca até o aviso).
 create or replace function public.rvz_candidatas_sombra(p_pc uuid, p_emp uuid, p_teto numeric, p_transbordo boolean)
 returns table (conta_id uuid, efetivo numeric)
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -201,5 +207,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
      and (p_teto is null or public.rvz_pct_efetivo(c.id) < p_teto)
      and (c.teto_semana is null or coalesce((select j.pct from public.uso_janelas j
                                               where j.conta_id = c.id and j.tipo = 'seven_day'), 0) < c.teto_semana)
-   order by c.reserva, public.rvz_vence_logo(c.id) nulls last, public.rvz_pct_efetivo(c.id), c.prioridade, c.email
+   order by c.reserva,
+            case when p_teto <= (public.rvz_cfg('aviso', '90') #>> '{}')::numeric then public.rvz_vence_logo(c.id) end nulls last,
+            public.rvz_pct_efetivo(c.id), c.prioridade, c.email
 $$;
