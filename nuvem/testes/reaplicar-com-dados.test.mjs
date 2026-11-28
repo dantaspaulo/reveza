@@ -2,8 +2,12 @@
 // Num banco em uso, com linhas que usam os valores mais novos de cada lista, rodar de novo não pode falhar nem mudar
 // dado: uma restrição recriada com a lista antiga recusaria essas linhas e a atualização da nuvem pararia no meio
 // (0009, 0012 e 0018 guardavam listas antigas da configuração e dos eventos de alerta; corrigido na 0.4.6).
+// Desde a 0.22.3 as migrações lançadas não mudam mais (migracoes-lancadas.test.mjs): a cadeia que roda de novo numa
+// nuvem em uso são as reaplicáveis ainda não lançadas e a 0099. As antigas guardam a lista do tempo delas, e é por isso
+// que não se editam: rodá-las de novo sobre as linhas novas falharia.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { banco } from "./apoio.mjs";
 import { migracoes, reaplicavel, SQL_REGISTRO } from "../provisionar.mjs";
 
@@ -109,11 +113,13 @@ test("as reaplicáveis rodam de novo, em ordem, num banco com todos os valores d
   for (const m of migracoes()) await b.sql("insert into public.reveza_migracoes (nome, hash) values ($1, 'x')", [m.nome]);
 
   const antes = await retrato(b);
-  const plano = migracoes().filter((m) => reaplicavel(m) && !m.nome.endsWith(".supabase.sql"));
-  assert.ok(plano.length > 15, "o plano tem as reaplicáveis");
+  const lancadas = JSON.parse(readFileSync(new URL("./migracoes-lancadas.json", import.meta.url), "utf8")).migracoes;
+  const plano = migracoes().filter((m) => reaplicavel(m) && !m.nome.endsWith(".supabase.sql") && !lancadas[m.nome]);
+  assert.ok(plano.some((m) => m.nome.startsWith("0099")), "o plano tem as permissões, que rodam em toda atualização");
   for (const volta of [1, 2]) {
     for (const m of plano) {
-      await b.db.exec(m.sql).catch((e) => assert.fail(`${m.nome} falhou ao rodar de novo (volta ${volta}): ${e.message}`));
+      await b.db.exec(m.sql).catch((e) => assert.fail(`${m.nome} falhou ao rodar de novo (volta ${volta}): ${e.message}` +
+        " (se ela já saiu numa versão, não a edite: acrescente-a ao migracoes-lancadas.json e ponha a mudança numa nova)"));
     }
   }
   assert.deepEqual(await retrato(b), antes, "rodar de novo não muda dado");
