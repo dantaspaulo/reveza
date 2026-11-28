@@ -55,12 +55,39 @@ export function mesmaOrganizacao(estado: EstadoLocal, id: string, p: number): bo
   return !!org && estado.contas[id]?.org === org && p <= gatilhoDeTroca(estado) - 30;
 }
 
-/** A ordem das candidatas: a da mesma organização com folga antes, depois o menor uso, e o e-mail no empate. */
-function ordenar(estado: EstadoLocal, saida: [number, string][]): [number, string][] {
+/** O prazo de "vai renovar logo", em horas, conferido (12 a 168); fora disso, o de fábrica (48), como a nuvem. */
+function horasDoPrazo(estado: EstadoLocal): number {
+  const h = estado.config.aproveitarHoras;
+  return Number.isInteger(h) && h >= 12 && h <= 168 ? h : 48;
+}
+
+/**
+ * Usar primeiro a conta que vai renovar (0.22.3): com a opção ligada, quando a semana da conta renova (o reset futuro,
+ * dentro do prazo), se ela ainda tem 20 pontos de folga até o gatilho de troca; senão, null. Menos que 20 daria outra
+ * troca logo depois. Igual à rvz_vence_logo da nuvem (0051). `p`: o uso efetivo da conta.
+ */
+export function venceLogo(estado: EstadoLocal, id: string, p: number, t: number): number | null {
+  if (estado.config.aproveitarVencer !== true) return null;
+  const semana = estado.contas[id]?.janelas?.find((j) => j.tipo === "seven_day");
+  if (!semana || semana.pct === null || semana.pct === undefined || !semana.resetEm) return null;
+  if (semana.resetEm <= t || semana.resetEm > t + horasDoPrazo(estado) * 3600) return null;
+  return p <= gatilhoDeTroca(estado) - 20 ? semana.resetEm : null;
+}
+
+/**
+ * A ordem das candidatas: a que vai renovar logo antes (a que renova antes primeiro; só com a opção ligada), depois a da
+ * mesma organização com folga, o menor uso e o e-mail no empate. `aproveitar` falso: o socorro, que fica com a de mais
+ * folga (como a rvz_socorro da nuvem).
+ */
+function ordenar(estado: EstadoLocal, saida: [number, string][], t: number, aproveitar = true): [number, string][] {
   // empate no uso: a ordem do e-mail (o id local é sorteado na importação; o e-mail é o mesmo em todo lugar)
   const email = (id: string) => estado.contas[id]?.email ?? id;
   const fora = (x: [number, string]) => (mesmaOrganizacao(estado, x[1], x[0]) ? 0 : 1);
-  return saida.sort((a, b) => fora(a) - fora(b) || a[0] - b[0] || email(a[1]).localeCompare(email(b[1])));
+  const vence = (x: [number, string]) => (aproveitar ? venceLogo(estado, x[1], x[0], t) : null) ?? Infinity;
+  const antes = (a: number, b: number) => (a === b ? 0 : a < b ? -1 : 1);
+  return saida.sort(
+    (a, b) => antes(vence(a), vence(b)) || fora(a) - fora(b) || a[0] - b[0] || email(a[1]).localeCompare(email(b[1])),
+  );
 }
 
 function livres(estado: EstadoLocal, t: number): [number, string][] {
@@ -72,7 +99,7 @@ function livres(estado: EstadoLocal, t: number): [number, string][] {
     const p = pctEfetivo(c, t);
     if (p !== null && p < estado.config.aviso) saida.push([p, id]);
   }
-  return ordenar(estado, saida);
+  return ordenar(estado, saida, t);
 }
 
 export function candidata(estado: EstadoLocal, t: number): string | null {
@@ -88,7 +115,7 @@ function comMaisFolga(estado: EstadoLocal, t: number, teto: number, atual: numbe
     const p = pctEfetivo(c, t);
     if (p !== null && p < teto && (atual === null || p < atual)) saida.push([p, id]);
   }
-  return ordenar(estado, saida)[0]?.[1] ?? null;
+  return ordenar(estado, saida, t, false)[0]?.[1] ?? null;
 }
 
 /**
@@ -114,6 +141,8 @@ export function escolherRodizio(estado: EstadoLocal, t: number, sorteio: (xs: st
   const l = livres(estado, t);
   if (!l.length) return null;
   if (estado.config.rodizio.ordem === "menor_uso") return l[0]![1];
+  // a que vai renovar logo vem antes do sorteio, como na nuvem (a lista já vem com ela na frente)
+  if (venceLogo(estado, l[0]![1], l[0]![0], t) !== null) return l[0]![1];
   // sorteio entre as da mesma organização com folga, quando há (como a nuvem: a organização vem antes do sorteio)
   const mesma = l.filter(([p, id]) => mesmaOrganizacao(estado, id, p));
   return sorteio((mesma.length ? mesma : l).map(([, id]) => id).sort());

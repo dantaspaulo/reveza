@@ -307,3 +307,117 @@ describe("empate", () => {
     assert.deepEqual(decidir(e(), agora()), ["trocar", outra], "70% fica a menos de 30 pontos do gatilho de 95%");
   });
 });
+
+// 0.22.3: usar primeiro a conta cuja semana vai renovar com sobra (o mesmo critério da rvz_vence_logo da nuvem, 0051).
+describe("decisão sem nuvem: usar primeiro a conta que vai renovar", () => {
+  const H = 3600;
+  /** Uma conta com a janela de 5 h e a semana (pct e quando renova). */
+  function janelas(id: string, p5: number, p7: number, renovaEmH: number | null) {
+    e().contas[id]!.janelas = [
+      { tipo: "five_hour", pct: p5, resetEm: agora() + H },
+      { tipo: "seven_day", pct: p7, resetEm: renovaEmH === null ? null : agora() + renovaEmH * H },
+    ];
+  }
+  /** A em uso no gatilho, B pouco usada que renova em 5 dias, C mais usada que renova em 10 horas. */
+  async function cenario() {
+    m = await montar();
+    const a = await ativaEm(m, "A", 96);
+    const b = contaEstacionada(m, "B");
+    const c = contaEstacionada(m, "C");
+    janelas(b, 10, 10, 120);
+    janelas(c, 40, 40, 10);
+    return { a, b, c };
+  }
+  const ligar = (horas = 48) => Object.assign(e().config, { aproveitarVencer: true, aproveitarHoras: horas });
+
+  test("desligada de fábrica: a menos usada, como sempre", async () => {
+    const { b } = await cenario();
+    assert.equal(e().config.aproveitarVencer, false);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b]);
+  });
+
+  test("ligada: a que renova em 10 horas com sobra vem antes da menos usada", async () => {
+    const { c } = await cenario();
+    ligar();
+    assert.deepEqual(decidir(e(), agora()), ["trocar", c]);
+  });
+
+  test("ligada: renovando fora do prazo, a ordem de sempre", async () => {
+    const { b, c } = await cenario();
+    ligar();
+    janelas(c, 40, 40, 60);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b], "60 horas passa do prazo de 48");
+    ligar(72);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", c], "com 72 horas de prazo, entra");
+  });
+
+  test("ligada: duas a renovar, a que renova antes", async () => {
+    const { c } = await cenario();
+    ligar();
+    const d = contaEstacionada(m, "D");
+    janelas(d, 50, 50, 5);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", d]);
+    janelas(d, 50, 50, 20);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", c]);
+  });
+
+  test("ligada: sem 20 pontos de folga até o gatilho, não passa na frente", async () => {
+    const { b, c } = await cenario();
+    ligar();
+    janelas(c, 76, 40, 10);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b], "76% fica a menos de 20 pontos do gatilho de 95%");
+    janelas(c, 75, 40, 10);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", c], "75% fica a 20 pontos: entra");
+    e().config.modo = "limite";
+    janelas(c, 80, 40, 10);
+    // no modo limite o gatilho é 100: 80 ainda tem 20 pontos (e a em uso em 96 não troca; só no limite)
+    assert.deepEqual(decidir(e(), agora(), true), ["trocar", c]);
+  });
+
+  test("ligada: semana que já renovou, sem data de renovação ou sem leitura da semana não conta", async () => {
+    const { b, c } = await cenario();
+    ligar();
+    janelas(c, 40, 40, -1);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b], "renovou há 1 hora (leitura velha)");
+    janelas(c, 40, 40, null);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b], "sem data");
+    e().contas[c]!.janelas = [
+      { tipo: "five_hour", pct: 40, resetEm: agora() + H },
+      { tipo: "seven_day", pct: null, resetEm: agora() + 10 * H },
+    ];
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b], "semana sem número");
+  });
+
+  test("ligada: a que vai renovar vem antes da mesma organização (a sobra perdida pesa mais que o cache)", async () => {
+    const { a, c } = await cenario();
+    ligar();
+    const colega = contaEstacionada(m, "D");
+    janelas(colega, 20, 20, 120);
+    e().contas[a]!.org = "Alfa";
+    e().contas[colega]!.org = "Alfa";
+    assert.deepEqual(decidir(e(), agora()), ["trocar", c]);
+  });
+
+  test("ligada: no rodízio, a que vai renovar vem antes do sorteio e do menor uso", async () => {
+    const { a, c } = await cenario();
+    ligar();
+    janelas(a, 50, 50, 120);
+    e().config.modo = "rodizio";
+    e().proximoRodizioEm = agora() - 1;
+    const ultima = (xs: string[]) => xs[xs.length - 1]!;
+    const primeira = (xs: string[]) => xs[0]!;
+    assert.deepEqual(decidir(e(), agora(), false, ultima), ["rodizio", c]);
+    assert.deepEqual(decidir(e(), agora(), false, primeira), ["rodizio", c]);
+    e().config.rodizio.ordem = "menor_uso";
+    assert.deepEqual(decidir(e(), agora()), ["rodizio", c]);
+  });
+
+  test("ligada: com todas acima do aviso, vale a de mais folga, como antes (o socorro não muda)", async () => {
+    const { b, c } = await cenario();
+    ligar();
+    e().config.aviso = 50;
+    janelas(b, 55, 55, 120);
+    janelas(c, 70, 40, 10);
+    assert.deepEqual(decidir(e(), agora()), ["trocar", b]);
+  });
+});

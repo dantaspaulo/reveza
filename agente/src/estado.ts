@@ -97,6 +97,13 @@ export interface ConfigLocal {
   criticas: boolean;
   /** O gatilho das sessões críticas, em % (50 a 95). */
   criticasGatilho: number;
+  /**
+   * Usar primeiro a conta que vai renovar (0.22.3, decisao.ts): entre as livres, a conta cuja semana renova dentro do
+   * prazo e ainda tem folga vem antes. Só vale sem nuvem (com nuvem, quem escolhe é a nuvem). Desligada de fábrica.
+   */
+  aproveitarVencer: boolean;
+  /** O prazo dessa renovação, em horas (12 a 168). */
+  aproveitarHoras: number;
 }
 
 export interface PontoHistorico {
@@ -212,6 +219,8 @@ export const CONFIG_INICIAL: ConfigLocal = {
   resumo: 180_000,
   criticas: false,
   criticasGatilho: 75,
+  aproveitarVencer: false,
+  aproveitarHoras: 48,
 };
 
 export function estadoInicial(): EstadoLocal {
